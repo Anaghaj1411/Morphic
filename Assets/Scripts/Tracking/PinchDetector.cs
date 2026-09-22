@@ -11,11 +11,11 @@ public class PinchDetector : MonoBehaviour
     [SerializeField] private float pinchReleaseDistance = 0.09f;
 
     [Header("Fist Thresholds")]
-    [SerializeField] private float fistStartDistance = 0.16f;
-    [SerializeField] private float fistReleaseDistance = 0.20f;
+    [SerializeField] private float fistStartDistance = 2.20f;
+    [SerializeField] private float fistReleaseDistance = 2.50f;
 
     [Header("Smoothing")]
-    [SerializeField] private float smoothingSpeed = 18f;
+    [SerializeField] private float smoothingSpeed = 28f;
 
     public bool IsTracking { get; private set; }
     public bool IsPinching { get; private set; }
@@ -25,6 +25,7 @@ public class PinchDetector : MonoBehaviour
     public float FistDistance { get; private set; }
 
     public Vector3 SmoothedIndexTip { get; private set; }
+    public Vector3 SmoothedPalmCenter { get; private set; }
 
     private bool hasSmoothedPoint;
 
@@ -57,31 +58,41 @@ public class PinchDetector : MonoBehaviour
 
         IsTracking = true;
         PinchDistance = hand.PinchDistance;
-        FistDistance = hand.IndexToWristDistance;
+        FistDistance = hand.OtherFingersCurlRatio;
 
         if (!hasSmoothedPoint)
         {
             SmoothedIndexTip = hand.IndexTip;
+            SmoothedPalmCenter = hand.PalmCenter;
             hasSmoothedPoint = true;
         }
         else
         {
-            float t =
-                1f - Mathf.Exp(-smoothingSpeed * Time.deltaTime);
+            float t = 1f - Mathf.Exp(-smoothingSpeed * Time.deltaTime);
 
             SmoothedIndexTip = Vector3.Lerp(
                 SmoothedIndexTip,
                 hand.IndexTip,
                 t
             );
+
+            SmoothedPalmCenter = Vector3.Lerp(
+                SmoothedPalmCenter,
+                hand.PalmCenter,
+                t
+            );
         }
 
-        if (!IsFist && FistDistance <= fistStartDistance)
+        float otherFingersCurl = hand.OtherFingersCurlRatio;
+
+        // A fist requires middle, ring, and pinky fingers to be curled inward (<= 1.45f)
+        if (!IsFist && otherFingersCurl <= 1.45f)
         {
             IsFist = true;
+            IsPinching = false;
             Debug.Log("FIST START");
         }
-        else if (IsFist && FistDistance >= fistReleaseDistance)
+        else if (IsFist && otherFingersCurl >= 1.70f)
         {
             IsFist = false;
             Debug.Log("FIST END");
@@ -93,14 +104,16 @@ public class PinchDetector : MonoBehaviour
             return;
         }
 
+        // A pinch requires thumb and index to touch AND middle/ring/pinky to be extended (>= 1.55f)
         if (!IsPinching &&
-            PinchDistance <= pinchStartDistance)
+            PinchDistance <= pinchStartDistance &&
+            otherFingersCurl >= 1.55f)
         {
             IsPinching = true;
             Debug.Log("PINCH START");
         }
         else if (IsPinching &&
-                 PinchDistance >= pinchReleaseDistance)
+                 (PinchDistance >= pinchReleaseDistance || otherFingersCurl < 1.45f))
         {
             IsPinching = false;
             Debug.Log("PINCH END");

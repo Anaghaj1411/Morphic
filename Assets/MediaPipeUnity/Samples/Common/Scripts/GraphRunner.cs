@@ -100,7 +100,7 @@ namespace Mediapipe.Unity.Sample
 
     protected virtual void Start()
     {
-      _InstanceTable.Add(GetInstanceID(), this);
+      _InstanceTable.Add(GetEntityId(), this);
     }
 
     protected virtual void OnDestroy()
@@ -372,7 +372,7 @@ namespace Mediapipe.Unity.Sample
     protected void InitializeCalculatorGraph()
     {
       calculatorGraph = new CalculatorGraph();
-      _NameTable.Add(calculatorGraph.mpPtr, GetInstanceID());
+      _NameTable.Add(calculatorGraph.mpPtr, GetEntityId());
 
       // NOTE: There's a simpler way to initialize CalculatorGraph.
       //
