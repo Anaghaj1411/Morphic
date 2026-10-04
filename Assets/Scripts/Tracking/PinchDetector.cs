@@ -86,16 +86,17 @@ public class PinchDetector : MonoBehaviour
         float otherFingersCurl = hand.OtherFingersCurlRatio;
 
         // A fist requires middle, ring, and pinky fingers to be curled inward (<= 1.45f)
-        if (!IsFist && otherFingersCurl <= 1.45f)
+        float fistEnter = fistStartDistance > 1f ? fistStartDistance : 1.45f;
+        float fistExit = fistReleaseDistance > 1f ? fistReleaseDistance : 1.70f;
+
+        if (!IsFist && otherFingersCurl <= fistEnter)
         {
             IsFist = true;
             IsPinching = false;
-            Debug.Log("FIST START");
         }
-        else if (IsFist && otherFingersCurl >= 1.70f)
+        else if (IsFist && otherFingersCurl >= fistExit)
         {
             IsFist = false;
-            Debug.Log("FIST END");
         }
 
         if (IsFist)
@@ -110,13 +111,11 @@ public class PinchDetector : MonoBehaviour
             otherFingersCurl >= 1.55f)
         {
             IsPinching = true;
-            Debug.Log("PINCH START");
         }
         else if (IsPinching &&
                  (PinchDistance >= pinchReleaseDistance || otherFingersCurl < 1.45f))
         {
             IsPinching = false;
-            Debug.Log("PINCH END");
         }
     }
 }

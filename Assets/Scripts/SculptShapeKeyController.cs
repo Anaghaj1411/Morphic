@@ -1,98 +1,208 @@
 using UnityEngine;
 
-[ExecuteAlways]
 public class SculptShapeKeyController : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private SkinnedMeshRenderer skinnedMeshRenderer;
 
-    [Header("Shape Key Indexes")]
+    [Header("Shape Key Indices")]
     [SerializeField] private int widthIndex = 0;
-    [SerializeField] private int heightIndex = 1;
-    [SerializeField] private int depthIndex = 2;
+    [SerializeField] private int puffIndex = 1;
+    [SerializeField] private int bottomFlattenIndex = 2;
+    [SerializeField] private int topGatherIndex = 3;
+    [SerializeField] private int topPinchIndex = 4;
 
     [Header("Current Values")]
-    [Range(0f, 100f)]
+    [Range(0f, 1f)]
     [SerializeField] private float width = 0f;
 
-    [Range(0f, 100f)]
-    [SerializeField] private float height = 0f;
+    [Range(0f, 1f)]
+    [SerializeField] private float puff = 0f;
 
-    [Range(0f, 100f)]
-    [SerializeField] private float depth = 0f;
+    [Range(0f, 1f)]
+    [SerializeField] private float bottomFlatten = 0f;
 
-    private void OnEnable()
-    {
-        FindRenderer();
-        ApplyShapeKeys();
-    }
+    [Range(0f, 1f)]
+    [SerializeField] private float topGather = 0f;
 
-    private void Update()
-    {
-        FindRenderer();
-        ApplyShapeKeys();
-    }
+    [Range(0f, 1f)]
+    [SerializeField] private float topPinch = 0f;
 
-    private void OnValidate()
-    {
-        FindRenderer();
-        ApplyShapeKeys();
-    }
+    public float Width => width;
+    public float Puff => puff;
+    public float BottomFlatten => bottomFlatten;
+    public float TopGather => topGather;
+    public float TopPinch => topPinch;
 
-    private void FindRenderer()
+    private void Awake()
     {
         if (skinnedMeshRenderer == null)
-            skinnedMeshRenderer = GetComponent<SkinnedMeshRenderer>();
+        {
+            skinnedMeshRenderer =
+                GetComponent<SkinnedMeshRenderer>();
+        }
+
+        if (skinnedMeshRenderer == null)
+        {
+            Debug.LogError(
+                "SculptShapeKeyController: " +
+                "SkinnedMeshRenderer reference is missing."
+            );
+
+            return;
+        }
+
+        ResolveBlendShapeIndices();
+
+        width = 0f;
+        puff = 0f;
+        bottomFlatten = 0f;
+        topGather = 0f;
+        topPinch = 0f;
+
+        ApplyAllShapeKeys();
     }
 
-    private void ApplyShapeKeys()
+    private void ResolveBlendShapeIndices()
     {
-        if (skinnedMeshRenderer == null)
+        Mesh mesh = skinnedMeshRenderer.sharedMesh;
+
+        if (mesh == null)
+        {
             return;
+        }
 
-        if (skinnedMeshRenderer.sharedMesh == null)
-            return;
+        TryResolveIndex(mesh, ref widthIndex, "width");
+        TryResolveIndex(mesh, ref puffIndex, "puff");
+        TryResolveIndex(mesh, ref bottomFlattenIndex, "flatten");
+        TryResolveIndex(mesh, ref topGatherIndex, "gather");
+        if (!TryResolveIndex(mesh, ref topPinchIndex, "toppinch") &&
+            !TryResolveIndex(mesh, ref topPinchIndex, "top pinch"))
+        {
+            TryResolveIndex(mesh, ref topPinchIndex, "pinch");
+        }
+    }
 
-        if (widthIndex >= 0 && widthIndex < skinnedMeshRenderer.sharedMesh.blendShapeCount)
-            skinnedMeshRenderer.SetBlendShapeWeight(widthIndex, width);
+    private static bool TryResolveIndex(Mesh mesh, ref int index, string namePart)
+    {
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            string blendName = mesh.GetBlendShapeName(i);
 
-        if (heightIndex >= 0 && heightIndex < skinnedMeshRenderer.sharedMesh.blendShapeCount)
-            skinnedMeshRenderer.SetBlendShapeWeight(heightIndex, height);
+            if (!string.IsNullOrEmpty(blendName) &&
+                blendName.IndexOf(namePart, System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                index = i;
+                return true;
+            }
+        }
 
-        if (depthIndex >= 0 && depthIndex < skinnedMeshRenderer.sharedMesh.blendShapeCount)
-            skinnedMeshRenderer.SetBlendShapeWeight(depthIndex, depth);
+        return false;
     }
 
     public void SetWidth(float value)
     {
-        width = Mathf.Clamp(value, 0f, 100f);
-        ApplyShapeKeys();
+        width = Mathf.Clamp01(value);
+        ApplyShapeKey(widthIndex, width);
     }
 
-    public void SetHeight(float value)
+    public void SetPuff(float value)
     {
-        height = Mathf.Clamp(value, 0f, 100f);
-        ApplyShapeKeys();
+        puff = Mathf.Clamp01(value);
+        ApplyShapeKey(puffIndex, puff);
     }
 
-    public void SetDepth(float value)
+    public void SetBottomFlatten(float value)
     {
-        depth = Mathf.Clamp(value, 0f, 100f);
-        ApplyShapeKeys();
+        bottomFlatten = Mathf.Clamp01(value);
+        ApplyShapeKey(
+            bottomFlattenIndex,
+            bottomFlatten
+        );
     }
 
-    public float GetWidth()
+    public void SetTopGather(float value)
     {
-        return width;
+        topGather = Mathf.Clamp01(value);
+        ApplyShapeKey(
+            topGatherIndex,
+            topGather
+        );
     }
 
-    public float GetHeight()
+    public void SetTopPinch(float value)
     {
-        return height;
+        topPinch = Mathf.Clamp01(value);
+        ApplyShapeKey(
+            topPinchIndex,
+            topPinch
+        );
     }
 
-    public float GetDepth()
+    public void SetAllShapeKeys(
+        float widthValue,
+        float puffValue,
+        float bottomFlattenValue,
+        float topGatherValue,
+        float topPinchValue
+    )
     {
-        return depth;
+        width = Mathf.Clamp01(widthValue);
+        puff = Mathf.Clamp01(puffValue);
+        bottomFlatten =
+            Mathf.Clamp01(bottomFlattenValue);
+        topGather =
+            Mathf.Clamp01(topGatherValue);
+        topPinch =
+            Mathf.Clamp01(topPinchValue);
+
+        ApplyAllShapeKeys();
+    }
+
+    private void ApplyAllShapeKeys()
+    {
+        if (skinnedMeshRenderer == null)
+        {
+            return;
+        }
+
+        ApplyShapeKey(widthIndex, width);
+        ApplyShapeKey(puffIndex, puff);
+        ApplyShapeKey(
+            bottomFlattenIndex,
+            bottomFlatten
+        );
+        ApplyShapeKey(
+            topGatherIndex,
+            topGather
+        );
+        ApplyShapeKey(
+            topPinchIndex,
+            topPinch
+        );
+    }
+
+    private void ApplyShapeKey(int index, float value)
+    {
+        if (skinnedMeshRenderer == null)
+        {
+            return;
+        }
+
+        if (index < 0 ||
+            index >= skinnedMeshRenderer.sharedMesh.blendShapeCount)
+        {
+            Debug.LogError(
+                "SculptShapeKeyController: Invalid " +
+                $"BlendShape index {index}."
+            );
+
+            return;
+        }
+
+        skinnedMeshRenderer.SetBlendShapeWeight(
+            index,
+            value * 100f
+        );
     }
 }

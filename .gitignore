@@ -2,6 +2,8 @@
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #
+
+# Unity generated folders
 .utmp/
 /[Ll]ibrary/
 /[Tt]emp/
@@ -10,10 +12,14 @@
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
+
+# Unity recovery files
+/[Aa]ssets/[_]Recovery/
+
+# Log files
 *.log
 
 # MemoryCaptures can get excessive in size.
-# They also could contain extremely sensitive data
 /[Mm]emoryCaptures/
 
 # Recordings can get excessive in size

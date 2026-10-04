@@ -125,10 +125,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
         [Header("Landmark Smoothing")]
         [Range(1f, 100f)]
-        [SerializeField] private float landmarkSmoothingSpeed = 45f;
+        [SerializeField] private float landmarkSmoothingSpeed = 22f;
 
         [Range(0f, 0.02f)]
-        [SerializeField] private float landmarkDeadZone = 0.0001f;
+        [SerializeField] private float landmarkDeadZone = 0.001f;
+
+        [SerializeField] private float landmarkJumpLimit = 0.35f;
 
         private Experimental.TextureFramePool textureFramePool;
 
@@ -333,41 +335,169 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 return;
             }
 
-            if (!TryCreateHandFrame(
+            bool hasRawFirst = TryCreateHandFrame(
                 result.handLandmarks[0].landmarks,
                 out SculptHandFrame rawFirstHand
-            ))
+            );
+
+            if (!hasRawFirst)
             {
                 ClearHandTracking();
                 return;
             }
 
-            latestHand = SmoothHandFrame(
-                latestHand,
-                rawFirstHand,
-                ref hasSmoothedLatestHand
-            );
+            SculptHandFrame rawSecondHand = default;
+            bool hasRawSecond =
+                result.handLandmarks.Count > 1 &&
+                TryCreateHandFrame(
+                    result.handLandmarks[1].landmarks,
+                    out rawSecondHand
+                );
+
+            if (hasRawSecond)
+            {
+                AssignTwoHands(rawFirstHand, rawSecondHand);
+            }
+            else
+            {
+                AssignOneHand(rawFirstHand);
+            }
+
+            lastResultTime = Time.unscaledTime;
+        }
+
+        private void AssignOneHand(SculptHandFrame rawHand)
+        {
+            bool preferSecond =
+                hasSmoothedLatestHand &&
+                hasSmoothedSecondHand &&
+                PalmDistance(rawHand, secondHand) <
+                PalmDistance(rawHand, latestHand);
+
+            if (preferSecond)
+            {
+                latestHand = SmoothHandFrame(
+                    secondHand,
+                    rawHand,
+                    ref hasSmoothedLatestHand
+                );
+                hasSmoothedSecondHand = false;
+            }
+            else
+            {
+                latestHand = SmoothHandFrame(
+                    latestHand,
+                    rawHand,
+                    ref hasSmoothedLatestHand
+                );
+            }
 
             hasLatestHand = true;
             hasSecondHand = false;
-            hasSmoothedSecondHand = false;
+        }
 
-            if (result.handLandmarks.Count > 1 &&
-                TryCreateHandFrame(
-                    result.handLandmarks[1].landmarks,
-                    out SculptHandFrame rawSecondHand
-                ))
+        private void AssignTwoHands(
+            SculptHandFrame rawFirstHand,
+            SculptHandFrame rawSecondHand
+        )
+        {
+            if (!hasSmoothedLatestHand)
             {
+                latestHand = rawFirstHand;
+                secondHand = rawSecondHand;
+                hasSmoothedLatestHand = true;
+                hasSmoothedSecondHand = true;
+                hasLatestHand = true;
+                hasSecondHand = true;
+                return;
+            }
+
+            if (!hasSmoothedSecondHand)
+            {
+                bool firstCloser =
+                    PalmDistance(rawFirstHand, latestHand) <=
+                    PalmDistance(rawSecondHand, latestHand);
+
+                if (firstCloser)
+                {
+                    latestHand = SmoothHandFrame(
+                        latestHand,
+                        rawFirstHand,
+                        ref hasSmoothedLatestHand
+                    );
+                    secondHand = SmoothHandFrame(
+                        secondHand,
+                        rawSecondHand,
+                        ref hasSmoothedSecondHand
+                    );
+                }
+                else
+                {
+                    latestHand = SmoothHandFrame(
+                        latestHand,
+                        rawSecondHand,
+                        ref hasSmoothedLatestHand
+                    );
+                    secondHand = SmoothHandFrame(
+                        secondHand,
+                        rawFirstHand,
+                        ref hasSmoothedSecondHand
+                    );
+                }
+
+                hasLatestHand = true;
+                hasSecondHand = true;
+                return;
+            }
+
+            float keepOrder =
+                PalmDistance(rawFirstHand, latestHand) +
+                PalmDistance(rawSecondHand, secondHand);
+
+            float swapOrder =
+                PalmDistance(rawSecondHand, latestHand) +
+                PalmDistance(rawFirstHand, secondHand);
+
+            if (swapOrder < keepOrder)
+            {
+                latestHand = SmoothHandFrame(
+                    latestHand,
+                    rawSecondHand,
+                    ref hasSmoothedLatestHand
+                );
+                secondHand = SmoothHandFrame(
+                    secondHand,
+                    rawFirstHand,
+                    ref hasSmoothedSecondHand
+                );
+            }
+            else
+            {
+                latestHand = SmoothHandFrame(
+                    latestHand,
+                    rawFirstHand,
+                    ref hasSmoothedLatestHand
+                );
                 secondHand = SmoothHandFrame(
                     secondHand,
                     rawSecondHand,
                     ref hasSmoothedSecondHand
                 );
-
-                hasSecondHand = true;
             }
 
-            lastResultTime = Time.unscaledTime;
+            hasLatestHand = true;
+            hasSecondHand = true;
+        }
+
+        private static float PalmDistance(
+            SculptHandFrame firstHand,
+            SculptHandFrame otherHand
+        )
+        {
+            return Vector2.Distance(
+                new Vector2(firstHand.PalmCenter.x, firstHand.PalmCenter.y),
+                new Vector2(otherHand.PalmCenter.x, otherHand.PalmCenter.y)
+            );
         }
 
         private void ClearHandTracking()
@@ -393,6 +523,11 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 hasPreviousHand = true;
                 return rawHand;
             }
+
+            float palmWidth = SmoothScalar(
+                previousHand.PalmWidth,
+                rawHand.PalmWidth
+            );
 
             return new SculptHandFrame(
                 SmoothPoint(
@@ -423,7 +558,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                     previousHand.PinkyTip,
                     rawHand.PinkyTip
                 ),
-                rawHand.PalmWidth
+                palmWidth
             );
         }
 
@@ -432,11 +567,9 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             Vector3 targetPoint
         )
         {
-            float distSqr = (targetPoint - currentPoint).sqrMagnitude;
-            float deadZoneSquared =
-                landmarkDeadZone * landmarkDeadZone;
+            float distance = Vector3.Distance(currentPoint, targetPoint);
 
-            if (distSqr <= deadZoneSquared)
+            if (distance <= landmarkDeadZone)
             {
                 return currentPoint;
             }
@@ -447,11 +580,32 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                     Time.deltaTime
                 );
 
+            if (distance > landmarkJumpLimit)
+            {
+                t *= 0.45f;
+            }
+
             return Vector3.Lerp(
                 currentPoint,
                 targetPoint,
                 t
             );
+        }
+
+        private float SmoothScalar(float currentValue, float targetValue)
+        {
+            if (Mathf.Abs(targetValue - currentValue) <= landmarkDeadZone)
+            {
+                return currentValue;
+            }
+
+            float t =
+                1f - Mathf.Exp(
+                    -landmarkSmoothingSpeed *
+                    Time.deltaTime
+                );
+
+            return Mathf.Lerp(currentValue, targetValue, t);
         }
 
         private bool TryCreateHandFrame(

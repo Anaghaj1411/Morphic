@@ -75,6 +75,9 @@ public class PinchSculptBrush : MonoBehaviour
 
     [SerializeField] private MeshHistory meshHistory;
 
+    [Header("AI Behavior Tracking")]
+    [SerializeField] private MorphicAIBehaviorTracker behaviorTracker;
+
     private Mesh sculptMesh;
 
     private Vector3[] vertices;
@@ -275,6 +278,12 @@ public class PinchSculptBrush : MonoBehaviour
                 GetComponent<MeshHistory>();
         }
 
+        if (behaviorTracker == null)
+        {
+            behaviorTracker =
+                FindFirstObjectByType<MorphicAIBehaviorTracker>();
+        }
+
         CreateBrushCursor();
     }
 
@@ -336,10 +345,17 @@ public class PinchSculptBrush : MonoBehaviour
 
             if (pinchDetector.IsPinching)
             {
-                if (!wasPinching &&
-                    meshHistory != null)
+                if (!wasPinching)
                 {
-                    meshHistory.SaveState();
+                    if (meshHistory != null)
+                    {
+                        meshHistory.SaveState();
+                    }
+
+                    if (behaviorTracker != null)
+                    {
+                        behaviorTracker.RecordStroke();
+                    }
                 }
 
                 SculptAt(
@@ -384,6 +400,13 @@ public class PinchSculptBrush : MonoBehaviour
     )
     {
         sculptMode = mode;
+
+        if (behaviorTracker != null)
+        {
+            behaviorTracker.SetCurrentTool(
+                mode.ToString()
+            );
+        }
 
         UpdateCursorColor();
     }
