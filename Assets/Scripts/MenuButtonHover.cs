@@ -40,8 +40,17 @@ public class MenuButtonHover : MonoBehaviour
 
         if (visualTarget == null)
         {
+            // When built from code, the references are assigned just
+            // after AddComponent, which runs Awake first. Falling back
+            // to this object's own rect keeps hover working.
+            visualTarget = GetComponent<RectTransform>();
+        }
+
+        if (visualTarget == null)
+        {
             Debug.LogError(
-                $"MenuButtonHover on {gameObject.name}: Visual Target is missing."
+                $"MenuButtonHover on {gameObject.name}: " +
+                "no RectTransform is available for the Visual Target."
             );
 
             enabled = false;

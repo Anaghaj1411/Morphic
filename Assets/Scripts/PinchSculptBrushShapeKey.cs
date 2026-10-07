@@ -24,6 +24,13 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
     [Range(0.01f, 1f)]
     [SerializeField] private float flattenStrength = 0.30f;
 
+    [Header("Crease")]
+    [Range(0.01f, 1f)]
+    [SerializeField] private float creaseStrength = 0.35f;
+
+    [Range(1f, 8f)]
+    [SerializeField] private float creaseSharpness = 4f;
+
     [SerializeField] private Color inflateCursorColor =
         Color.cyan;
 
@@ -38,6 +45,9 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
 
     [SerializeField] private Color flattenCursorColor =
         new Color(1f, 0.2f, 0.65f);
+
+    [SerializeField] private Color creaseCursorColor =
+        new Color(0.95f, 0.85f, 0.25f);
 
     [Header("Tracking")]
     [SerializeField] private PinchDetector pinchDetector;
@@ -108,6 +118,8 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
                 return grabStrength;
             case SculptToolMode.Flatten:
                 return flattenStrength;
+            case SculptToolMode.Crease:
+                return creaseStrength;
             default:
                 return inflateStrength;
         }
@@ -140,6 +152,11 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
             case SculptToolMode.Flatten:
                 flattenStrength =
                     Mathf.Clamp(flattenStrength + amount, 0.01f, 1f);
+                break;
+
+            case SculptToolMode.Crease:
+                creaseStrength =
+                    Mathf.Clamp(creaseStrength + amount, 0.01f, 1f);
                 break;
         }
     }
@@ -317,6 +334,10 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
         {
             sculptMode = SculptToolMode.Flatten;
         }
+        else if (sculptMode == SculptToolMode.Flatten)
+        {
+            sculptMode = SculptToolMode.Crease;
+        }
         else
         {
             sculptMode = SculptToolMode.Inflate;
@@ -370,6 +391,10 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
         else if (Input.GetKeyDown(KeyCode.Alpha5))
         {
             SetSculptMode(SculptToolMode.Flatten);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha6))
+        {
+            SetSculptMode(SculptToolMode.Crease);
         }
         else if (Input.GetKeyDown(KeyCode.LeftBracket))
         {
@@ -763,6 +788,67 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
             return;
         }
 
+        if (sculptMode == SculptToolMode.Crease)
+        {
+            float creaseRate =
+                Mathf.Clamp01(8f * Time.deltaTime);
+
+            float creaseScale =
+                creaseRate *
+                (creaseStrength / 0.35f);
+
+            foreach (int[] group in weldedVertexGroups)
+            {
+                int firstVertexIndex = group[0];
+
+                Vector3 currentPos =
+                    vertices[firstVertexIndex];
+
+                float distance = Vector3.Distance(
+                    currentPos,
+                    localBrushPosition
+                );
+
+                if (distance > localRadius)
+                {
+                    continue;
+                }
+
+                Vector3 averagedNormal = Vector3.zero;
+
+                foreach (int vertexIndex in group)
+                {
+                    averagedNormal += normals[vertexIndex];
+                }
+
+                averagedNormal.Normalize();
+
+                if (averagedNormal == Vector3.zero)
+                {
+                    continue;
+                }
+
+                float falloff =
+                    1f - distance / localRadius;
+
+                float profile =
+                    Mathf.Pow(falloff, creaseSharpness);
+
+                float displacement =
+                    localStrength * creaseScale * profile;
+
+                Vector3 movement =
+                    -averagedNormal * displacement;
+
+                foreach (int vertexIndex in group)
+                {
+                    vertices[vertexIndex] += movement;
+                }
+            }
+
+            return;
+        }
+
         foreach (int[] group in weldedVertexGroups)
         {
             int firstVertexIndex = group[0];
@@ -892,6 +978,10 @@ public class PinchSculptBrushShapeKey : MonoBehaviour
         else if (sculptMode == SculptToolMode.Flatten)
         {
             targetColor = flattenCursorColor;
+        }
+        else if (sculptMode == SculptToolMode.Crease)
+        {
+            targetColor = creaseCursorColor;
         }
 
         cursorMaterial.SetColor(

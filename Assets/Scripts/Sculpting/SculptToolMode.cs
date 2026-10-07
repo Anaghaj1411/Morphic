@@ -4,5 +4,7 @@ public enum SculptToolMode
     Indent,
     Smooth,
     Grab,
-    Flatten
+    Flatten,
+    Crease,
+    Stretch
 }

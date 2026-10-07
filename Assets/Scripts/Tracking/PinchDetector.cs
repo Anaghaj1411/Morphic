@@ -14,6 +14,19 @@ public class PinchDetector : MonoBehaviour
     [SerializeField] private float fistStartDistance = 2.20f;
     [SerializeField] private float fistReleaseDistance = 2.50f;
 
+    // Curl-ratio fallbacks, used when the values above are not ratios.
+    // Lowered from the old hard-coded 1.45/1.70 so that a natural pinch
+    // (other fingers relaxed) is no longer misread as a fist.
+    [SerializeField] private float fistCurlEnter = 1.05f;
+    [SerializeField] private float fistCurlExit = 1.30f;
+
+    [Header("Pinch Finger Extension")]
+    // How extended the middle/ring/pinky fingers must be for a pinch to count.
+    // The old hard-coded 1.55 sat just above the fist threshold, so in practice
+    // only a fully splayed hand could ever register a pinch.
+    [SerializeField] private float pinchMinOtherExtension = 1.10f;
+    [SerializeField] private float pinchReleaseOtherExtension = 0.95f;
+
     [Header("Smoothing")]
     [SerializeField] private float smoothingSpeed = 28f;
 
@@ -85,9 +98,9 @@ public class PinchDetector : MonoBehaviour
 
         float otherFingersCurl = hand.OtherFingersCurlRatio;
 
-        // A fist requires middle, ring, and pinky fingers to be curled inward (<= 1.45f)
-        float fistEnter = fistStartDistance > 1f ? fistStartDistance : 1.45f;
-        float fistExit = fistReleaseDistance > 1f ? fistReleaseDistance : 1.70f;
+        // A fist requires middle, ring, and pinky fingers to be curled inward.
+        float fistEnter = fistStartDistance > 1f ? fistStartDistance : fistCurlEnter;
+        float fistExit = fistReleaseDistance > 1f ? fistReleaseDistance : fistCurlExit;
 
         if (!IsFist && otherFingersCurl <= fistEnter)
         {
@@ -105,15 +118,17 @@ public class PinchDetector : MonoBehaviour
             return;
         }
 
-        // A pinch requires thumb and index to touch AND middle/ring/pinky to be extended (>= 1.55f)
+        // A pinch requires thumb and index to touch. The other three fingers
+        // only need to stay out of a fist, not be fully splayed.
         if (!IsPinching &&
             PinchDistance <= pinchStartDistance &&
-            otherFingersCurl >= 1.55f)
+            otherFingersCurl >= pinchMinOtherExtension)
         {
             IsPinching = true;
         }
         else if (IsPinching &&
-                 (PinchDistance >= pinchReleaseDistance || otherFingersCurl < 1.45f))
+                 (PinchDistance >= pinchReleaseDistance ||
+                  otherFingersCurl < pinchReleaseOtherExtension))
         {
             IsPinching = false;
         }

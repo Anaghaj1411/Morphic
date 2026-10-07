@@ -116,11 +116,14 @@ public class ClayColorPainter : MonoBehaviour
 
         vertexColors = new Color[vertexCount];
 
-        // Starting clay color.
+        // Starting clay color. Matches the light grey clay material so
+        // the untouched surface matches the base colour; a
+        // different tone here would tint the whole mesh and hide
+        // the sculpting.
         Color startingColor = new Color(
-            0.65f,
-            0.45f,
-            0.30f,
+            0.82f,
+            0.82f,
+            0.83f,
             1f
         );
 

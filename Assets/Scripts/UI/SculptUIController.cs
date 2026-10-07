@@ -55,7 +55,9 @@ public class SculptUIController : MonoBehaviour
     private void OnGUI()
     {
         if (!showSidePanel ||
-            sculptBrush == null)
+            sculptBrush == null ||
+            (ParametricSkyLantern.Active != null &&
+             ParametricSkyLantern.Active.GuidedModeEnabled))
         {
             return;
         }
@@ -63,7 +65,7 @@ public class SculptUIController : MonoBehaviour
         CreateStyles();
 
         panelSize =
-            new Vector2(145f, 400f);
+            new Vector2(145f, 430f);
 
         Rect panelRect =
             new Rect(
@@ -203,6 +205,16 @@ public class SculptUIController : MonoBehaviour
         DrawToolButton(
             "Flatten",
             SculptToolMode.Flatten
+        );
+
+        DrawToolButton(
+            "Crease",
+            SculptToolMode.Crease
+        );
+
+        DrawToolButton(
+            "Stretch",
+            SculptToolMode.Stretch
         );
     }
 
