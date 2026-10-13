@@ -54,6 +54,10 @@ public class DialogueManager : MonoBehaviour
     [SerializeField] private GameObject taiwanLantern;
     [SerializeField] private Transform taiwanLanternSpawnPoint;
 
+    [Header("India Teapot")]
+    [Tooltip("Teapot_test scene instance to show when India sculpting starts.")]
+    [SerializeField] private GameObject indiaTeapot;
+
     [Header("Taiwan Hand Tracking")]
     [SerializeField] private GameObject taiwanHandTracking;
     [SerializeField] private GameObject taiwanGestureController;
@@ -77,6 +81,14 @@ public class DialogueManager : MonoBehaviour
     private void Awake()
     {
         FindMissingReferences();
+
+        // The teapot is placed in the scene like the lantern, but stays hidden
+        // until the user chooses India and presses Start Sculpting.
+        if (indiaTeapot == null)
+            indiaTeapot = FindSceneObject("Teapot_test");
+
+        if (indiaTeapot != null)
+            indiaTeapot.SetActive(false);
 
         AddHoverEffect(taiwanButton);
         AddHoverEffect(indiaButton);
@@ -802,6 +814,22 @@ public class DialogueManager : MonoBehaviour
 
             case "India":
                 Debug.Log("MORPHIC: India selected - Teapot");
+
+                if (indiaTeapot != null)
+                {
+                    // Keep the teapot's Inspector-configured position, rotation,
+                    // and scale, just as the Taiwan lantern keeps its scene setup.
+                    indiaTeapot.SetActive(true);
+                    Debug.Log("MORPHIC: India Teapot activated.");
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        "MORPHIC: India Teapot reference is missing. " +
+                        "Add the Teapot_test scene object and assign it to " +
+                        "DialogueManager > India Teapot."
+                    );
+                }
                 break;
 
             case "Indonesia":
@@ -875,6 +903,19 @@ public class DialogueManager : MonoBehaviour
     {
         if (cultureChoicesPanel != null)
             cultureChoicesPanel.SetActive(false);
+    }
+
+    private static GameObject FindSceneObject(string objectName)
+    {
+        // Find inactive scene instances too; exclude prefab assets returned by
+        // Resources.FindObjectsOfTypeAll so this never toggles an asset itself.
+        foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+        {
+            if (candidate.name == objectName && candidate.scene.IsValid())
+                return candidate;
+        }
+
+        return null;
     }
 
     private void HideAllChoices()

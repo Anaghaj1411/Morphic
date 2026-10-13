@@ -2500,8 +2500,9 @@ MonoBehaviour:
   middleMaxPinchSeparation: 4
   middleHoldStillTolerance: 0.05
   singleThumbModeGracePeriod: 0.4
-  popUpMinimumHandHeight: 0.15
-  popUpMaximumHandHeight: 0.6
+  popUpMinimumHandHeight: 0.1
+  popUpMaximumHandHeight: 0.42
+  popUpGestureActivationTime: 0.08
   bambooMinimumVSeparation: 1.2
   bambooMaximumVSeparation: 4
   gestureLockHoldDuration: 1

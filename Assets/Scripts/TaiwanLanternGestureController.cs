@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 using Mediapipe.Unity.Sample.HandLandmarkDetection;
 
@@ -48,8 +49,9 @@ public class TaiwanLanternGestureController : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float singleThumbModeGracePeriod = 0.4f;
 
     [Header("Pop-Up: Single-Hand Pinch Height")]
-    [SerializeField, Range(0f, 1f)] private float popUpMinimumHandHeight = 0.15f;
-    [SerializeField, Range(0f, 1f)] private float popUpMaximumHandHeight = 0.6f;
+    [SerializeField, Range(0f, 1f)] private float popUpMinimumHandHeight = 0.10f;
+    [SerializeField, Range(0f, 1f)] private float popUpMaximumHandHeight = 0.42f;
+    [SerializeField, Min(0.01f)] private float popUpGestureActivationTime = 0.08f;
 
     [Header("Pop-Up Bamboo: Two-Hand V Spacing")]
     [SerializeField, Min(0.1f)] private float bambooMinimumVSeparation = 1.2f;
@@ -99,6 +101,14 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private float gestureActivationTimer = 0f;
     private const float GESTURE_ACTIVATION_TIME = 0.2f;
 
+    private CanvasGroup progressCardGroup;
+    private TMP_Text progressPartText;
+    private TMP_Text progressPercentText;
+    private Image progressBarFill;
+    private Image progressAccentStripe;
+    private Color progressAccent = new Color32(77, 220, 203, 255);
+    private bool showProgressCard;
+
     private const int WIDTH = 0;
     private const int HEIGHT = 1;
     private const int TOPPER = 2;
@@ -120,6 +130,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
         shapeNames[POP_BOTTOM] = popUpBottomShape;
 
         FindBlendShapes();
+        CreateProgressCard();
     }
 
     private void FindBlendShapes()
@@ -293,7 +304,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
                 else
                     gestureActivationTimer += dt;
 
-                if (gestureActivationTimer >= GESTURE_ACTIVATION_TIME)
+                if (gestureActivationTimer >= GetGestureActivationTime(detectedGesture))
                 {
                     currentGestureName = detectedGesture;
                     gestureLocked = false;
@@ -333,7 +344,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
             else
             {
                 gestureActivationTimer += dt;
-                if (gestureActivationTimer >= GESTURE_ACTIVATION_TIME)
+                if (gestureActivationTimer >= GetGestureActivationTime(detectedGesture))
                 {
                     currentGestureName = candidateGestureName;
                     gestureActivationTimer = 0f;
@@ -362,6 +373,8 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
     private void LateUpdate()
     {
+        UpdateProgressCardFade();
+
         if (lanternRenderer == null)
             return;
 
@@ -438,14 +451,23 @@ public class TaiwanLanternGestureController : MonoBehaviour
             : "RIGHT THUMB ROTATION";
     }
 
-    private static SculptHandFrame GetPopUpControlHand(
+    private SculptHandFrame GetPopUpControlHand(
         SculptHandFrame first,
         SculptHandFrame second,
         bool hasTwoHands,
         bool controlPhysicalRightHand)
     {
-        // This scene mirrors the webcam preview, so MediaPipe's handedness
-        // label is opposite the user's physical left/right hand.
+        // Prefer the hand that is actually pinching. Looking it up again from
+        // handedness can select the other hand if MediaPipe changes hand order
+        // or its mirrored label during tracking, which delayed the top pop-up.
+        bool firstPinching = IsPinching(first);
+        bool secondPinching = hasTwoHands && IsPinching(second);
+        if (firstPinching != secondPinching)
+            return firstPinching ? first : second;
+
+        if (!hasTwoHands && firstPinching)
+            return first;
+
         bool expectedMediaPipeRight = !controlPhysicalRightHand;
         if (first.HasHandedness && first.IsRightHand == expectedMediaPipeRight)
             return first;
@@ -583,6 +605,14 @@ public class TaiwanLanternGestureController : MonoBehaviour
         }
 
         return Mathf.Sign(change) * (magnitude - movementDeadZone);
+    }
+
+    private float GetGestureActivationTime(string gesture)
+    {
+        if (gesture == "POP UP TOP PINCH" || gesture == "POP UP BOTTOM PINCH")
+            return popUpGestureActivationTime;
+
+        return GESTURE_ACTIVATION_TIME;
     }
 
     private void ApplyPinchGesture(SculptHandFrame hand, int shapeIndex, float factor)
@@ -925,5 +955,214 @@ public class TaiwanLanternGestureController : MonoBehaviour
     {
         if (gestureIndicator != null)
             gestureIndicator.text = message;
+
+        UpdateProgressCard(message);
+    }
+
+    private bool TryGetProgressInfo(string message, out string label, out float percentage)
+    {
+        label = null;
+        percentage = 0f;
+        if (currentGestureName == "NONE" || message.Contains("NO HANDS"))
+            return false;
+
+        switch (currentGestureName)
+        {
+            case "INDEX FINGERS":
+                label = "WIDTH + HEIGHT";
+                percentage = (GetProgressPercent(WIDTH) + GetProgressPercent(HEIGHT)) * 0.5f;
+                return true;
+            case "DOUBLE PINCH":
+                label = "MIDDLE";
+                percentage = GetProgressPercent(MIDDLE);
+                return true;
+            case "BAMBOO V SPACING":
+                label = "BAMBOO";
+                percentage = GetProgressPercent(POP_BAMBOO);
+                return true;
+            case "POP UP TOP PINCH":
+                label = "TOP POP-UP";
+                percentage = GetProgressPercent(POP_TOP);
+                return true;
+            case "POP UP BOTTOM PINCH":
+                label = "BOTTOM POP-UP";
+                percentage = GetProgressPercent(POP_BOTTOM);
+                return true;
+            case "RIGHT THUMB ROTATION":
+                label = "TOPPER";
+                percentage = GetProgressPercent(TOPPER);
+                return true;
+            case "LEFT THUMB ROTATION":
+                label = "BOTTOM";
+                percentage = GetProgressPercent(BOTTOM);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private float GetProgressPercent(int slot)
+    {
+        float maximum = Mathf.Max(shapeMaximumWeights[slot], 0.001f);
+        return Mathf.Clamp01(currentWeights[slot] / maximum) * 100f;
+    }
+
+    private void CreateProgressCard()
+    {
+        if (progressCardGroup != null || gestureIndicator == null ||
+            gestureIndicator.transform.parent == null)
+            return;
+
+        Transform canvasParent = gestureIndicator.transform.parent;
+        GameObject card = new GameObject("LanternProgressCard",
+            typeof(RectTransform), typeof(CanvasGroup), typeof(Image), typeof(Outline));
+        card.transform.SetParent(canvasParent, false);
+        card.transform.SetAsLastSibling();
+
+        RectTransform cardRect = card.GetComponent<RectTransform>();
+        cardRect.anchorMin = Vector2.one;
+        cardRect.anchorMax = Vector2.one;
+        cardRect.pivot = Vector2.one;
+        cardRect.anchoredPosition = new Vector2(-24f, -24f);
+        cardRect.sizeDelta = new Vector2(310f, 112f);
+
+        Image background = card.GetComponent<Image>();
+        background.color = new Color32(15, 24, 38, 242);
+        Sprite panelSprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Background.psd");
+        if (panelSprite != null)
+        {
+            background.sprite = panelSprite;
+            background.type = Image.Type.Sliced;
+        }
+
+        Outline outline = card.GetComponent<Outline>();
+        outline.effectColor = new Color32(82, 188, 189, 105);
+        outline.effectDistance = new Vector2(1f, -1f);
+
+        RectTransform accentRect = new GameObject("AccentStripe",
+            typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        accentRect.SetParent(card.transform, false);
+        accentRect.anchorMin = new Vector2(0f, 0f);
+        accentRect.anchorMax = new Vector2(0f, 1f);
+        accentRect.pivot = new Vector2(0f, 0.5f);
+        accentRect.anchoredPosition = Vector2.zero;
+        accentRect.sizeDelta = new Vector2(4f, -18f);
+        progressAccentStripe = accentRect.GetComponent<Image>();
+        progressAccentStripe.color = progressAccent;
+
+        progressCardGroup = card.GetComponent<CanvasGroup>();
+        progressCardGroup.alpha = 0f;
+        progressCardGroup.interactable = false;
+        progressCardGroup.blocksRaycasts = false;
+
+        progressPartText = CreateProgressLabel(card.transform, "Part",
+            new Vector2(18f, -38f), new Vector2(190f, 28f), 19f,
+            Color.white, TextAlignmentOptions.Left, FontStyles.Bold);
+        TMP_Text header = CreateProgressLabel(card.transform, "Header",
+            new Vector2(18f, -14f), new Vector2(190f, 17f), 11f,
+            new Color32(155, 187, 202, 255), TextAlignmentOptions.Left, FontStyles.Bold);
+        header.text = "LIVE SCULPTING";
+        progressPercentText = CreateProgressLabel(card.transform, "Percent",
+            new Vector2(-16f, -31f), new Vector2(92f, 34f), 25f,
+            progressAccent, TextAlignmentOptions.Right, FontStyles.Bold);
+        RectTransform percentRect = progressPercentText.rectTransform;
+        percentRect.anchorMin = Vector2.one;
+        percentRect.anchorMax = Vector2.one;
+        percentRect.pivot = Vector2.one;
+
+        RectTransform barBackgroundRect = new GameObject("ProgressTrack",
+            typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        barBackgroundRect.SetParent(card.transform, false);
+        barBackgroundRect.anchorMin = new Vector2(0f, 0f);
+        barBackgroundRect.anchorMax = new Vector2(1f, 0f);
+        barBackgroundRect.pivot = new Vector2(0.5f, 0f);
+        barBackgroundRect.anchoredPosition = new Vector2(0f, 16f);
+        barBackgroundRect.sizeDelta = new Vector2(-36f, 8f);
+        barBackgroundRect.GetComponent<Image>().color = new Color32(48, 63, 79, 255);
+
+        RectTransform fillRect = new GameObject("ProgressFill",
+            typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        fillRect.SetParent(barBackgroundRect, false);
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = Vector2.zero;
+        fillRect.offsetMax = Vector2.zero;
+        progressBarFill = fillRect.GetComponent<Image>();
+        progressBarFill.sprite = panelSprite;
+        progressBarFill.type = Image.Type.Filled;
+        progressBarFill.fillMethod = Image.FillMethod.Horizontal;
+        progressBarFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        progressBarFill.color = progressAccent;
+        progressBarFill.fillAmount = 0f;
+    }
+
+    private TMP_Text CreateProgressLabel(
+        Transform parent,
+        string objectName,
+        Vector2 anchoredPosition,
+        Vector2 size,
+        float fontSize,
+        Color color,
+        TextAlignmentOptions alignment,
+        FontStyles style)
+    {
+        GameObject labelObject = new GameObject(objectName,
+            typeof(RectTransform), typeof(TextMeshProUGUI));
+        labelObject.transform.SetParent(parent, false);
+        RectTransform rect = labelObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 1f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = size;
+
+        TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
+        label.font = gestureIndicator.font;
+        label.fontSize = fontSize;
+        label.fontStyle = style;
+        label.color = color;
+        label.alignment = alignment;
+        label.text = string.Empty;
+        label.raycastTarget = false;
+        label.textWrappingMode = TextWrappingModes.NoWrap;
+        return label;
+    }
+
+    private void UpdateProgressCard(string message)
+    {
+        if (progressCardGroup == null || !TryGetProgressInfo(message, out string label, out float percentage))
+        {
+            showProgressCard = false;
+            return;
+        }
+
+        showProgressCard = true;
+        progressAccent = GetProgressAccentColor();
+        progressPartText.text = label;
+        progressPercentText.text = Mathf.RoundToInt(percentage) + "%";
+        progressPercentText.color = progressAccent;
+        progressAccentStripe.color = progressAccent;
+        progressBarFill.color = progressAccent;
+        progressBarFill.fillAmount = percentage / 100f;
+    }
+
+    private Color GetProgressAccentColor()
+    {
+        if (currentGestureName == "BAMBOO V SPACING")
+            return new Color32(244, 185, 91, 255);
+        if (currentGestureName == "POP UP TOP PINCH" ||
+            currentGestureName == "POP UP BOTTOM PINCH")
+            return new Color32(77, 220, 203, 255);
+        return new Color32(139, 164, 255, 255);
+    }
+
+    private void UpdateProgressCardFade()
+    {
+        if (progressCardGroup == null)
+            return;
+
+        float targetAlpha = showProgressCard ? 1f : 0f;
+        progressCardGroup.alpha = Mathf.MoveTowards(
+            progressCardGroup.alpha, targetAlpha, Time.unscaledDeltaTime * 5f);
     }
 }
