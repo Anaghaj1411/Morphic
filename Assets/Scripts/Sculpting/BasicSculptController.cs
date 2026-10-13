@@ -14,52 +14,80 @@ public class BasicSculptController : MonoBehaviour
     private Vector3 startingScale;
     private Quaternion startingRotation;
 
-    void Start()
+    private void Start()
     {
         startingScale = transform.localScale;
         startingRotation = transform.rotation;
     }
 
-    void Update()
+    private void Update()
     {
         Keyboard keyboard = Keyboard.current;
 
         if (keyboard == null)
+        {
             return;
+        }
 
         if (keyboard.aKey.isPressed)
+        {
             ChangeWidth(-scaleSpeed * Time.deltaTime);
+        }
 
         if (keyboard.dKey.isPressed)
+        {
             ChangeWidth(scaleSpeed * Time.deltaTime);
+        }
 
         if (keyboard.sKey.isPressed)
+        {
             ChangeHeight(-scaleSpeed * Time.deltaTime);
+        }
 
         if (keyboard.wKey.isPressed)
+        {
             ChangeHeight(scaleSpeed * Time.deltaTime);
+        }
 
         if (keyboard.qKey.isPressed)
+        {
             RotateSculpture(-rotationSpeed * Time.deltaTime);
+        }
 
         if (keyboard.eKey.isPressed)
+        {
             RotateSculpture(rotationSpeed * Time.deltaTime);
+        }
 
         if (keyboard.rKey.wasPressedThisFrame)
+        {
             ResetSculpture();
+        }
     }
 
     public void ChangeWidth(float amount)
     {
         Vector3 newScale = transform.localScale;
-        newScale.x = Mathf.Clamp(newScale.x + amount, minimumScale, maximumScale);
+
+        newScale.x = Mathf.Clamp(
+            newScale.x + amount,
+            minimumScale,
+            maximumScale
+        );
+
         transform.localScale = newScale;
     }
 
     public void ChangeHeight(float amount)
     {
         Vector3 newScale = transform.localScale;
-        newScale.y = Mathf.Clamp(newScale.y + amount, minimumScale, maximumScale);
+
+        newScale.y = Mathf.Clamp(
+            newScale.y + amount,
+            minimumScale,
+            maximumScale
+        );
+
         transform.localScale = newScale;
     }
 

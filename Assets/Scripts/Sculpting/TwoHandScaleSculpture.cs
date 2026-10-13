@@ -45,6 +45,7 @@ public class TwoHandScaleSculpture : MonoBehaviour
 
     private void Awake()
     {
+        scaleMode = ScaleMode.IndependentXY;
         FindTrackingComponents();
     }
 
