@@ -1,0 +1,137 @@
+C:\Users\anagh\Documents\Morphic\Assets\Editor\MorphicCameraTools.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\ImageSource\ImageSource.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\ImageSource\ImageSourceType.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\ImageSource\StaticImageSource.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\ImageSource\VideoSource.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\ImageSource\WebCamSource.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\AppSettings.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\AssetLoader.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\Bootstrap.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\EnumExtension.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\GraphRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\ImageReadMode.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\ImageSourceProvider.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\InferenceMode.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\LegacySolutionRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\RunningMode.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\Screen.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\TaskApiRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\VisionTaskApiRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Common\Scripts\WaitForResult.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\External\FontAwesome\UnicodeInlineText.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Face Detection\FaceDetectionConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Face Detection\FaceDetectionConfigWindow.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Face Detection\FaceDetectorRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Face Landmark Detection\FaceLandmarkDetectionConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Face Landmark Detection\FaceLandmarkDetectionConfigWindow.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Face Landmark Detection\FaceLandmarkerRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Hand Landmark Detection\HandLandmarkDetectionConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Hand Landmark Detection\HandLandmarkDetectionConfigWindow.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Hand Landmark Detection\HandLandmarkerRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Image Segmentation\ImageSegmentationConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Image Segmentation\ImageSegmentationConfigWindow.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Image Segmentation\ImageSegmenterRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Legacy\Holistic\HolisticTrackingConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Legacy\Holistic\HolisticTrackingGraph.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Legacy\Holistic\HolisticTrackingSolution.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Legacy\MediaPipe Video\MediaPipeVideoConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Legacy\MediaPipe Video\MediaPipeVideoGraph.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Legacy\MediaPipe Video\MediaPipeVideoSolution.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Object Detection\ObjectDetectionConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Object Detection\ObjectDetectionConfigWindows.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Object Detection\ObjectDetectorRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Pose Landmark Detection\PoseLandmarkDetectionConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Pose Landmark Detection\PoseLandmarkDetectionConfigWindow.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\Scenes\Pose Landmark Detection\PoseLandmarkerRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\UI\Scripts\AutoFit.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\UI\Scripts\ImageSourceConfig.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\UI\Scripts\Modal.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\UI\Scripts\ModalButton.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\UI\Scripts\ModalContents.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Samples\UI\Scripts\SolutionMenu.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Tutorial\Custom Graph\FaceMeshLegacy.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Tutorial\Hello World\HelloWorld.cs
+C:\Users\anagh\Documents\Morphic\Assets\MediaPipeUnity\Tutorial\Tasks\FaceLandmarkerRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\AI\MorphicAIActionRouter.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\AI\MorphicAIBehaviorTracker.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\AI\MorphicAIClient.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\AI\MorphicAISettings.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\AI\MorphicAITriggerEngine.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\BaseShapeSelector.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\BasicSculptController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\FistRotateSculpture.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\LanternGestureInterpreter.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\MeshHistory.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\ParametricSkyLantern.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\PinchSculptBrush.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\SculptToolMode.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Sculpting\TwoHandScaleSculpture.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Tracking\PinchDetector.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\Tracking\SculptHandLandmarkerRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\UI\ButtonHoverEffect.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\UI\ClayColorUIController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\UI\ClayMaterialUIController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\UI\HandCursorUI.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\UI\ModeIndicatorUI.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\UI\MorphicAIFeedbackUI.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\UI\SculptUIController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\ClayColorPainter.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\DialogueManager.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\GestureModeManager.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\LanguagePageBuilder.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\LanguagePageController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\LanguagePageReveal.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\MainMenuCameraTransition.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\MainMenuCloudMover.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\MainMenuStartTransition.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\MenuButtonHover.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\OneHandBottomFlattenShapeKeyController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\OneHandTopGatherShapeKeyController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\PinchSculptBrushShapeKey.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\SculptDriveFilter.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\SculptShapeKeyController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\SettingsPageBuilder.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\SettingsPageController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\TaiwanLanternGestureController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\TaiwanLanternIndexTracker.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\TextMeshProUGUIRunner.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\TwoHandPuffShapeKeyController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\TwoHandTopPinchShapeKeyController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\TwoHandWidthShapeKeyController.cs
+C:\Users\anagh\Documents\Morphic\Assets\Scripts\WorldReferenceUIAligner.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\Benchmark01.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\Benchmark01_UGUI.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\Benchmark02.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\Benchmark03.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\Benchmark04.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\CameraController.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\ChatController.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\DropdownSample.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\EnvMapAnimator.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\ObjectSpin.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\ShaderPropAnimator.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\SimpleScript.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\SkewTextExample.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TeleType.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TextConsoleSimulator.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TextMeshProFloatingText.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TextMeshSpawner.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMPro_InstructionOverlay.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_DigitValidator.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_ExampleScript_01.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_FrameRateCounter.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_PhoneNumberValidator.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_TextEventCheck.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_TextEventHandler.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_TextInfoDebugTool.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_TextSelector_A.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_TextSelector_B.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\TMP_UiFrameRateCounter.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\VertexColorCycler.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\VertexJitter.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\VertexShakeA.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\VertexShakeB.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\VertexZoom.cs
+C:\Users\anagh\Documents\Morphic\Assets\TextMesh Pro\Examples & Extras\Scripts\WarpTextExample.cs
+C:\Users\anagh\Documents\Morphic\Assets\TutorialInfo\Scripts\Editor\ReadmeEditor.cs
+C:\Users\anagh\Documents\Morphic\Assets\TutorialInfo\Scripts\Readme.cs

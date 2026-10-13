@@ -44,6 +44,13 @@ public class MainMenuStartTransition : MonoBehaviour
 private bool isMovingToPotteryStudio;
 
     public event Action PotteryStudioTransitionCompleted;
+    [Header("Restaurant Camera")]
+[SerializeField] private Transform restaurantCameraTarget;
+[SerializeField] private float restaurantMoveDuration = 1.5f;
+
+private bool isMovingToRestaurant;
+
+public event Action RestaurantTransitionCompleted;
 
     [Header("Shops")]
     [Tooltip("Optional. Drag every parent object that contains a shop (pottery, restaurant, signs, fences...). Each root is measured together with its children.")]
@@ -562,6 +569,83 @@ private bool isMovingToPotteryStudio;
 
     PotteryStudioTransitionCompleted?.Invoke();
 }
+
+
+public void EnterRestaurant()
+{
+    if (isMovingToRestaurant || isMovingToPotteryStudio)
+        return;
+
+    if (!EnsureCamera())
+    {
+        Debug.LogError(
+            "MainMenuStartTransition: Camera not found.",
+            this);
+        return;
+    }
+
+    if (restaurantCameraTarget == null)
+    {
+        Debug.LogError(
+            "MainMenuStartTransition: Restaurant Camera Target is not assigned.",
+            this);
+        return;
+    }
+
+    StartCoroutine(MoveToRestaurant());
+}
+
+private IEnumerator MoveToRestaurant()
+{
+    isMovingToRestaurant = true;
+
+    Transform camTransform = viewCamera.transform;
+
+    Vector3 startPos = camTransform.position;
+    Quaternion startRot = camTransform.rotation;
+    float startNearClip = viewCamera.nearClipPlane;
+
+    Vector3 endPos = restaurantCameraTarget.position;
+    Quaternion endRot = restaurantCameraTarget.rotation;
+
+    float duration = Mathf.Max(0.01f, restaurantMoveDuration);
+    float elapsed = 0f;
+
+    Debug.Log("MORPHIC: Moving camera to restaurant.", this);
+
+    if (gameplayUI != null)
+        gameplayUI.SetActive(false);
+
+    while (elapsed < duration)
+    {
+        elapsed += Time.unscaledDeltaTime;
+
+        float t = Mathf.Clamp01(elapsed / duration);
+        float eased = t * t * (3f - 2f * t);
+
+        camTransform.position =
+            Vector3.Lerp(startPos, endPos, eased);
+
+        camTransform.rotation =
+            Quaternion.Slerp(startRot, endRot, eased);
+
+        viewCamera.nearClipPlane =
+            Mathf.Lerp(startNearClip, 0.01f, eased);
+
+        yield return null;
+    }
+
+    camTransform.position = endPos;
+    camTransform.rotation = endRot;
+    viewCamera.nearClipPlane = 0.01f;
+
+    isMovingToRestaurant = false;
+
+    RestaurantTransitionCompleted?.Invoke();
+
+    Debug.Log("MORPHIC: Restaurant camera transition completed.", this);
+}
+
     public void StartGameplay()
     {
         if (hasRun)
