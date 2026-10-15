@@ -1,20 +1,23 @@
 using System;
 using System.Collections.Generic;
 using Mediapipe.Unity.Sample.HandLandmarkDetection;
+using Mediapipe.Unity.Sample;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Enhancement-only colour workflow. It creates its own UI at runtime so the
-// student's original scene objects, scripts, materials and prefabs stay intact.
+// Enhancement-only colour workflow. The UI is stored under the scene Canvas so
+// designers can inspect and adjust every panel and button in the Hierarchy.
 [DefaultExecutionOrder(-200)]
 public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 {
     private enum ColorMode
     {
         Sculpt,
+        MainMenu,
         SelectPart,
-        SelectColor
+        SelectColor,
+        Selfie
     }
 
     private sealed class HitTarget
@@ -22,10 +25,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         public Button Button;
         public RectTransform Rect;
         public Outline Outline;
-        public bool IsEntryButton;
         public bool IsColor;
+        public bool IsFreeColorPalette;
         public bool IsPersistentChoice;
         public Color PreviewColor;
+        public Color BaseColor;
+        public RectTransform SelectionCheck;
         public Image[] DwellEdges;
     }
 
@@ -44,9 +49,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     [SerializeField, Min(0)] private int tasselMaterialIndex = 3;
 
     [Header("Hand UI")]
-    [SerializeField, Range(0.25f, 2.5f)] private float paletteDwellTime = 1.5f;
     [SerializeField, Range(0.25f, 2.5f)] private float selectionDwellTime = 1.5f;
     [SerializeField, Min(1f)] private float cursorSmoothing = 24f;
+    [Tooltip("Expands hand motion around the camera center so the full screen can be reached without moving the whole hand out of frame.")]
+    [SerializeField, Range(1f, 2.5f)] private float cameraToScreenRangeMultiplier = 1.8f;
+
+    [Header("Selfie Decals")]
+    [Tooltip("Fraction of the lantern body height available to each selfie without changing its aspect ratio.")]
+    [SerializeField, Range(0.2f, 0.7f)] private float selfieHeightFraction = 0.42f;
+    [Tooltip("Leaves visible lantern between the four selfie copies.")]
+    [SerializeField, Range(0.45f, 1.2f)] private float selfieWidthToRadius = 0.9f;
+    [SerializeField, Range(1.001f, 1.08f)] private float selfieSurfaceOffset = 1.018f;
+    [SerializeField, Range(0.05f, 0.6f)] private float backgroundRemovalTolerance = 0.24f;
+    [SerializeField, Range(0.02f, 0.4f)] private float backgroundRemovalFeather = 0.14f;
 
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -80,14 +95,28 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private RectTransform canvasRect;
     private Camera canvasCamera;
     private GameObject uiRoot;
-    private GameObject paletteEntry;
     private GameObject panel;
+    private GameObject mainActionGroup;
     private GameObject partGroup;
     private GameObject colorGroup;
+    private GameObject selfiePanel;
+    private GameObject selfieGroup;
+    private Button selfieEntryButton;
     private RectTransform cursorRect;
     private TMP_Text cursorText;
     private TMP_Text headerText;
     private TMP_Text instructionText;
+    private TMP_Text selfieHeaderText;
+    private TMP_Text selfieInstructionText;
+    private RawImage freeColorPaletteImage;
+    private RawImage selfiePreviewImage;
+    private Button takeSelfieButton;
+    private Button selfieBackButton;
+    private Button removeBackgroundButton;
+    private Button attachSelfieButton;
+    private Button retakeSelfieButton;
+    private Button selfieDoneButton;
+    private RectTransform freeColorSelectionCheck;
     private HitTarget hoveredTarget;
     private HitTarget dwellTarget;
     private HitTarget completedDwellTarget;
@@ -99,27 +128,90 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private bool colorsCaptured;
     private bool colorSelectionLocked;
     private bool partSelectionLocked;
+    private bool paletteAvailable;
+    private Color freePalettePreviewColor = Color.white;
+    private Vector2 freePaletteMarkerPosition;
+    private Texture2D capturedSelfieTexture;
+    private Texture2D backgroundRemovedSelfieTexture;
+    private Texture2D appliedSelfieTexture;
+    private Material selfieDecalMaterial;
+    private Mesh selfieQuadMesh;
+    private Mesh selfieBoundsBakeMesh;
+    private MeshFilter selfieDecalFilter;
+    private MeshRenderer selfieDecalRenderer;
+    private Transform selfieDecalRoot;
+    private bool removeSelfieBackground;
+    private bool selfieCaptured;
+    private int lastSelfieLayoutState = int.MinValue;
+
+    private const float MainMenuPanelHeight = 230f;
+    private const float PartSelectionPanelHeight = 500f;
+    private const float ColorSelectionPanelHeight = 585f;
+    private const float SelfiePanelHeight = 515f;
+
+    public void SetPaletteAvailable(bool available)
+    {
+        paletteAvailable = available;
+
+        if (uiRoot == null)
+            return;
+
+        if (!available)
+        {
+            RestoreSelectedPreview();
+            SetSculptControllersEnabled(true);
+            ShowSculptMode();
+            return;
+        }
+
+        ShowMainMenu();
+    }
 
     private void Start()
     {
         CaptureInitialColors();
         BuildInterface();
-        ShowSculptMode();
+
+        // DialogueManager can enable the palette before this component's
+        // inactive GameObject receives its first Start call. Preserve that
+        // request instead of hiding the panel again during initialization.
+        if (paletteAvailable)
+            ShowMainMenu();
+        else
+            ShowSculptMode();
     }
 
     private void OnEnable()
     {
         if (uiRoot != null)
+        {
             uiRoot.SetActive(true);
+            if (paletteAvailable)
+                ShowMainMenu();
+            else
+                ShowSculptMode();
+        }
     }
 
     private void OnDisable()
     {
         RestoreSelectedPreview();
         SetSculptControllersEnabled(true);
+        ShowSculptMode();
         if (uiRoot != null)
             uiRoot.SetActive(false);
-        mode = ColorMode.Sculpt;
+    }
+
+    private void OnDestroy()
+    {
+        if (selfieDecalRoot != null)
+            DestroyRuntimeObject(selfieDecalRoot.gameObject);
+        DestroyRuntimeObject(capturedSelfieTexture);
+        DestroyRuntimeObject(backgroundRemovedSelfieTexture);
+        DestroyRuntimeObject(appliedSelfieTexture);
+        DestroyRuntimeObject(selfieDecalMaterial);
+        DestroyRuntimeObject(selfieQuadMesh);
+        DestroyRuntimeObject(selfieBoundsBakeMesh);
     }
 
     private void Update()
@@ -136,14 +228,39 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         SetCursorVisible(true);
+        Vector2 expandedIndexPosition = ExpandCameraPoint(
+            new Vector2(hand.IndexTip.x, hand.IndexTip.y),
+            cameraToScreenRangeMultiplier);
         Vector2 screenPosition = new Vector2(
-            hand.IndexTip.x * Screen.width,
-            hand.IndexTip.y * Screen.height);
+            expandedIndexPosition.x * Screen.width,
+            expandedIndexPosition.y * Screen.height);
 
         MoveCursor(screenPosition);
-        HitTarget nextHovered = FindHitTarget(screenPosition);
+        // Use the same smoothed cursor position for hit testing, preview,
+        // selection and the saved marker. This keeps the chosen color aligned
+        // with the cursor the user actually sees on screen.
+        Vector2 interactionScreenPosition = RectTransformUtility.WorldToScreenPoint(
+            canvasCamera, cursorRect.position);
+        HitTarget nextHovered = FindHitTarget(interactionScreenPosition);
         SetHoveredTarget(nextHovered);
+        UpdateFreePalettePreview(nextHovered, interactionScreenPosition);
         UpdateDwellSelection(nextHovered);
+    }
+
+    private void LateUpdate()
+    {
+        if (selfieDecalRoot == null || selfieQuadMesh == null)
+            return;
+
+        // The lantern Width and Height are BlendShapes. Rebuild after those
+        // weights have been applied so the curved decals remain attached while
+        // the user changes the lantern shape.
+        int layoutState = ComputeLanternLayoutState();
+        if (layoutState == lastSelfieLayoutState)
+            return;
+
+        RefreshSelfieDecalLayout();
+        lastSelfieLayoutState = layoutState;
     }
 
     private void BuildInterface()
@@ -163,6 +280,25 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             ? null
             : canvas.worldCamera;
 
+        Transform existingRoot = canvas.transform.Find("SculptingEnhancementColorUI");
+        if (existingRoot != null && BindExistingInterface(existingRoot))
+            return;
+
+        if (existingRoot != null)
+        {
+            if (Application.isPlaying)
+                Destroy(existingRoot.gameObject);
+            else
+                DestroyImmediate(existingRoot.gameObject);
+        }
+
+        BuildInterfaceHierarchy();
+    }
+
+    private void BuildInterfaceHierarchy()
+    {
+        hitTargets.Clear();
+
         uiRoot = new GameObject(
             "SculptingEnhancementColorUI",
             typeof(RectTransform));
@@ -170,32 +306,135 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         rootRect.SetParent(canvas.transform, false);
         Stretch(rootRect);
 
-        BuildPaletteEntry(rootRect);
         BuildColorPanel(rootRect);
+        BuildSelfieInterface(rootRect);
         BuildCursor(rootRect);
+        ApplyCenteredTypography();
         cursorRect.SetAsLastSibling();
     }
 
-    private void BuildPaletteEntry(Transform parent)
+    private bool BindExistingInterface(Transform root)
     {
-        paletteEntry = new GameObject("PaletteEntry", typeof(RectTransform));
-        paletteEntry.transform.SetParent(parent, false);
-        RectTransform holder = paletteEntry.GetComponent<RectTransform>();
-        holder.anchorMin = holder.anchorMax = new Vector2(1f, 0.5f);
-        holder.pivot = new Vector2(1f, 0.5f);
-        holder.anchoredPosition = new Vector2(-24f, 0f);
-        holder.sizeDelta = new Vector2(118f, 118f);
+        hitTargets.Clear();
+        uiRoot = root.gameObject;
+        panel = FindObject(root, "LanternColorPanel");
+        mainActionGroup = FindObject(root, "LanternColorPanel/MainActions");
+        partGroup = FindObject(root, "LanternColorPanel/PartSelection");
+        colorGroup = FindObject(root, "LanternColorPanel/ColorSelection");
+        selfiePanel = FindObject(root, "LanternSelfiePanel");
+        selfieGroup = FindObject(root, "LanternSelfiePanel/Content");
+        selfieEntryButton = FindComponent<Button>(root, "SelfieEntry");
+        headerText = FindComponent<TMP_Text>(root, "LanternColorPanel/Header");
+        instructionText = FindComponent<TMP_Text>(root, "LanternColorPanel/Instruction");
+        selfieHeaderText = FindComponent<TMP_Text>(root, "LanternSelfiePanel/Header");
+        selfieInstructionText = FindComponent<TMP_Text>(root, "LanternSelfiePanel/Instruction");
+        freeColorPaletteImage = FindComponent<RawImage>(
+            root, "LanternColorPanel/ColorSelection/FreeColorPalette");
+        freeColorSelectionCheck = FindComponent<RectTransform>(
+            root, "LanternColorPanel/ColorSelection/FreeColorPalette/SelectionCheck");
+        selfiePreviewImage = FindComponent<RawImage>(
+            root, "LanternSelfiePanel/Content/Preview");
+        cursorRect = FindComponent<RectTransform>(root, "HandColorCursor");
+        cursorText = FindComponent<TMP_Text>(root, "HandColorCursor/CursorDot");
 
-        Button button = CreateButton(
-            "PaletteButton",
-            holder,
-            Vector2.zero,
-            new Vector2(108f, 108f),
-            "COLOR\nPALETTE",
-            new Color32(28, 39, 54, 245));
-        button.onClick.AddListener(EnterColorMode);
+        Button selectPartButton = FindComponent<Button>(root, "LanternColorPanel/MainActions/SelectPart");
+        Button changeColorButton = FindComponent<Button>(root, "LanternColorPanel/MainActions/ChangeColor");
+        Button nextColorsButton = FindComponent<Button>(root, "LanternColorPanel/PartSelection/NextColors");
+        Button partDoneButton = FindComponent<Button>(root, "LanternColorPanel/PartSelection/Done");
+        Button freeColorPaletteButton = FindComponent<Button>(
+            root, "LanternColorPanel/ColorSelection/FreeColorPalette");
+        Button backButton = FindComponent<Button>(root, "LanternColorPanel/ColorSelection/Back");
+        Button colorDoneButton = FindComponent<Button>(
+            root, "LanternColorPanel/ColorSelection/Done");
+        takeSelfieButton = FindComponent<Button>(root, "LanternSelfiePanel/Content/TakeSelfie");
+        selfieBackButton = FindComponent<Button>(root, "LanternSelfiePanel/Content/Back");
+        removeBackgroundButton = FindComponent<Button>(root, "LanternSelfiePanel/Content/RemoveBackground");
+        attachSelfieButton = FindComponent<Button>(root, "LanternSelfiePanel/Content/AttachToLantern");
+        retakeSelfieButton = FindComponent<Button>(root, "LanternSelfiePanel/Content/Retake");
+        selfieDoneButton = FindComponent<Button>(root, "LanternSelfiePanel/Content/Done");
 
-        RegisterHitTarget(button, true, false, false, default);
+        if (panel == null || mainActionGroup == null ||
+            partGroup == null || colorGroup == null || headerText == null ||
+            instructionText == null || freeColorPaletteImage == null || selfiePanel == null ||
+            selfieGroup == null || selfieEntryButton == null ||
+            selfieHeaderText == null || selfieInstructionText == null ||
+            freeColorSelectionCheck == null || cursorRect == null || cursorText == null ||
+            selectPartButton == null ||
+            changeColorButton == null || nextColorsButton == null ||
+            partDoneButton == null || freeColorPaletteButton == null ||
+            backButton == null || colorDoneButton == null || selfiePreviewImage == null ||
+            takeSelfieButton == null || selfieBackButton == null ||
+            removeBackgroundButton == null || attachSelfieButton == null ||
+            retakeSelfieButton == null || selfieDoneButton == null)
+        {
+            Debug.LogWarning(
+                "MORPHIC Enhancement: Scene color UI is incomplete; rebuilding it.",
+                this);
+            return false;
+        }
+
+        ApplyBottomRightDocking();
+
+        selectPartButton.onClick.AddListener(ShowPartSelection);
+        RegisterHitTarget(selectPartButton, false, false, default);
+        changeColorButton.onClick.AddListener(ContinueToColorSelection);
+        RegisterHitTarget(changeColorButton, false, false, default);
+        selfieEntryButton.onClick.AddListener(ShowSelfieCapture);
+        RegisterHitTarget(selfieEntryButton, false, false, default);
+
+        for (int i = 0; i < partNames.Length; i++)
+        {
+            int partIndex = i;
+            Button partButton = FindComponent<Button>(
+                root, "LanternColorPanel/PartSelection/Part" + i);
+            if (partButton == null)
+                return false;
+            partButton.onClick.AddListener(() => SelectPart(partIndex));
+            partButton.interactable = IsPartAvailable(i);
+            RegisterHitTarget(partButton, false, true, default);
+        }
+
+        nextColorsButton.onClick.AddListener(ContinueToColorSelection);
+        RegisterHitTarget(nextColorsButton, false, false, default);
+        partDoneButton.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(partDoneButton, false, false, default);
+
+        for (int i = 0; i < paletteColors.Length; i++)
+        {
+            Color color = paletteColors[i];
+            Button swatch = FindComponent<Button>(
+                root, "LanternColorPanel/ColorSelection/Color" + i);
+            if (swatch == null)
+                return false;
+            swatch.onClick.AddListener(() => CommitColor(color));
+            RegisterHitTarget(swatch, true, true, color);
+        }
+
+        ConfigureFreeColorPalette(freeColorPaletteImage);
+        freeColorPaletteButton.onClick.AddListener(CommitFreePaletteColor);
+        RegisterHitTarget(
+            freeColorPaletteButton, true, true, Color.white, true);
+        backButton.onClick.AddListener(ShowPartSelection);
+        RegisterHitTarget(backButton, false, false, default);
+        colorDoneButton.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(colorDoneButton, false, false, default);
+
+        BindSelfieButtons();
+        ApplyCenteredTypography();
+        return true;
+    }
+
+    private static GameObject FindObject(Transform root, string path)
+    {
+        Transform child = root.Find(path);
+        return child != null ? child.gameObject : null;
+    }
+
+    private static T FindComponent<T>(Transform root, string path)
+        where T : Component
+    {
+        Transform child = root.Find(path);
+        return child != null ? child.GetComponent<T>() : null;
     }
 
     private void BuildColorPanel(Transform parent)
@@ -205,24 +444,49 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             typeof(RectTransform), typeof(Image), typeof(Outline));
         panel.transform.SetParent(parent, false);
         RectTransform panelRect = panel.GetComponent<RectTransform>();
-        panelRect.anchorMin = panelRect.anchorMax = new Vector2(1f, 0.5f);
-        panelRect.pivot = new Vector2(1f, 0.5f);
-        panelRect.anchoredPosition = new Vector2(-24f, 0f);
-        panelRect.sizeDelta = new Vector2(330f, 500f);
+        panelRect.anchorMin = panelRect.anchorMax = new Vector2(1f, 0f);
+        panelRect.pivot = new Vector2(1f, 0f);
+        panelRect.anchoredPosition = new Vector2(-24f, 24f);
+        panelRect.sizeDelta = new Vector2(330f, MainMenuPanelHeight);
         panel.GetComponent<Image>().color = new Color32(18, 27, 39, 248);
         Outline outline = panel.GetComponent<Outline>();
         outline.effectColor = new Color32(82, 188, 189, 120);
         outline.effectDistance = new Vector2(1f, -1f);
 
+        GameObject layoutMarker = new GameObject(
+            "CenteredCompactLayoutV8", typeof(RectTransform));
+        layoutMarker.transform.SetParent(panelRect, false);
+
         headerText = CreateText(
             "Header", panelRect, new Vector2(20f, -20f),
             new Vector2(290f, 34f), "COLOR MODE", 21f,
-            TextAlignmentOptions.Left, FontStyles.Bold);
+            TextAlignmentOptions.Center, FontStyles.Bold);
         instructionText = CreateText(
             "Instruction", panelRect, new Vector2(20f, -58f),
             new Vector2(290f, 52f), "Choose what you want to color", 15f,
-            TextAlignmentOptions.Left, FontStyles.Normal);
+            TextAlignmentOptions.Center, FontStyles.Normal);
         instructionText.color = new Color32(173, 196, 207, 255);
+
+        mainActionGroup = new GameObject("MainActions", typeof(RectTransform));
+        mainActionGroup.transform.SetParent(panelRect, false);
+        RectTransform mainRect = mainActionGroup.GetComponent<RectTransform>();
+        mainRect.anchorMin = new Vector2(0f, 1f);
+        mainRect.anchorMax = new Vector2(1f, 1f);
+        mainRect.pivot = new Vector2(0.5f, 1f);
+        mainRect.anchoredPosition = new Vector2(0f, -82f);
+        mainRect.sizeDelta = new Vector2(-36f, 150f);
+
+        Button selectPartButton = CreateButton(
+            "SelectPart", mainRect, Vector2.zero,
+            new Vector2(294f, 56f), "SELECT PART", new Color32(42, 56, 72, 255));
+        selectPartButton.onClick.AddListener(ShowPartSelection);
+        RegisterHitTarget(selectPartButton, false, false, default);
+
+        Button changeColorButton = CreateButton(
+            "ChangeColor", mainRect, new Vector2(0f, -72f),
+            new Vector2(294f, 56f), "CHANGE COLOR", new Color32(61, 124, 124, 255));
+        changeColorButton.onClick.AddListener(ContinueToColorSelection);
+        RegisterHitTarget(changeColorButton, false, false, default);
 
         partGroup = new GameObject("PartSelection", typeof(RectTransform));
         partGroup.transform.SetParent(panelRect, false);
@@ -245,14 +509,20 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 new Color32(42, 56, 72, 255));
             partButton.onClick.AddListener(() => SelectPart(partIndex));
             partButton.interactable = IsPartAvailable(i);
-            RegisterHitTarget(partButton, false, false, true, default);
+            RegisterHitTarget(partButton, false, true, default);
         }
 
         Button nextColorsButton = CreateButton(
             "NextColors", partRect, new Vector2(0f, -268f),
-            new Vector2(294f, 44f), "NEXT: COLORS", new Color32(61, 124, 124, 255));
+            new Vector2(294f, 44f), "CHANGE COLOR", new Color32(61, 124, 124, 255));
         nextColorsButton.onClick.AddListener(ContinueToColorSelection);
-        RegisterHitTarget(nextColorsButton, false, false, false, default);
+        RegisterHitTarget(nextColorsButton, false, false, default);
+
+        Button partDoneButton = CreateButton(
+            "Done", partRect, new Vector2(0f, -320f),
+            new Vector2(294f, 44f), "DONE", new Color32(74, 155, 143, 255));
+        partDoneButton.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(partDoneButton, false, false, default);
 
         colorGroup = new GameObject("ColorSelection", typeof(RectTransform));
         colorGroup.transform.SetParent(panelRect, false);
@@ -261,7 +531,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         colorRect.anchorMax = new Vector2(1f, 1f);
         colorRect.pivot = new Vector2(0.5f, 1f);
         colorRect.anchoredPosition = new Vector2(0f, -125f);
-        colorRect.sizeDelta = new Vector2(-36f, 270f);
+        colorRect.sizeDelta = new Vector2(-36f, 430f);
 
         for (int i = 0; i < paletteColors.Length; i++)
         {
@@ -276,26 +546,119 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 string.Empty,
                 color);
             swatch.onClick.AddListener(() => CommitColor(color));
-            RegisterHitTarget(swatch, false, true, true, color);
+            CreateSelectionCheck(swatch.GetComponent<RectTransform>());
+            RegisterHitTarget(swatch, true, true, color);
         }
 
+        Button freeColorPaletteButton = CreateFreeColorPalette(
+            colorRect, new Vector2(0f, -145f), new Vector2(310f, 180f));
+        freeColorPaletteButton.onClick.AddListener(CommitFreePaletteColor);
+        RegisterHitTarget(
+            freeColorPaletteButton, true, true, Color.white, true);
+
         Button backButton = CreateButton(
-            "Back", colorRect, new Vector2(-74f, -172f),
-            new Vector2(136f, 48f), "Choose Part", new Color32(42, 56, 72, 255));
+            "Back", colorRect, new Vector2(0f, -340f),
+            new Vector2(294f, 44f), "SELECT PART", new Color32(42, 56, 72, 255));
         backButton.onClick.AddListener(ShowPartSelection);
-        RegisterHitTarget(backButton, false, false, false, default);
+        RegisterHitTarget(backButton, false, false, default);
 
-        Button anotherButton = CreateButton(
-            "AnotherPart", colorRect, new Vector2(74f, -172f),
-            new Vector2(136f, 48f), "CHANGE COLOR", new Color32(61, 124, 124, 255));
-        anotherButton.onClick.AddListener(UnlockColorSelection);
-        RegisterHitTarget(anotherButton, false, false, false, default);
+        Button colorDoneButton = CreateButton(
+            "Done", colorRect, new Vector2(0f, -392f),
+            new Vector2(294f, 44f), "DONE", new Color32(74, 155, 143, 255));
+        colorDoneButton.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(colorDoneButton, false, false, default);
 
-        Button doneButton = CreateButton(
-            "Done", panelRect, new Vector2(0f, -438f),
-            new Vector2(294f, 48f), "DONE", new Color32(74, 155, 143, 255));
-        doneButton.onClick.AddListener(ExitColorMode);
-        RegisterHitTarget(doneButton, false, false, false, default);
+    }
+
+    private void BuildSelfieInterface(Transform parent)
+    {
+        selfieEntryButton = CreateButton(
+            "SelfieEntry", parent, Vector2.zero,
+            new Vector2(150f, 54f), "SELFIE", new Color32(155, 92, 130, 255));
+        RectTransform entryRect = selfieEntryButton.GetComponent<RectTransform>();
+        entryRect.anchorMin = entryRect.anchorMax = new Vector2(1f, 0f);
+        entryRect.pivot = new Vector2(1f, 0f);
+        entryRect.anchoredPosition = new Vector2(-370f, 24f);
+        selfieEntryButton.onClick.AddListener(ShowSelfieCapture);
+        RegisterHitTarget(selfieEntryButton, false, false, default);
+
+        selfiePanel = new GameObject(
+            "LanternSelfiePanel",
+            typeof(RectTransform), typeof(Image), typeof(Outline));
+        selfiePanel.transform.SetParent(parent, false);
+        RectTransform panelRect = selfiePanel.GetComponent<RectTransform>();
+        panelRect.anchorMin = panelRect.anchorMax = new Vector2(1f, 0f);
+        panelRect.pivot = new Vector2(1f, 0f);
+        panelRect.anchoredPosition = new Vector2(-24f, 24f);
+        panelRect.sizeDelta = new Vector2(330f, SelfiePanelHeight);
+        selfiePanel.GetComponent<Image>().color = new Color32(18, 27, 39, 248);
+        Outline outline = selfiePanel.GetComponent<Outline>();
+        outline.effectColor = new Color32(202, 123, 170, 150);
+        outline.effectDistance = new Vector2(1f, -1f);
+
+        selfieHeaderText = CreateText(
+            "Header", panelRect, new Vector2(20f, -20f),
+            new Vector2(290f, 34f), "SELFIE", 21f,
+            TextAlignmentOptions.Center, FontStyles.Bold);
+        selfieInstructionText = CreateText(
+            "Instruction", panelRect, new Vector2(20f, -58f),
+            new Vector2(290f, 52f), "Frame your photo, then take a selfie.", 15f,
+            TextAlignmentOptions.Center, FontStyles.Normal);
+        selfieInstructionText.color = new Color32(173, 196, 207, 255);
+
+        BuildSelfieGroup(panelRect);
+        selfiePanel.SetActive(false);
+    }
+
+    private void BuildSelfieGroup(Transform panelRect)
+    {
+        selfieGroup = new GameObject("Content", typeof(RectTransform));
+        selfieGroup.transform.SetParent(panelRect, false);
+        RectTransform selfieRect = selfieGroup.GetComponent<RectTransform>();
+        selfieRect.anchorMin = new Vector2(0f, 1f);
+        selfieRect.anchorMax = new Vector2(1f, 1f);
+        selfieRect.pivot = new Vector2(0.5f, 1f);
+        selfieRect.anchoredPosition = new Vector2(0f, -118f);
+        selfieRect.sizeDelta = new Vector2(-36f, 450f);
+
+        GameObject previewObject = new GameObject(
+            "Preview", typeof(RectTransform), typeof(RawImage), typeof(Outline));
+        previewObject.transform.SetParent(selfieRect, false);
+        RectTransform previewRect = previewObject.GetComponent<RectTransform>();
+        previewRect.anchorMin = previewRect.anchorMax = new Vector2(0.5f, 1f);
+        previewRect.pivot = new Vector2(0.5f, 1f);
+        previewRect.anchoredPosition = Vector2.zero;
+        previewRect.sizeDelta = new Vector2(294f, 220f);
+        selfiePreviewImage = previewObject.GetComponent<RawImage>();
+        selfiePreviewImage.color = Color.white;
+        selfiePreviewImage.raycastTarget = false;
+        Outline previewOutline = previewObject.GetComponent<Outline>();
+        previewOutline.effectColor = new Color32(82, 188, 189, 180);
+        previewOutline.effectDistance = new Vector2(2f, -2f);
+
+        takeSelfieButton = CreateButton(
+            "TakeSelfie", selfieRect, new Vector2(0f, -234f),
+            new Vector2(294f, 50f), "TAKE SELFIE", new Color32(155, 92, 130, 255));
+        selfieBackButton = CreateButton(
+            "Back", selfieRect, new Vector2(0f, -296f),
+            new Vector2(294f, 50f), "BACK", new Color32(42, 56, 72, 255));
+
+        removeBackgroundButton = CreateButton(
+            "RemoveBackground", selfieRect, new Vector2(0f, -234f),
+            new Vector2(294f, 44f), "REMOVE BACKGROUND: OFF", new Color32(42, 56, 72, 255));
+        attachSelfieButton = CreateButton(
+            "AttachToLantern", selfieRect, new Vector2(0f, -286f),
+            new Vector2(294f, 44f), "ATTACH TO LANTERN", new Color32(61, 124, 124, 255));
+        retakeSelfieButton = CreateButton(
+            "Retake", selfieRect, new Vector2(0f, -338f),
+            new Vector2(142f, 44f), "RETAKE", new Color32(42, 56, 72, 255));
+        retakeSelfieButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-76f, -338f);
+        selfieDoneButton = CreateButton(
+            "Done", selfieRect, new Vector2(76f, -338f),
+            new Vector2(142f, 44f), "DONE", new Color32(74, 155, 143, 255));
+
+        BindSelfieButtons();
+        SetSelfieReviewControls(false);
     }
 
     private void BuildCursor(Transform parent)
@@ -317,34 +680,30 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         outline.effectDistance = new Vector2(2f, -2f);
     }
 
-    private void EnterColorMode()
+    private void ShowMainMenu()
     {
-        if (mode != ColorMode.Sculpt)
+        if (!paletteAvailable || panel == null)
             return;
 
+        RestoreSelectedPreview();
         CaptureInitialColors();
-        // Start with a useful target so a user can enter the palette and color
-        // the lantern immediately without first discovering another required step.
-        selectedPart = 0;
         colorSelectionLocked = false;
         partSelectionLocked = false;
-        ClearSelectedColorVisual();
-        SetSculptControllersEnabled(false);
-        mode = ColorMode.SelectColor;
-        paletteEntry.SetActive(false);
-        panel.SetActive(true);
-        partGroup.SetActive(false);
-        colorGroup.SetActive(true);
-        headerText.text = partNames[selectedPart];
-        instructionText.text = "Point and hold until the border completes.";
-        ResetDwell();
-    }
-
-    private void ExitColorMode()
-    {
-        RestoreSelectedPreview();
-        ShowSculptMode();
         SetSculptControllersEnabled(true);
+        mode = ColorMode.MainMenu;
+        SetPanelHeight(MainMenuPanelHeight);
+        panel.SetActive(true);
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(true);
+        mainActionGroup.SetActive(true);
+        partGroup.SetActive(false);
+        colorGroup.SetActive(false);
+        headerText.text = "COLOR PALETTE";
+        instructionText.gameObject.SetActive(false);
+        ResetDwell();
+        SetHoveredTarget(null);
     }
 
     private void ShowSculptMode()
@@ -357,8 +716,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         ClearSelectedColorVisual();
         if (panel != null)
             panel.SetActive(false);
-        if (paletteEntry != null)
-            paletteEntry.SetActive(true);
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -369,10 +730,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         colorSelectionLocked = false;
         partSelectionLocked = false;
         ClearSelectedColorVisual();
-        ClearSelectedPartVisual();
+        SetSculptControllersEnabled(false);
         mode = ColorMode.SelectPart;
+        SetPanelHeight(PartSelectionPanelHeight);
+        mainActionGroup.SetActive(false);
         partGroup.SetActive(true);
         colorGroup.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        instructionText.gameObject.SetActive(true);
         headerText.text = "SELECT PART";
         instructionText.text = "Choose the whole lantern or one part.";
         SetHoveredTarget(null);
@@ -384,9 +750,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
 
         selectedPart = partIndex;
-        partSelectionLocked = true;
-        headerText.text = "PART SELECTED";
-        instructionText.text = partNames[partIndex] + " is locked. Choose NEXT or DONE.";
+        partSelectionLocked = false;
+        headerText.text = "SELECT PART";
+        instructionText.text = partNames[partIndex] + " selected.";
         SetHoveredTarget(null);
     }
 
@@ -397,13 +763,723 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         partSelectionLocked = false;
         colorSelectionLocked = false;
-        ClearSelectedColorVisual();
+        SetSculptControllersEnabled(false);
         mode = ColorMode.SelectColor;
+        SetPanelHeight(ColorSelectionPanelHeight);
+        mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
         colorGroup.SetActive(true);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        instructionText.gameObject.SetActive(true);
         headerText.text = partNames[selectedPart];
         instructionText.text = "Point and hold until the border completes.";
         SetHoveredTarget(null);
+    }
+
+    private void ShowSelfieCapture()
+    {
+        if (!paletteAvailable || selfiePanel == null || selfieGroup == null)
+            return;
+
+        RestoreSelectedPreview();
+        SetSculptControllersEnabled(false);
+        mode = ColorMode.Selfie;
+        panel.SetActive(false);
+        selfieEntryButton.gameObject.SetActive(false);
+        selfiePanel.SetActive(true);
+        selfieGroup.SetActive(true);
+        selfieInstructionText.gameObject.SetActive(true);
+        selfieHeaderText.text = "SELFIE";
+        selfieInstructionText.text = "Frame your photo, then point and hold TAKE SELFIE.";
+        SetSelfieReviewControls(false);
+        ShowLiveSelfiePreview();
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void BindSelfieButtons()
+    {
+        takeSelfieButton.onClick.AddListener(CaptureSelfie);
+        selfieBackButton.onClick.AddListener(CloseSelfie);
+        removeBackgroundButton.onClick.AddListener(ToggleSelfieBackgroundRemoval);
+        attachSelfieButton.onClick.AddListener(AttachSelfieToLantern);
+        retakeSelfieButton.onClick.AddListener(BeginSelfieRetake);
+        selfieDoneButton.onClick.AddListener(CloseSelfie);
+
+        RegisterHitTarget(takeSelfieButton, false, false, default);
+        RegisterHitTarget(selfieBackButton, false, false, default);
+        RegisterHitTarget(removeBackgroundButton, false, false, default);
+        RegisterHitTarget(attachSelfieButton, false, false, default);
+        RegisterHitTarget(retakeSelfieButton, false, false, default);
+        RegisterHitTarget(selfieDoneButton, false, false, default);
+    }
+
+    private void CloseSelfie()
+    {
+        ShowMainMenu();
+    }
+
+    private void SetSelfieReviewControls(bool reviewing)
+    {
+        selfieCaptured = reviewing;
+        takeSelfieButton.gameObject.SetActive(!reviewing);
+        selfieBackButton.gameObject.SetActive(!reviewing);
+        removeBackgroundButton.gameObject.SetActive(reviewing);
+        attachSelfieButton.gameObject.SetActive(reviewing);
+        retakeSelfieButton.gameObject.SetActive(reviewing);
+        selfieDoneButton.gameObject.SetActive(reviewing);
+    }
+
+    private void ShowLiveSelfiePreview()
+    {
+        if (selfiePreviewImage == null)
+            return;
+
+        var imageSource = ImageSourceProvider.ImageSource;
+        if (imageSource == null || !imageSource.isPrepared)
+        {
+            selfiePreviewImage.texture = null;
+            selfieInstructionText.text = "Camera is not ready yet. Please try again in a moment.";
+            return;
+        }
+
+        SetSelfiePreviewTexture(imageSource.GetCurrentTexture());
+    }
+
+    private void CaptureSelfie()
+    {
+        Texture2D captured = CaptureCurrentCameraFrame();
+        if (captured == null)
+        {
+            selfieInstructionText.text = "Could not capture the camera image. Please try again.";
+            return;
+        }
+
+        DestroyRuntimeObject(capturedSelfieTexture);
+        DestroyRuntimeObject(backgroundRemovedSelfieTexture);
+        capturedSelfieTexture = captured;
+        backgroundRemovedSelfieTexture = null;
+        removeSelfieBackground = false;
+        SetSelfiePreviewTexture(capturedSelfieTexture);
+        UpdateRemoveBackgroundLabel();
+        SetSelfieReviewControls(true);
+        selfieInstructionText.text = "Keep the background or remove it, then attach the photo.";
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private Texture2D CaptureCurrentCameraFrame()
+    {
+        var imageSource = ImageSourceProvider.ImageSource;
+        if (imageSource == null || !imageSource.isPrepared)
+            return null;
+
+        Texture source = imageSource.GetCurrentTexture();
+        if (source == null || source.width <= 16 || source.height <= 16)
+            return null;
+
+        const int maxDimension = 768;
+        float scale = Mathf.Min(1f, maxDimension / (float)Mathf.Max(source.width, source.height));
+        int width = Mathf.Max(2, Mathf.RoundToInt(source.width * scale));
+        int height = Mathf.Max(2, Mathf.RoundToInt(source.height * scale));
+        RenderTexture temporary = RenderTexture.GetTemporary(
+            width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        RenderTexture previous = RenderTexture.active;
+        Graphics.Blit(source, temporary);
+        RenderTexture.active = temporary;
+
+        Texture2D readable = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        readable.ReadPixels(new Rect(0f, 0f, width, height), 0, 0, false);
+        readable.Apply(false, false);
+
+        RenderTexture.active = previous;
+        RenderTexture.ReleaseTemporary(temporary);
+
+        var transformOptions = imageSource.GetTransformationOptions();
+        Texture2D result = TransformCapturedTexture(
+            readable,
+            // Match the saved selfie to the user's real left/right direction.
+            // The MediaPipe front-camera transform produced the opposite
+            // mirror state from the requested selfie result.
+            !transformOptions.flipHorizontally,
+            // Graphics.Blit + ReadPixels already produces the correct Unity
+            // vertical orientation for this webcam. Applying MediaPipe's CPU
+            // readback flip here turned the saved selfie upside down.
+            false,
+            (int)transformOptions.rotationAngle);
+        DestroyRuntimeObject(readable);
+        result.name = "Morphic Selfie";
+        result.filterMode = FilterMode.Bilinear;
+        result.wrapMode = TextureWrapMode.Clamp;
+        return result;
+    }
+
+    private static Texture2D TransformCapturedTexture(
+        Texture2D source,
+        bool flipHorizontally,
+        bool flipVertically,
+        int rotationDegrees)
+    {
+        int rotation = ((rotationDegrees % 360) + 360) % 360;
+        int sourceWidth = source.width;
+        int sourceHeight = source.height;
+        bool swapsAxes = rotation == 90 || rotation == 270;
+        int targetWidth = swapsAxes ? sourceHeight : sourceWidth;
+        int targetHeight = swapsAxes ? sourceWidth : sourceHeight;
+        Color32[] sourcePixels = source.GetPixels32();
+        Color32[] targetPixels = new Color32[targetWidth * targetHeight];
+
+        for (int sourceY = 0; sourceY < sourceHeight; sourceY++)
+        {
+            for (int sourceX = 0; sourceX < sourceWidth; sourceX++)
+            {
+                int x = flipHorizontally ? sourceWidth - 1 - sourceX : sourceX;
+                int y = flipVertically ? sourceHeight - 1 - sourceY : sourceY;
+                int targetX;
+                int targetY;
+
+                switch (rotation)
+                {
+                    case 90:
+                        targetX = sourceHeight - 1 - y;
+                        targetY = x;
+                        break;
+                    case 180:
+                        targetX = sourceWidth - 1 - x;
+                        targetY = sourceHeight - 1 - y;
+                        break;
+                    case 270:
+                        targetX = y;
+                        targetY = sourceWidth - 1 - x;
+                        break;
+                    default:
+                        targetX = x;
+                        targetY = y;
+                        break;
+                }
+
+                Color32 capturedPixel = sourcePixels[sourceY * sourceWidth + sourceX];
+                // Webcam textures do not guarantee a meaningful alpha
+                // channel. A zero alpha made a valid captured RGB image
+                // completely invisible on the lantern decal material.
+                capturedPixel.a = 255;
+                targetPixels[targetY * targetWidth + targetX] = capturedPixel;
+            }
+        }
+
+        Texture2D result = new Texture2D(
+            targetWidth, targetHeight, TextureFormat.RGBA32, false);
+        result.SetPixels32(targetPixels);
+        result.Apply(false, false);
+        return result;
+    }
+
+    private void ToggleSelfieBackgroundRemoval()
+    {
+        if (!selfieCaptured || capturedSelfieTexture == null)
+            return;
+
+        removeSelfieBackground = !removeSelfieBackground;
+        if (removeSelfieBackground && backgroundRemovedSelfieTexture == null)
+            backgroundRemovedSelfieTexture = CreateBackgroundRemovedCopy(capturedSelfieTexture);
+
+        SetSelfiePreviewTexture(removeSelfieBackground
+            ? backgroundRemovedSelfieTexture
+            : capturedSelfieTexture);
+        UpdateRemoveBackgroundLabel();
+        selfieInstructionText.text = removeSelfieBackground
+            ? "Background removed. Attach the photo or switch it off."
+            : "Original background restored. Attach the photo when ready.";
+    }
+
+    private void SetSelfiePreviewTexture(Texture texture)
+    {
+        if (selfiePreviewImage == null)
+            return;
+
+        selfiePreviewImage.texture = texture;
+        selfiePreviewImage.uvRect = new Rect(0f, 0f, 1f, 1f);
+        if (texture == null || texture.width <= 0 || texture.height <= 0)
+            return;
+
+        const float maximumWidth = 294f;
+        const float maximumHeight = 220f;
+        float aspect = texture.width / (float)texture.height;
+        float width = maximumWidth;
+        float height = width / aspect;
+        if (height > maximumHeight)
+        {
+            height = maximumHeight;
+            width = height * aspect;
+        }
+        selfiePreviewImage.rectTransform.sizeDelta = new Vector2(width, height);
+    }
+
+    private void UpdateRemoveBackgroundLabel()
+    {
+        if (removeBackgroundButton == null)
+            return;
+
+        TMP_Text label = removeBackgroundButton.GetComponentInChildren<TMP_Text>(true);
+        if (label != null)
+            label.text = removeSelfieBackground
+                ? "REMOVE BACKGROUND: ON"
+                : "REMOVE BACKGROUND: OFF";
+    }
+
+    private Texture2D CreateBackgroundRemovedCopy(Texture2D source)
+    {
+        int width = source.width;
+        int height = source.height;
+        Color32[] pixels = source.GetPixels32();
+        Color[] cornerColors = new Color[4];
+        int patchWidth = Mathf.Max(2, width / 14);
+        int patchHeight = Mathf.Max(2, height / 14);
+        cornerColors[0] = AveragePatch(pixels, width, height, 0, 0, patchWidth, patchHeight);
+        cornerColors[1] = AveragePatch(pixels, width, height, width - patchWidth, 0, patchWidth, patchHeight);
+        cornerColors[2] = AveragePatch(pixels, width, height, 0, height - patchHeight, patchWidth, patchHeight);
+        cornerColors[3] = AveragePatch(pixels, width, height, width - patchWidth, height - patchHeight, patchWidth, patchHeight);
+
+        int visiblePixelCount = 0;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Color pixel = pixels[i];
+            float difference = float.MaxValue;
+            for (int corner = 0; corner < cornerColors.Length; corner++)
+                difference = Mathf.Min(difference, ColorDistance(pixel, cornerColors[corner]));
+
+            float alpha = Mathf.SmoothStep(
+                0f, 1f,
+                Mathf.InverseLerp(
+                    backgroundRemovalTolerance,
+                    backgroundRemovalTolerance + backgroundRemovalFeather,
+                    difference));
+            pixels[i].a = (byte)Mathf.RoundToInt(alpha * 255f);
+            if (pixels[i].a > 32)
+                visiblePixelCount++;
+        }
+
+        // Never allow an imperfect background estimate to make the complete
+        // selfie invisible. In that case, keep the original photo instead.
+        if (visiblePixelCount < pixels.Length * 0.08f)
+        {
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i].a = 255;
+        }
+
+        Texture2D result = new Texture2D(width, height, TextureFormat.RGBA32, false)
+        {
+            name = "Morphic Selfie Background Removed",
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        result.SetPixels32(pixels);
+        result.Apply(false, false);
+        return result;
+    }
+
+    private static Color AveragePatch(
+        Color32[] pixels,
+        int textureWidth,
+        int textureHeight,
+        int startX,
+        int startY,
+        int patchWidth,
+        int patchHeight)
+    {
+        Color total = Color.clear;
+        int count = 0;
+        int endX = Mathf.Min(textureWidth, startX + patchWidth);
+        int endY = Mathf.Min(textureHeight, startY + patchHeight);
+        for (int y = Mathf.Max(0, startY); y < endY; y++)
+        {
+            for (int x = Mathf.Max(0, startX); x < endX; x++)
+            {
+                total += (Color)pixels[y * textureWidth + x];
+                count++;
+            }
+        }
+        return count > 0 ? total / count : Color.black;
+    }
+
+    private static float ColorDistance(Color a, Color b)
+    {
+        float red = a.r - b.r;
+        float green = a.g - b.g;
+        float blue = a.b - b.b;
+        return Mathf.Sqrt(red * red + green * green + blue * blue);
+    }
+
+    private void BeginSelfieRetake()
+    {
+        DestroyRuntimeObject(capturedSelfieTexture);
+        DestroyRuntimeObject(backgroundRemovedSelfieTexture);
+        capturedSelfieTexture = null;
+        backgroundRemovedSelfieTexture = null;
+        removeSelfieBackground = false;
+        SetSelfieReviewControls(false);
+        ShowLiveSelfiePreview();
+        selfieInstructionText.text = "Frame your photo, then point and hold TAKE SELFIE.";
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void AttachSelfieToLantern()
+    {
+        Texture2D selectedTexture = removeSelfieBackground
+            ? backgroundRemovedSelfieTexture
+            : capturedSelfieTexture;
+        if (selectedTexture == null || lanternRenderer == null)
+        {
+            selfieInstructionText.text = "Take a selfie before attaching it to the lantern.";
+            return;
+        }
+
+        DestroyRuntimeObject(appliedSelfieTexture);
+        appliedSelfieTexture = CopyTextureClockwiseForLantern(
+            selectedTexture, "Morphic Applied Selfie");
+        EnsureSelfieDecals();
+        ConfigureSelfieDecalMaterial(appliedSelfieTexture);
+        lastSelfieLayoutState = int.MinValue;
+        RefreshSelfieDecalLayout();
+        selfieInstructionText.text = "Selfie attached to the front, back, left and right.";
+    }
+
+    private static Texture2D CopyTextureClockwiseForLantern(
+        Texture2D source,
+        string textureName)
+    {
+        int sourceWidth = source.width;
+        int sourceHeight = source.height;
+        Color32[] sourcePixels = source.GetPixels32();
+        Color32[] targetPixels = new Color32[sourcePixels.Length];
+
+        // Keep all lantern-orientation handling in this one conversion. The
+        // previous counter-clockwise conversion produced an exact 180-degree
+        // inversion on the decal, proving that the camera/decal axis swap is
+        // the opposite direction. Rotate clockwise only; do not mirror or add
+        // a separate vertical flip.
+        for (int sourceY = 0; sourceY < sourceHeight; sourceY++)
+        {
+            for (int sourceX = 0; sourceX < sourceWidth; sourceX++)
+            {
+                int targetX = sourceY;
+                int targetY = sourceWidth - 1 - sourceX;
+                targetPixels[targetY * sourceHeight + targetX] =
+                    sourcePixels[sourceY * sourceWidth + sourceX];
+            }
+        }
+
+        Texture2D copy = new Texture2D(
+            sourceHeight, sourceWidth, TextureFormat.RGBA32, false)
+        {
+            name = textureName,
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        copy.SetPixels32(targetPixels);
+        copy.Apply(false, false);
+        return copy;
+    }
+
+    private void EnsureSelfieDecals()
+    {
+        if (selfieDecalRoot == null)
+        {
+            Transform existing = lanternRenderer.transform.Find("LanternSelfieDecals");
+            if (existing != null)
+            {
+                selfieDecalRoot = existing;
+                selfieDecalRoot.SetParent(null, true);
+            }
+            else
+            {
+                GameObject rootObject = new GameObject("LanternSelfieDecals");
+                selfieDecalRoot = rootObject.transform;
+            }
+        }
+
+        // Keep the decal root in world space. The imported lantern has a
+        // rotated local axis and a strongly non-uniform root scale, both of
+        // which can collapse or move child quads when local coordinates are
+        // used.
+        selfieDecalRoot.SetParent(null, true);
+        selfieDecalRoot.position = Vector3.zero;
+        selfieDecalRoot.rotation = Quaternion.identity;
+        selfieDecalRoot.localScale = Vector3.one;
+
+        if (selfieQuadMesh == null)
+            selfieQuadMesh = CreateSelfieQuadMesh();
+
+        if (selfieDecalMaterial == null)
+            selfieDecalMaterial = CreateSelfieDecalMaterial();
+
+        selfieDecalRoot.gameObject.SetActive(true);
+
+        // Older versions created four transformed child quads. Disable them;
+        // the replacement below writes all four faces directly into one
+        // world-space mesh so no Transform rotation can turn a photo sideways.
+        for (int i = 0; i < selfieDecalRoot.childCount; i++)
+            selfieDecalRoot.GetChild(i).gameObject.SetActive(false);
+
+        selfieDecalFilter = selfieDecalRoot.GetComponent<MeshFilter>();
+        if (selfieDecalFilter == null)
+            selfieDecalFilter = selfieDecalRoot.gameObject.AddComponent<MeshFilter>();
+        selfieDecalRenderer = selfieDecalRoot.GetComponent<MeshRenderer>();
+        if (selfieDecalRenderer == null)
+            selfieDecalRenderer = selfieDecalRoot.gameObject.AddComponent<MeshRenderer>();
+
+        selfieDecalFilter.sharedMesh = selfieQuadMesh;
+        selfieDecalRenderer.sharedMaterial = selfieDecalMaterial;
+        selfieDecalRenderer.enabled = true;
+        selfieDecalRenderer.forceRenderingOff = false;
+        selfieDecalRenderer.shadowCastingMode =
+            UnityEngine.Rendering.ShadowCastingMode.Off;
+        selfieDecalRenderer.receiveShadows = false;
+        selfieDecalRenderer.sortingOrder = 10;
+        selfieDecalRoot.gameObject.layer = lanternRenderer.gameObject.layer;
+    }
+
+    private static Mesh CreateSelfieQuadMesh()
+    {
+        Mesh mesh = new Mesh { name = "Morphic Selfie Curved Four-Sided Mesh" };
+        mesh.MarkDynamic();
+        return mesh;
+    }
+
+    private static Material CreateSelfieDecalMaterial()
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Transparent");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+
+        Material material = new Material(shader)
+        {
+            name = "Morphic Selfie Decal Material",
+            renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent
+        };
+        material.SetOverrideTag("RenderType", "Transparent");
+        if (material.HasProperty("_Surface"))
+            material.SetFloat("_Surface", 1f);
+        if (material.HasProperty("_Blend"))
+            material.SetFloat("_Blend", 0f);
+        if (material.HasProperty("_AlphaClip"))
+            material.SetFloat("_AlphaClip", 0f);
+        if (material.HasProperty("_SrcBlend"))
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        if (material.HasProperty("_DstBlend"))
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        if (material.HasProperty("_ZWrite"))
+            material.SetFloat("_ZWrite", 0f);
+        if (material.HasProperty("_Cull"))
+            material.SetFloat("_Cull", 0f);
+        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.EnableKeyword("_ALPHABLEND_ON");
+        material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        return material;
+    }
+
+    private void ConfigureSelfieDecalMaterial(Texture texture)
+    {
+        if (selfieDecalMaterial == null)
+            return;
+
+        selfieDecalMaterial.mainTexture = texture;
+        selfieDecalMaterial.mainTextureScale = Vector2.one;
+        selfieDecalMaterial.mainTextureOffset = Vector2.zero;
+        if (selfieDecalMaterial.HasProperty("_BaseMap"))
+        {
+            selfieDecalMaterial.SetTexture("_BaseMap", texture);
+            selfieDecalMaterial.SetTextureScale("_BaseMap", Vector2.one);
+            selfieDecalMaterial.SetTextureOffset("_BaseMap", Vector2.zero);
+        }
+        if (selfieDecalMaterial.HasProperty("_BaseColor"))
+            selfieDecalMaterial.SetColor("_BaseColor", Color.white);
+        if (selfieDecalMaterial.HasProperty("_Color"))
+            selfieDecalMaterial.SetColor("_Color", Color.white);
+    }
+
+    private void RefreshSelfieDecalLayout()
+    {
+        if (lanternRenderer == null || selfieQuadMesh == null ||
+            appliedSelfieTexture == null)
+            return;
+
+        Bounds bounds = GetCurrentLanternWorldBounds();
+        Vector3 extents = bounds.extents;
+        float aspect = appliedSelfieTexture.width / (float)appliedSelfieTexture.height;
+
+        // Build four subdivided patches on an ellipsoid fitted to the current
+        // baked BlendShape. Unlike the old four flat quads, every horizontal
+        // segment follows the lantern circumference and every vertical row
+        // follows its rounded profile.
+        const int patchCount = 4;
+        const int horizontalSegments = 10;
+        const int verticalSegments = 6;
+        int columns = horizontalSegments + 1;
+        int rows = verticalSegments + 1;
+        int verticesPerPatch = columns * rows;
+        int indicesPerPatch = horizontalSegments * verticalSegments * 6;
+        Vector3[] vertices = new Vector3[patchCount * verticesPerPatch];
+        Vector3[] normals = new Vector3[vertices.Length];
+        Vector2[] uv = new Vector2[vertices.Length];
+        int[] triangles = new int[patchCount * indicesPerPatch];
+
+        float radiusX = Mathf.Max(0.001f, extents.x);
+        float radiusY = Mathf.Max(0.001f, extents.y);
+        float radiusZ = Mathf.Max(0.001f, extents.z);
+        float bodyHeight = radiusY * 2f;
+        float averageRadius = (radiusX + radiusZ) * 0.5f;
+        float maximumArcWidth = averageRadius * selfieWidthToRadius;
+        float maximumHeight = bodyHeight * selfieHeightFraction;
+        float width = Mathf.Min(maximumArcWidth, maximumHeight * aspect);
+        float height = width / Mathf.Max(0.01f, aspect);
+        if (height > maximumHeight)
+        {
+            height = maximumHeight;
+            width = height * aspect;
+        }
+
+        float halfAngle = Mathf.Min(0.68f, width / (2f * averageRadius));
+        float centerYOffset = radiusY * 0.08f;
+        float clearance = Mathf.Min(radiusX, radiusZ) * 0.018f;
+
+        for (int patch = 0; patch < patchCount; patch++)
+        {
+            float centerAngle = patch * Mathf.PI * 0.5f;
+            int vertexStart = patch * verticesPerPatch;
+            int triangleStart = patch * indicesPerPatch;
+
+            for (int row = 0; row < rows; row++)
+            {
+                float v = row / (float)verticalSegments;
+                float localY = centerYOffset + Mathf.Lerp(-height * 0.5f, height * 0.5f, v);
+                float normalizedY = Mathf.Clamp(localY / radiusY, -0.96f, 0.96f);
+                float profile = Mathf.Sqrt(Mathf.Max(0.001f, 1f - normalizedY * normalizedY));
+
+                for (int column = 0; column < columns; column++)
+                {
+                    float horizontal = column / (float)horizontalSegments;
+                    float angle = centerAngle + Mathf.Lerp(-halfAngle, halfAngle, horizontal);
+                    float sin = Mathf.Sin(angle);
+                    float cos = Mathf.Cos(angle);
+                    float xRadius = radiusX * profile * selfieSurfaceOffset + clearance;
+                    float zRadius = radiusZ * profile * selfieSurfaceOffset + clearance;
+                    int vertex = vertexStart + row * columns + column;
+
+                    vertices[vertex] = bounds.center + new Vector3(
+                        sin * xRadius,
+                        localY,
+                        cos * zRadius);
+                    normals[vertex] = new Vector3(
+                        sin / radiusX,
+                        normalizedY / radiusY,
+                        cos / radiusZ).normalized;
+
+                    // The captured selfie is correct in the Canvas. Reverse U
+                    // only for the outside-facing lantern surface so it is not
+                    // displayed as a left/right mirror image.
+                    uv[vertex] = new Vector2(1f - horizontal, v);
+                }
+            }
+
+            int triangle = triangleStart;
+            for (int row = 0; row < verticalSegments; row++)
+            {
+                for (int column = 0; column < horizontalSegments; column++)
+                {
+                    int bottomLeft = vertexStart + row * columns + column;
+                    int bottomRight = bottomLeft + 1;
+                    int topLeft = bottomLeft + columns;
+                    int topRight = topLeft + 1;
+                    triangles[triangle++] = bottomLeft;
+                    triangles[triangle++] = bottomRight;
+                    triangles[triangle++] = topRight;
+                    triangles[triangle++] = bottomLeft;
+                    triangles[triangle++] = topRight;
+                    triangles[triangle++] = topLeft;
+                }
+            }
+        }
+
+        selfieQuadMesh.Clear();
+        selfieQuadMesh.vertices = vertices;
+        selfieQuadMesh.normals = normals;
+        selfieQuadMesh.uv = uv;
+        selfieQuadMesh.triangles = triangles;
+        selfieQuadMesh.RecalculateBounds();
+    }
+
+    private Bounds GetCurrentLanternWorldBounds()
+    {
+        if (selfieBoundsBakeMesh == null)
+        {
+            selfieBoundsBakeMesh = new Mesh
+            {
+                name = "Morphic Selfie Bounds Bake Mesh"
+            };
+            selfieBoundsBakeMesh.MarkDynamic();
+        }
+
+        lanternRenderer.BakeMesh(selfieBoundsBakeMesh);
+        if (selfieBoundsBakeMesh.vertexCount == 0)
+            return lanternRenderer.bounds;
+
+        Bounds localBounds = selfieBoundsBakeMesh.bounds;
+        Matrix4x4 localToWorld = lanternRenderer.transform.localToWorldMatrix;
+        Vector3 center = localBounds.center;
+        Vector3 extents = localBounds.extents;
+        Bounds worldBounds = new Bounds(
+            localToWorld.MultiplyPoint3x4(center + new Vector3(-extents.x, -extents.y, -extents.z)),
+            Vector3.zero);
+        for (int x = -1; x <= 1; x += 2)
+        {
+            for (int y = -1; y <= 1; y += 2)
+            {
+                for (int z = -1; z <= 1; z += 2)
+                {
+                    worldBounds.Encapsulate(localToWorld.MultiplyPoint3x4(
+                        center + Vector3.Scale(extents, new Vector3(x, y, z))));
+                }
+            }
+        }
+        return worldBounds;
+    }
+
+    private int ComputeLanternLayoutState()
+    {
+        unchecked
+        {
+            int state = 17;
+            Transform lanternTransform = lanternRenderer.transform;
+            state = state * 31 + lanternTransform.position.GetHashCode();
+            state = state * 31 + lanternTransform.rotation.GetHashCode();
+            state = state * 31 + lanternTransform.lossyScale.GetHashCode();
+
+            Mesh mesh = lanternRenderer.sharedMesh;
+            int blendShapeCount = mesh != null ? mesh.blendShapeCount : 0;
+            for (int i = 0; i < blendShapeCount; i++)
+            {
+                int quantizedWeight = Mathf.RoundToInt(
+                    lanternRenderer.GetBlendShapeWeight(i) * 1000f);
+                state = state * 31 + quantizedWeight;
+            }
+            return state;
+        }
+    }
+
+    private static void DestroyRuntimeObject(UnityEngine.Object target)
+    {
+        if (target == null)
+            return;
+
+        if (Application.isPlaying)
+            Destroy(target);
+        else
+            DestroyImmediate(target);
     }
 
     private void CommitColor(Color color)
@@ -413,16 +1489,84 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         ApplyColor(selectedPart, color);
         CommitTargetColor(selectedPart, color);
-        colorSelectionLocked = true;
-        instructionText.text = "Color saved and locked. Choose an action below.";
+        colorSelectionLocked = false;
+        instructionText.text = "Color selected. Choose another color or press DONE.";
     }
 
-    private void UnlockColorSelection()
+    private void CommitFreePaletteColor()
     {
-        colorSelectionLocked = false;
-        ClearSelectedColorVisual();
-        SetHoveredTarget(null);
-        instructionText.text = "Point and hold until the border completes.";
+        CommitColor(freePalettePreviewColor);
+        if (freeColorSelectionCheck != null)
+        {
+            freeColorSelectionCheck.anchoredPosition = freePaletteMarkerPosition;
+            freeColorSelectionCheck.gameObject.SetActive(true);
+        }
+    }
+
+    private void UpdateFreePalettePreview(
+        HitTarget target,
+        Vector2 screenPosition)
+    {
+        if (target == null || !target.IsFreeColorPalette ||
+            mode != ColorMode.SelectColor || selectedPart < 0)
+            return;
+
+        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                target.Rect, screenPosition, canvasCamera, out Vector2 localPoint))
+            return;
+
+        Rect rect = target.Rect.rect;
+        float x = Mathf.InverseLerp(rect.xMin, rect.xMax, localPoint.x);
+        float y = Mathf.InverseLerp(rect.yMin, rect.yMax, localPoint.y);
+        freePalettePreviewColor = EvaluateFreePaletteColor(x, y);
+        freePaletteMarkerPosition = localPoint;
+        target.PreviewColor = freePalettePreviewColor;
+        ApplyColor(selectedPart, freePalettePreviewColor);
+    }
+
+    private static Color EvaluateFreePaletteColor(float x, float y)
+    {
+        Color hue = Color.HSVToRGB(Mathf.Repeat(x, 1f), 1f, 1f);
+        return y >= 0.5f
+            ? Color.Lerp(hue, Color.white, (y - 0.5f) * 2f)
+            : Color.Lerp(Color.black, hue, y * 2f);
+    }
+
+    private void ApplyCenteredTypography()
+    {
+        if (uiRoot == null)
+            return;
+
+        TMP_Text[] texts = uiRoot.GetComponentsInChildren<TMP_Text>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i] != null)
+                texts[i].alignment = TextAlignmentOptions.Center;
+        }
+    }
+
+    private void SetPanelHeight(float height)
+    {
+        if (panel == null)
+            return;
+
+        RectTransform rect = panel.GetComponent<RectTransform>();
+        if (rect != null)
+            rect.sizeDelta = new Vector2(rect.sizeDelta.x, height);
+    }
+
+    private void ApplyBottomRightDocking()
+    {
+        if (panel == null)
+            return;
+
+        RectTransform rect = panel.GetComponent<RectTransform>();
+        if (rect == null)
+            return;
+
+        rect.anchorMin = rect.anchorMax = new Vector2(1f, 0f);
+        rect.pivot = new Vector2(1f, 0f);
+        rect.anchoredPosition = new Vector2(-24f, 24f);
     }
 
     private void SetSculptControllersEnabled(bool enabled)
@@ -541,6 +1685,16 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         cursorRect.SetAsLastSibling();
     }
 
+    private static Vector2 ExpandCameraPoint(
+        Vector2 normalizedPoint,
+        float multiplier)
+    {
+        Vector2 centered = normalizedPoint - Vector2.one * 0.5f;
+        return new Vector2(
+            Mathf.Clamp01(centered.x * multiplier + 0.5f),
+            Mathf.Clamp01(centered.y * multiplier + 0.5f));
+    }
+
     private HitTarget FindHitTarget(Vector2 screenPosition)
     {
         for (int i = hitTargets.Count - 1; i >= 0; i--)
@@ -602,9 +1756,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (completedDwellTarget == target)
             return;
 
-        float requiredTime = target.IsEntryButton
-            ? paletteDwellTime
-            : selectionDwellTime;
+        float requiredTime = selectionDwellTime;
         dwellTimer += Time.unscaledDeltaTime;
         SetDwellProgress(target, Mathf.Clamp01(dwellTimer / requiredTime));
 
@@ -671,10 +1823,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void RegisterHitTarget(
         Button button,
-        bool isEntry,
         bool isColor,
         bool isPersistentChoice,
-        Color previewColor)
+        Color previewColor,
+        bool isFreeColorPalette = false)
     {
         Outline outline = button.gameObject.GetComponent<Outline>();
         if (outline == null)
@@ -685,15 +1837,21 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         Image[] dwellEdges = CreateDwellFrame(button.transform);
 
+        Transform checkTransform = button.transform.Find("SelectionCheck");
+        Image buttonImage = button.GetComponent<Image>();
         hitTargets.Add(new HitTarget
         {
             Button = button,
             Rect = button.GetComponent<RectTransform>(),
             Outline = outline,
-            IsEntryButton = isEntry,
             IsColor = isColor,
+            IsFreeColorPalette = isFreeColorPalette,
             IsPersistentChoice = isPersistentChoice,
             PreviewColor = previewColor,
+            BaseColor = buttonImage != null ? buttonImage.color : Color.white,
+            SelectionCheck = checkTransform != null
+                ? checkTransform.GetComponent<RectTransform>()
+                : null,
             DwellEdges = dwellEdges
         });
     }
@@ -707,27 +1865,36 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             ClearSelectedColorVisual();
             selectedColorTarget = target;
-            selectedColorTarget.Rect.localScale = Vector3.one * 1.16f;
+            if (selectedColorTarget.SelectionCheck != null)
+                selectedColorTarget.SelectionCheck.gameObject.SetActive(true);
         }
         else
         {
             ClearSelectedPartVisual();
             selectedPartTarget = target;
-            selectedPartTarget.Rect.localScale = Vector3.one * 1.08f;
+            if (selectedPartTarget.Button != null &&
+                selectedPartTarget.Button.image != null)
+            {
+                selectedPartTarget.Button.image.color =
+                    new Color32(202, 123, 57, 255);
+            }
         }
     }
 
     private void ClearSelectedPartVisual()
     {
-        if (selectedPartTarget != null && selectedPartTarget.Rect != null)
-            selectedPartTarget.Rect.localScale = Vector3.one;
+        if (selectedPartTarget != null && selectedPartTarget.Button != null &&
+            selectedPartTarget.Button.image != null)
+        {
+            selectedPartTarget.Button.image.color = selectedPartTarget.BaseColor;
+        }
         selectedPartTarget = null;
     }
 
     private void ClearSelectedColorVisual()
     {
-        if (selectedColorTarget != null && selectedColorTarget.Rect != null)
-            selectedColorTarget.Rect.localScale = Vector3.one;
+        if (selectedColorTarget != null && selectedColorTarget.SelectionCheck != null)
+            selectedColorTarget.SelectionCheck.gameObject.SetActive(false);
         selectedColorTarget = null;
     }
 
@@ -739,25 +1906,25 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         edges[0] = CreateDwellEdge(
             "DwellTop", parent,
             new Vector2(0f, 1f), new Vector2(1f, 1f),
-            new Vector2(-8f, 4f), new Vector2(0f, 4f),
+            new Vector2(6f, 6f), new Vector2(0f, 3f),
             Image.FillMethod.Horizontal, (int)Image.OriginHorizontal.Left,
             progressColor);
         edges[1] = CreateDwellEdge(
             "DwellRight", parent,
             new Vector2(1f, 0f), new Vector2(1f, 1f),
-            new Vector2(4f, -8f), new Vector2(4f, 0f),
+            new Vector2(6f, 6f), new Vector2(3f, 0f),
             Image.FillMethod.Vertical, (int)Image.OriginVertical.Top,
             progressColor);
         edges[2] = CreateDwellEdge(
             "DwellBottom", parent,
             new Vector2(0f, 0f), new Vector2(1f, 0f),
-            new Vector2(-8f, 4f), new Vector2(0f, -4f),
+            new Vector2(6f, 6f), new Vector2(0f, -3f),
             Image.FillMethod.Horizontal, (int)Image.OriginHorizontal.Right,
             progressColor);
         edges[3] = CreateDwellEdge(
             "DwellLeft", parent,
             new Vector2(0f, 0f), new Vector2(0f, 1f),
-            new Vector2(4f, -8f), new Vector2(-4f, 0f),
+            new Vector2(6f, 6f), new Vector2(-3f, 0f),
             Image.FillMethod.Vertical, (int)Image.OriginVertical.Bottom,
             progressColor);
 
@@ -775,9 +1942,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         int fillOrigin,
         Color color)
     {
-        GameObject edgeObject = new GameObject(
-            objectName, typeof(RectTransform), typeof(Image));
-        edgeObject.transform.SetParent(parent, false);
+        Transform existing = parent.Find(objectName);
+        GameObject edgeObject;
+        if (existing != null && existing.TryGetComponent(out Image _))
+        {
+            edgeObject = existing.gameObject;
+        }
+        else
+        {
+            edgeObject = new GameObject(
+                objectName, typeof(RectTransform), typeof(Image));
+            edgeObject.transform.SetParent(parent, false);
+        }
+
         RectTransform rect = edgeObject.GetComponent<RectTransform>();
         rect.anchorMin = anchorMin;
         rect.anchorMax = anchorMax;
@@ -833,6 +2010,122 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         return button;
+    }
+
+    private Button CreateFreeColorPalette(
+        Transform parent,
+        Vector2 anchoredPosition,
+        Vector2 size)
+    {
+        GameObject paletteObject = new GameObject(
+            "FreeColorPalette",
+            typeof(RectTransform), typeof(RawImage), typeof(Button));
+        paletteObject.transform.SetParent(parent, false);
+        RectTransform rect = paletteObject.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = size;
+
+        freeColorPaletteImage = paletteObject.GetComponent<RawImage>();
+        ConfigureFreeColorPalette(freeColorPaletteImage);
+
+        Button button = paletteObject.GetComponent<Button>();
+        button.targetGraphic = freeColorPaletteImage;
+        button.transition = Selectable.Transition.None;
+        freeColorSelectionCheck = CreateSelectionCheck(rect, true);
+        return button;
+    }
+
+    private void ConfigureFreeColorPalette(RawImage image)
+    {
+        if (image == null)
+            return;
+
+        const int width = 160;
+        const int height = 72;
+        Texture2D texture = new Texture2D(
+            width, height, TextureFormat.RGB24, false)
+        {
+            name = "MorphicFreeColorPalette",
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp,
+            hideFlags = HideFlags.HideAndDontSave
+        };
+
+        for (int y = 0; y < height; y++)
+        {
+            float normalizedY = y / (float)(height - 1);
+            for (int x = 0; x < width; x++)
+            {
+                float normalizedX = x / (float)(width - 1);
+                texture.SetPixel(
+                    x, y,
+                    EvaluateFreePaletteColor(normalizedX, normalizedY));
+            }
+        }
+
+        texture.Apply(false, true);
+        image.texture = texture;
+        image.color = Color.white;
+        image.raycastTarget = true;
+    }
+
+    private RectTransform CreateSelectionCheck(
+        RectTransform parent,
+        bool movable = false)
+    {
+        GameObject checkObject = new GameObject(
+            "SelectionCheck", typeof(RectTransform));
+        checkObject.transform.SetParent(parent, false);
+        RectTransform check = checkObject.GetComponent<RectTransform>();
+        check.anchorMin = check.anchorMax = movable
+            ? new Vector2(0.5f, 1f)
+            : new Vector2(0.5f, 0.5f);
+        check.pivot = new Vector2(0.5f, 0.5f);
+        check.anchoredPosition = Vector2.zero;
+        check.sizeDelta = new Vector2(38f, 38f);
+
+        // Draw the tick from UI images instead of a font glyph. This avoids
+        // unsupported-glyph squares and gives a consistent black border.
+        CreateCheckStroke(
+            "LeftBorder", check, new Vector2(-5f, -2f),
+            new Vector2(15f, 8f), -45f, Color.black);
+        CreateCheckStroke(
+            "RightBorder", check, new Vector2(5f, 0f),
+            new Vector2(23f, 8f), 45f, Color.black);
+        CreateCheckStroke(
+            "LeftFill", check, new Vector2(-5f, -2f),
+            new Vector2(15f, 4f), -45f, Color.white);
+        CreateCheckStroke(
+            "RightFill", check, new Vector2(5f, 0f),
+            new Vector2(23f, 4f), 45f, Color.white);
+
+        checkObject.SetActive(false);
+        return check;
+    }
+
+    private static void CreateCheckStroke(
+        string objectName,
+        Transform parent,
+        Vector2 anchoredPosition,
+        Vector2 size,
+        float rotation,
+        Color color)
+    {
+        GameObject strokeObject = new GameObject(
+            objectName, typeof(RectTransform), typeof(Image));
+        strokeObject.transform.SetParent(parent, false);
+        RectTransform rect = strokeObject.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = size;
+        rect.localRotation = Quaternion.Euler(0f, 0f, rotation);
+
+        Image image = strokeObject.GetComponent<Image>();
+        image.color = color;
+        image.raycastTarget = false;
     }
 
     private TMP_Text CreateText(
@@ -903,4 +2196,33 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         rect.offsetMin = Vector2.zero;
         rect.offsetMax = Vector2.zero;
     }
+
+#if UNITY_EDITOR
+    public void RebuildSceneInterfaceForEditor()
+    {
+        canvas = gestureIndicator != null
+            ? gestureIndicator.GetComponentInParent<Canvas>()
+            : FindFirstObjectByType<Canvas>();
+
+        if (canvas == null)
+            throw new InvalidOperationException(
+                "No Canvas was found for the lantern color interface.");
+
+        canvasRect = canvas.GetComponent<RectTransform>();
+        canvasCamera = canvas.renderMode == RenderMode.ScreenSpaceOverlay
+            ? null
+            : canvas.worldCamera;
+
+        Transform existingRoot = canvas.transform.Find("SculptingEnhancementColorUI");
+        if (existingRoot != null)
+            DestroyImmediate(existingRoot.gameObject);
+
+        BuildInterfaceHierarchy();
+        ShowSculptMode();
+        SetCursorVisible(false);
+        UnityEditor.EditorUtility.SetDirty(canvas.gameObject);
+        UnityEditor.EditorUtility.SetDirty(this);
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
+    }
+#endif
 }
