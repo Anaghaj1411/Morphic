@@ -392,6 +392,12 @@ public class DialogueManager : MonoBehaviour
 
         button.onClick.RemoveAllListeners();
 
+        DialogueButtonClickSound clickSound = dialoguePanel != null
+            ? dialoguePanel.GetComponent<DialogueButtonClickSound>()
+            : null;
+        if (clickSound != null)
+            clickSound.RegisterButton(button);
+
         if (action != null)
             button.onClick.AddListener(action);
     }

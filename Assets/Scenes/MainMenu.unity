@@ -1082,6 +1082,7 @@ MonoBehaviour:
   startDelay: 2.1
   taiwanLantern: {fileID: 687715965}
   taiwanLanternSpawnPoint: {fileID: 1665484388}
+  indiaTeapot: {fileID: 0}
   taiwanHandTracking: {fileID: 1278135595}
   taiwanGestureController: {fileID: 549754494}
   taiwanGestureIndicator: {fileID: 925373461}
@@ -2486,7 +2487,7 @@ MonoBehaviour:
   popUpBottomShape: Pop Up Bottom
   widthSensitivity: 220
   heightSensitivity: 220
-  pinchThreshold: 0.35
+  pinchThreshold: 0.4
   fistThreshold: 1.15
   smoothing: 22
   gestureGracePeriod: 0.5
@@ -2501,8 +2502,8 @@ MonoBehaviour:
   middleHoldStillTolerance: 0.05
   singleThumbModeGracePeriod: 0.4
   popUpMinimumHandHeight: 0.1
-  popUpMaximumHandHeight: 0.42
-  popUpGestureActivationTime: 0.08
+  popUpMaximumHandHeight: 0.45
+  popUpGestureActivationTime: 0.1
   bambooMinimumVSeparation: 1.2
   bambooMaximumVSeparation: 4
   gestureLockHoldDuration: 1
@@ -3220,7 +3221,7 @@ Transform:
   m_GameObject: {fileID: 724824315}
   serializedVersion: 2
   m_LocalRotation: {x: 0.12278779, y: 0.6963643, z: -0.12278779, w: 0.6963643}
-  m_LocalPosition: {x: -2, y: 1.5, z: -2.5}
+  m_LocalPosition: {x: -2, y: 1.6, z: -2.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

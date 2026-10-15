@@ -1082,6 +1082,7 @@ MonoBehaviour:
   startDelay: 2.1
   taiwanLantern: {fileID: 687715965}
   taiwanLanternSpawnPoint: {fileID: 1665484388}
+  indiaTeapot: {fileID: 0}
   taiwanHandTracking: {fileID: 1278135595}
   taiwanGestureController: {fileID: 549754494}
   taiwanGestureIndicator: {fileID: 925373461}
@@ -2512,6 +2513,45 @@ MonoBehaviour:
   indexHoldStillTolerance: 0.01
   thumbHoldStillTolerance: 15
   thumbOutputDeadZone: 6
+--- !u!4 &549754496
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 549754494}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -25.64873, y: 0, z: -5.94497}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &549754497
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 549754494}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 953dea1399f87ed4481c703347ddb14b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TaiwanLanternIndexTracker
+  handRunner: {fileID: 955411010}
+  lantern: {fileID: 0}
+  gestureIndicator: {fileID: 925373462}
+  positionSmoothing: 18
+  widthSensitivity: 2.2
+  minimumWidth: 0.78
+  maximumWidth: 1.35
+  heightSensitivity: 2.2
+  minimumHeight: 0.82
+  maximumHeight: 1.45
+  lostHandGracePeriod: 0.35
+  minimumIndexExtension: 0.14
 --- !u!114 &549754498
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2565,45 +2605,6 @@ MonoBehaviour:
   paletteDwellTime: 1.5
   selectionDwellTime: 1.5
   cursorSmoothing: 24
---- !u!4 &549754496
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 549754494}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -25.64873, y: 0, z: -5.94497}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &549754497
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 549754494}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 953dea1399f87ed4481c703347ddb14b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TaiwanLanternIndexTracker
-  handRunner: {fileID: 955411010}
-  lantern: {fileID: 0}
-  gestureIndicator: {fileID: 925373462}
-  positionSmoothing: 18
-  widthSensitivity: 2.2
-  minimumWidth: 0.78
-  maximumWidth: 1.35
-  heightSensitivity: 2.2
-  minimumHeight: 0.82
-  maximumHeight: 1.45
-  lostHandGracePeriod: 0.35
-  minimumIndexExtension: 0.14
 --- !u!1 &554176727 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6443852219947562045, guid: 65ecaf13a504d5c47bdf9606b89da10a, type: 3}
@@ -3137,6 +3138,7 @@ GameObject:
   - component: {fileID: 690564730}
   - component: {fileID: 690564729}
   - component: {fileID: 690564728}
+  - component: {fileID: 2086147391}
   m_Layer: 5
   m_Name: Dialogue Panel
   m_TagString: Untagged
@@ -3164,7 +3166,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0}
   m_AnchorMax: {x: 0.5, y: 0}
   m_AnchoredPosition: {x: 0, y: 35}
-  m_SizeDelta: {x: 1050, y: 220}
+  m_SizeDelta: {x: 1050, y: 250}
   m_Pivot: {x: 0.5, y: 0}
 --- !u!114 &690564728
 MonoBehaviour:
@@ -3219,6 +3221,18 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 690564726}
   m_CullTransparentMesh: 1
+--- !u!114 &2086147391
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 690564726}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b51f730c78d94c53bba6e8b9fd4bbabe, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::SculptingLabDialogueStyle
 --- !u!1 &710061704
 GameObject:
   m_ObjectHideFlags: 0
@@ -3275,7 +3289,7 @@ Transform:
   m_GameObject: {fileID: 724824315}
   serializedVersion: 2
   m_LocalRotation: {x: 0.12278779, y: 0.6963643, z: -0.12278779, w: 0.6963643}
-  m_LocalPosition: {x: -2, y: 1.5, z: -2.5}
+  m_LocalPosition: {x: -2, y: 1.6, z: -2.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -6492,11 +6506,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 690564727}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 17.5}
-  m_SizeDelta: {x: -70, y: -145}
-  m_Pivot: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: -88}
+  m_SizeDelta: {x: -70, y: 68}
+  m_Pivot: {x: 0.5, y: 1}
 --- !u!114 &1354083367
 MonoBehaviour:
   m_ObjectHideFlags: 0

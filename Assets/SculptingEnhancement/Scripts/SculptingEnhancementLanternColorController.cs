@@ -87,6 +87,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private RectTransform cursorRect;
     private TMP_Text cursorText;
     private TMP_Text headerText;
+    private TMP_Text headerBackText;
     private TMP_Text instructionText;
     private HitTarget hoveredTarget;
     private HitTarget dwellTarget;
@@ -216,8 +217,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         headerText = CreateText(
             "Header", panelRect, new Vector2(20f, -20f),
-            new Vector2(290f, 34f), "COLOR MODE", 21f,
+            new Vector2(194f, 34f), "COLOR MODE", 21f,
             TextAlignmentOptions.Left, FontStyles.Bold);
+        Button headerBackButton = CreateButton(
+            "HeaderBack", panelRect, new Vector2(112f, -13f),
+            new Vector2(88f, 34f), "← BACK", new Color32(42, 56, 72, 255));
+        headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>();
+        headerBackButton.onClick.AddListener(NavigateBack);
+        RegisterHitTarget(headerBackButton, false, false, false, default);
+
         instructionText = CreateText(
             "Instruction", panelRect, new Vector2(20f, -58f),
             new Vector2(290f, 52f), "Choose what you want to color", 15f,
@@ -336,6 +344,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partGroup.SetActive(false);
         colorGroup.SetActive(true);
         headerText.text = partNames[selectedPart];
+        SetHeaderBackLabel("← PARTS");
         instructionText.text = "Point and hold until the border completes.";
         ResetDwell();
     }
@@ -374,6 +383,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partGroup.SetActive(true);
         colorGroup.SetActive(false);
         headerText.text = "SELECT PART";
+        SetHeaderBackLabel("← SCULPT");
         instructionText.text = "Choose the whole lantern or one part.";
         SetHoveredTarget(null);
     }
@@ -402,6 +412,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partGroup.SetActive(false);
         colorGroup.SetActive(true);
         headerText.text = partNames[selectedPart];
+        SetHeaderBackLabel("← PARTS");
         instructionText.text = "Point and hold until the border completes.";
         SetHoveredTarget(null);
     }
@@ -415,6 +426,24 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         CommitTargetColor(selectedPart, color);
         colorSelectionLocked = true;
         instructionText.text = "Color saved and locked. Choose an action below.";
+    }
+
+    private void NavigateBack()
+    {
+        if (mode == ColorMode.SelectColor)
+        {
+            ShowPartSelection();
+            return;
+        }
+
+        if (mode == ColorMode.SelectPart)
+            ExitColorMode();
+    }
+
+    private void SetHeaderBackLabel(string label)
+    {
+        if (headerBackText != null)
+            headerBackText.text = label;
     }
 
     private void UnlockColorSelection()
