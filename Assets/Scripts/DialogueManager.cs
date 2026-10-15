@@ -77,10 +77,17 @@ public class DialogueManager : MonoBehaviour
 
     private Coroutine dialogueCoroutine;
     private bool dialogueStarted;
+    private SculptingEnhancementLanternColorController lanternColorController;
 
     private void Awake()
     {
         FindMissingReferences();
+
+        lanternColorController =
+            FindFirstObjectByType<SculptingEnhancementLanternColorController>(
+                FindObjectsInactive.Include);
+        if (lanternColorController != null)
+            lanternColorController.SetPaletteAvailable(false);
 
         // The teapot is placed in the scene like the lantern, but stays hidden
         // until the user chooses India and presses Start Sculpting.
@@ -688,6 +695,20 @@ public class DialogueManager : MonoBehaviour
     private void BeginSculpting(string culture)
     {
         HideAllChoices();
+
+        if (lanternColorController == null)
+        {
+            lanternColorController =
+                FindFirstObjectByType<SculptingEnhancementLanternColorController>(
+                    FindObjectsInactive.Include);
+        }
+
+        if (lanternColorController != null)
+        {
+            bool supportsColorPalette =
+                culture == "Taiwan" || culture == "India";
+            lanternColorController.SetPaletteAvailable(supportsColorPalette);
+        }
 
         if (dialoguePanel != null)
             dialoguePanel.SetActive(false);

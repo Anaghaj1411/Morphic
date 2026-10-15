@@ -10,6 +10,8 @@ public class HandCursorUI : MonoBehaviour
 
     [Header("Cursor Movement")]
     [SerializeField] private float smoothSpeed = 25f;
+    [Tooltip("Expands hand motion around the camera center so the cursor can reach every screen edge while the full hand remains visible.")]
+    [SerializeField, Range(1f, 2.5f)] private float cameraToScreenRangeMultiplier = 1.8f;
 
     private Camera canvasCamera;
 
@@ -44,9 +46,13 @@ public class HandCursorUI : MonoBehaviour
         Vector3 pinchPoint =
             (hand.ThumbTip + hand.IndexTip) * 0.5f;
 
+        Vector2 expandedPoint = ExpandCameraPoint(
+            new Vector2(pinchPoint.x, pinchPoint.y),
+            cameraToScreenRangeMultiplier);
+
         Vector2 screenPosition = new Vector2(
-            pinchPoint.x * Screen.width,
-            pinchPoint.y * Screen.height
+            expandedPoint.x * Screen.width,
+            expandedPoint.y * Screen.height
         );
 
         if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
@@ -91,5 +97,15 @@ public class HandCursorUI : MonoBehaviour
         {
             cursorRect = GetComponent<RectTransform>();
         }
+    }
+
+    private static Vector2 ExpandCameraPoint(
+        Vector2 normalizedPoint,
+        float multiplier)
+    {
+        Vector2 centered = normalizedPoint - Vector2.one * 0.5f;
+        return new Vector2(
+            Mathf.Clamp01(centered.x * multiplier + 0.5f),
+            Mathf.Clamp01(centered.y * multiplier + 0.5f));
     }
 }
