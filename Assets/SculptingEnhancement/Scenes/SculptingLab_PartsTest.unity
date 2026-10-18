@@ -2484,9 +2484,9 @@ MonoBehaviour:
   topperShape: Topper
   bottomShape: Bottom
   middleShape: __Disabled_Middle_Gesture__
-  popUpTopShape: Pop Up Top
+  popUpTopShape: TOP CIRCLE POP UP
   popUpBambooShape: Pop Up Bamboo
-  popUpBottomShape: Pop Up Bottom
+  popUpBottomShape: CIRCLE BOTTOM POP UP NEW
   widthSensitivity: 220
   heightSensitivity: 220
   pinchThreshold: 0.35
@@ -3528,8 +3528,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DialogueButtonClickSound
   audioSource: {fileID: 763712782}
-  clickSound: {fileID: 8300000, guid: 8435bce642360704891f3a0149b8c17d, type: 3}
+  clickSound: {fileID: 8300000, guid: 13f82eb536b49494cb467d1b1d3b2888, type: 3}
+  hoverSound: {fileID: 8300000, guid: 7543e6e0d67fc60418dcdda5f97c0305, type: 3}
   volume: 0.5
+  hoverVolume: 0.4
 --- !u!82 &763712782
 AudioSource:
   m_ObjectHideFlags: 0

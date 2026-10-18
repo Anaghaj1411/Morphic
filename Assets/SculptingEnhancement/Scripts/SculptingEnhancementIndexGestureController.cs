@@ -36,6 +36,7 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     [SerializeField, Range(0.7f, 1.4f)] private float maximumMiddleFingerExtension = 1.02f;
     [Tooltip("The index fingertip must remain clearly outside the palm.")]
     [SerializeField, Range(0.8f, 1.8f)] private float minimumIndexTipExtension = 1.08f;
+    [SerializeField, Range(1.1f, 2f)] private float openPalmExtension = 1.32f;
 
     private int widthIndex = -1;
     private int heightIndex = -1;
@@ -54,12 +55,15 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
 
     private void Awake()
     {
+        BindLantern();
         FindBlendShapes();
         ReadCurrentWeights();
     }
 
     private void OnEnable()
     {
+        BindLantern();
+        FindBlendShapes();
         gestureActive = false;
         gesturePaused = false;
         activationTimer = 0f;
@@ -73,20 +77,28 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
             widthIndex < 0 || heightIndex < 0)
             return;
 
-        if (!handRunner.TryGetLatestTwoHands(
-                out SculptHandFrame first,
-                out SculptHandFrame second))
+        bool hasTwo = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first,
+            out SculptHandFrame second);
+        bool hasOne = hasTwo || handRunner.TryGetLatestHand(out first);
+        int openPalms = 0;
+        if (hasOne && IsOpenPalm(first))
+            openPalms++;
+        if (hasTwo && IsOpenPalm(second))
+            openPalms++;
+
+        if (openPalms >= 1 && gestureActive)
+        {
+            PauseGesture();
+            EndGesture();
+            return;
+        }
+
+        if (!hasTwo)
         {
             activationTimer = 0f;
             if (gestureActive)
-            {
-                // Freeze immediately when either hand leaves the camera. Do not
-                // keep smoothing toward an old target while tracking is absent.
                 PauseGesture();
-                trackingLostTimer += Time.deltaTime;
-                if (trackingLostTimer > trackingGracePeriod)
-                    EndGesture();
-            }
             return;
         }
 
@@ -110,9 +122,6 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
 
         if (stillPointing)
         {
-            // If tracking or the pose flickered briefly, establish a fresh
-            // baseline at the frozen shape. Returning fingers therefore
-            // continue from the saved Width/Height instead of causing a jump.
             if (gesturePaused)
                 RebaseGesture(first, second);
 
@@ -120,12 +129,8 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         }
         else
         {
-            // A gesture change must stop deformation on this exact frame.
+            // Keep the last Width/Height. Only an open palm locks it.
             PauseGesture();
-            trackingLostTimer += Time.deltaTime;
-            if (trackingLostTimer > trackingGracePeriod)
-                EndGesture();
-
             return;
         }
 
@@ -151,12 +156,10 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         Mesh mesh = lanternRenderer.sharedMesh;
         for (int i = 0; i < mesh.blendShapeCount; i++)
         {
-            string importedName = mesh.GetBlendShapeName(i)?.Trim();
-            if (string.Equals(importedName, widthShape.Trim(),
-                    System.StringComparison.OrdinalIgnoreCase))
+            string importedName = CompactName(mesh.GetBlendShapeName(i));
+            if (importedName == CompactName(widthShape))
                 widthIndex = i;
-            else if (string.Equals(importedName, heightShape.Trim(),
-                         System.StringComparison.OrdinalIgnoreCase))
+            else if (importedName == CompactName(heightShape))
                 heightIndex = i;
         }
 
@@ -255,13 +258,24 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         bool isNotPinching =
             hand.PinchDistance >=
             hand.PalmWidth * minimumThumbIndexSeparation;
+        bool isNotVSign =
+            hand.MiddleTipPalmRatio <= maximumMiddleFingerExtension;
+        bool isNotOpenPalm = !IsOpenPalm(hand);
 
-        // All conditions are deliberately required. This keeps double-index
-        // control mutually exclusive from pinch, V-sign, open-palm and thumb
-        // rotation gestures, so those gestures cannot alter Width or Height.
         return indexIsClearlyExtended &&
                otherFingersMatchPointing &&
-               isNotPinching;
+               isNotPinching &&
+               isNotVSign &&
+               isNotOpenPalm;
+    }
+
+    private bool IsOpenPalm(SculptHandFrame hand)
+    {
+        return hand.PinchDistance >= hand.PalmWidth * 0.55f &&
+               hand.FingerCurlRatio >= openPalmExtension &&
+               hand.OtherFingersCurlRatio >= openPalmExtension * 0.92f &&
+               hand.IndexTipPalmRatio >= 1.05f &&
+               hand.MiddleTipPalmRatio > maximumMiddleFingerExtension;
     }
 
     private float ApplyDeadZone(float value)
@@ -298,5 +312,64 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     private static Vector2 ToPoint(Vector3 point)
     {
         return new Vector2(point.x, point.y);
+    }
+
+    private void BindLantern()
+    {
+        if (lanternRenderer != null && lanternRenderer.sharedMesh != null &&
+            lanternRenderer.sharedMesh.blendShapeCount > 0)
+            return;
+
+        SkinnedMeshRenderer best = null;
+        int bestScore = -1;
+        SkinnedMeshRenderer[] renderers = FindObjectsByType<SkinnedMeshRenderer>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int r = 0; r < renderers.Length; r++)
+        {
+            Mesh mesh = renderers[r].sharedMesh;
+            if (mesh == null || mesh.blendShapeCount == 0)
+                continue;
+
+            int score = 0;
+            string objectName = renderers[r].gameObject.name.ToUpperInvariant();
+            if (objectName.Contains("FINALLANTERN") || objectName.Contains("LANTERN"))
+                score += 10;
+
+            for (int i = 0; i < mesh.blendShapeCount; i++)
+            {
+                string imported = CompactName(mesh.GetBlendShapeName(i));
+                if (imported == "HEIGHT" || imported == "WIDTH")
+                    score += 2;
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = renderers[r];
+            }
+        }
+
+        if (best != null)
+            lanternRenderer = best;
+    }
+
+    private static string CompactName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        int dot = value.LastIndexOf('.');
+        if (dot >= 0 && dot < value.Length - 1)
+            value = value.Substring(dot + 1);
+
+        char[] chars = value.ToCharArray();
+        int count = 0;
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (char.IsLetterOrDigit(chars[i]))
+                chars[count++] = char.ToUpperInvariant(chars[i]);
+        }
+
+        return new string(chars, 0, count);
     }
 }

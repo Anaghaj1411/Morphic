@@ -3,6 +3,10 @@ using UnityEngine.UI;
 using TMPro;
 using Mediapipe.Unity.Sample.HandLandmarkDetection;
 
+// Old-style lantern sculpt: every key is a blend shape on the same
+// SkinnedMeshRenderer. Width/Height therefore move the top and bottom
+// rings with the body. Pop keys are the same sliders as the Inspector.
+[DefaultExecutionOrder(250)]
 public class TaiwanLanternGestureController : MonoBehaviour
 {
     [Header("References")]
@@ -16,995 +20,948 @@ public class TaiwanLanternGestureController : MonoBehaviour
     [SerializeField] private string topperShape = "Topper";
     [SerializeField] private string bottomShape = "Bottom";
     [SerializeField] private string middleShape = "Middle";
-    [SerializeField] private string popUpTopShape = "Pop Up Top";
+    [SerializeField] private string popUpTopShape = "TOP CIRCLE POP UP";
     [SerializeField] private string popUpBambooShape = "Pop Up Bamboo";
-    [SerializeField] private string popUpBottomShape = "Pop Up Bottom";
+    [SerializeField] private string popUpBottomShape = "CIRCLE BOTTOM POP UP NEW";
 
-    [Header("Gesture Sensitivity")]
+    [Header("Width / Height")]
     [SerializeField] private float widthSensitivity = 150f;
     [SerializeField] private float heightSensitivity = 150f;
-    [SerializeField] private float pinchThreshold = 0.25f;
-    [SerializeField] private float fistThreshold = 1.08f;
-    [SerializeField] private float smoothing = 22f;
-    [SerializeField] private float gestureGracePeriod = 0.5f;
     [SerializeField, Range(0f, 0.05f)] private float movementDeadZone = 0.012f;
+    [SerializeField, Range(90f, 175f)] private float minimumPointingIndexAngle = 125f;
+    [SerializeField, Range(0.5f, 2f)] private float maximumOtherFingerExtension = 1.45f;
+    [SerializeField, Range(0.8f, 1.8f)] private float minimumIndexTipExtension = 1.08f;
+    [SerializeField, Range(0.2f, 0.8f)] private float minimumThumbIndexSeparation = 0.42f;
 
-    [Header("Index Pointing Gesture")]
-    [SerializeField, Range(0.5f, 1.5f)] private float maximumOtherFingerExtension = 1.15f;
-    [SerializeField, Range(120f, 175f)] private float minimumPointingIndexAngle = 140f;
+    [Header("Pinch / Thumb")]
+    [SerializeField] private float pinchThreshold = 0.58f;
+    [SerializeField] private float pinchReleaseThreshold = 0.80f;
+    [SerializeField] private float leftPinchBoost = 1.2f;
+    [SerializeField] private float popConfirmTime = 0.05f;
+    [SerializeField] private float popEase = 12f;
+    [SerializeField] private float popLiftSensitivity = 420f;
+    [SerializeField] private float smoothing = 18f;
+    [SerializeField, Range(0.05f, 0.5f)] private float minimumThumbLength = 0.08f;
+    [SerializeField, Min(0.05f)] private float shapeEaseTime = 0.12f;
+    [SerializeField, Range(1.1f, 2f)] private float openPalmExtension = 1.32f;
 
-    [Header("Topper Transition")]
-    [SerializeField, Min(0.1f)] private float topperEaseTime = 0.65f;
+    [Header("Unused (kept so scene serialization stays valid)")]
+    [SerializeField] private float fistThreshold = 1.08f;
+    [SerializeField] private float gestureGracePeriod = 0.5f;
+    [SerializeField] private float topperEaseTime = 0.65f;
+    [SerializeField] private float middleEaseTime = 0.28f;
+    [SerializeField] private float middleMinPinchSeparation = 1f;
+    [SerializeField] private float middleMaxPinchSeparation = 4f;
+    [SerializeField] private float middleHoldStillTolerance = 0.05f;
+    [SerializeField] private float singleThumbModeGracePeriod = 0.4f;
+    [SerializeField] private float popUpMinimumHandHeight = 0.10f;
+    [SerializeField] private float popUpMaximumHandHeight = 0.42f;
+    [SerializeField] private float popUpGestureActivationTime = 0.08f;
+    [SerializeField] private float bambooMinimumVSeparation = 1.2f;
+    [SerializeField] private float bambooMaximumVSeparation = 4f;
+    [SerializeField] private float gestureLockHoldDuration = 1f;
+    [SerializeField] private float thumbGestureLockHoldDuration = 2f;
+    [SerializeField] private float indexHoldStillTolerance = 0.01f;
+    [SerializeField] private float thumbHoldStillTolerance = 15f;
+    [SerializeField] private float thumbOutputDeadZone = 6f;
 
-    [Header("Middle Transition")]
-    [SerializeField, Min(0.05f)] private float middleEaseTime = 0.28f;
+    private const int Width = 0;
+    private const int Height = 1;
+    private const int Topper = 2;
+    private const int Bottom = 3;
+    private const int PopTop = 4;
+    private const int PopBottom = 5;
+    private const int PopBamboo = 6;
+    private const int PopTassel = 7;
+    private const int ChannelCount = 8;
 
-    [Header("Thumb Rotation Control")]
-    [SerializeField, Range(0.05f, 0.5f)] private float minimumThumbLength = 0.12f;
+    private readonly int[] shapeIndex = new int[ChannelCount];
+    private readonly float[] current = new float[ChannelCount];
+    private readonly string[] lookupNames = new string[ChannelCount];
 
-    [Header("Middle: Two-Hand Pinch Distance")]
-    [SerializeField, Min(0.1f)] private float middleMinPinchSeparation = 1f;
-    [SerializeField, Min(0.2f)] private float middleMaxPinchSeparation = 4f;
-    [SerializeField, Range(0.01f, 0.3f)] private float middleHoldStillTolerance = 0.05f;
-    [SerializeField, Range(0f, 1f)] private float singleThumbModeGracePeriod = 0.4f;
-
-    [Header("Pop-Up: Single-Hand Pinch Height")]
-    [SerializeField, Range(0f, 1f)] private float popUpMinimumHandHeight = 0.10f;
-    [SerializeField, Range(0f, 1f)] private float popUpMaximumHandHeight = 0.42f;
-    [SerializeField, Min(0.01f)] private float popUpGestureActivationTime = 0.08f;
-
-    [Header("Pop-Up Bamboo: Two-Hand V Spacing")]
-    [SerializeField, Min(0.1f)] private float bambooMinimumVSeparation = 1.2f;
-    [SerializeField, Min(0.2f)] private float bambooMaximumVSeparation = 4f;
-
-    [Header("Gesture Lock")]
-    [SerializeField, Min(0.25f)] private float gestureLockHoldDuration = 1f;
-    [SerializeField, Min(0.25f)] private float thumbGestureLockHoldDuration = 2f;
-    [SerializeField, Range(0.003f, 0.04f)] private float indexHoldStillTolerance = 0.01f;
-    [SerializeField, Range(2f, 20f)] private float thumbHoldStillTolerance = 15f;
-    [SerializeField, Range(0f, 12f)] private float thumbOutputDeadZone = 6f;
-
-    private readonly string[] shapeNames = new string[8];
-
-    private int[] shapeIndices = new int[8];
-    private float[] shapeMaximumWeights = new float[8];
-    private float[] currentWeights = new float[8];
-    private float[] gestureStartWeights = new float[8];
-
-    private float baselineHorizontal;
-    private float baselineVertical;
-    private float gestureLostTimer;
-    private float singleThumbModeTimer;
-    private float topperTargetWeight;
-    private float topperVelocity;
-    private float middleTargetWeight;
-    private float middleVelocity;
-    private float topperMinimumWeight;
-    private float topperMaximumWeight = 100f;
-    private float bottomTargetWeight;
-    private float bottomVelocity;
-    private float bottomMinimumWeight;
-    private float bottomMaximumWeight = 100f;
-    private float gestureHoldTimer;
-    private float stabilityAnchorA;
-    private float stabilityAnchorB;
-
-    private Vector2 firstBaselineIndex;
-    private Vector2 secondBaselineIndex;
-
-    private bool twoHandGestureActive;
-    private bool gestureLocked;
-    private bool hasStabilityAnchor;
-
-    private string currentGestureName = "NONE";
-    private string candidateGestureName = "NONE";
-    private float gestureActivationTimer = 0f;
-    private const float GESTURE_ACTIVATION_TIME = 0.2f;
+    private bool ownWidthHeight = true;
+    private bool widthHeightArmed;
+    private float widthHeightBaselineX;
+    private float widthHeightBaselineY;
+    private float widthHeightStartW;
+    private float widthHeightStartH;
 
     private CanvasGroup progressCardGroup;
     private TMP_Text progressPartText;
     private TMP_Text progressPercentText;
     private Image progressBarFill;
     private Image progressAccentStripe;
-    private Color progressAccent = new Color32(77, 220, 203, 255);
     private bool showProgressCard;
-
-    private const int WIDTH = 0;
-    private const int HEIGHT = 1;
-    private const int TOPPER = 2;
-    private const int BOTTOM = 3;
-    private const int MIDDLE = 4;
-    private const int POP_TOP = 5;
-    private const int POP_BAMBOO = 6;
-    private const int POP_BOTTOM = 7;
+    private bool deformationLocked;
+    private bool rightPinchHeld;
+    private bool leftPinchHeld;
+    private float rightPinchTimer;
+    private float leftPinchTimer;
+    private bool rightPopArmed;
+    private bool leftPopArmed;
+    private float rightPopStartY;
+    private float leftPopStartY;
+    private float rightPopStart;
+    private float leftPopStart;
+    private bool bambooArmed;
+    private float bambooStartY;
+    private float bambooStart;
+    private bool tasselArmed;
+    private float tasselStartY;
+    private float tasselStart;
+    private bool madeDeformation;
+    private bool topPopUsesRectangle;
+    private bool bottomPopUsesRectangle;
+    private bool tasselUsesTriple;
+    private int unusedPopTopShape = -1;
+    private int unusedPopBottomShape = -1;
+    private int unusedTasselShape = -1;
+    private string popTopLabel = "TOP CIRCLE";
+    private string popBottomLabel = "BOTTOM CIRCLE";
 
     private void Awake()
     {
-        shapeNames[WIDTH] = widthShape;
-        shapeNames[HEIGHT] = heightShape;
-        shapeNames[TOPPER] = topperShape;
-        shapeNames[BOTTOM] = bottomShape;
-        shapeNames[MIDDLE] = middleShape;
-        shapeNames[POP_TOP] = popUpTopShape;
-        shapeNames[POP_BAMBOO] = popUpBambooShape;
-        shapeNames[POP_BOTTOM] = popUpBottomShape;
+        lookupNames[Width] = widthShape;
+        lookupNames[Height] = heightShape;
+        lookupNames[Topper] = topperShape;
+        lookupNames[Bottom] = bottomShape;
+        lookupNames[PopTop] = popUpTopShape;
+        lookupNames[PopBottom] = popUpBottomShape;
+        lookupNames[PopBamboo] = popUpBambooShape;
+        lookupNames[PopTassel] = "3 TASSEL POP OUT";
 
-        FindBlendShapes();
+        SculptingEnhancementIndexGestureController indexDriver =
+            GetComponent<SculptingEnhancementIndexGestureController>();
+        ownWidthHeight = indexDriver == null || !indexDriver.enabled;
+
+        BindLantern();
+        ResolveShapes();
         CreateProgressCard();
+        if (lanternRenderer != null)
+            lanternRenderer.updateWhenOffscreen = true;
     }
 
-    private void FindBlendShapes()
+    private void OnEnable()
     {
-        for (int i = 0; i < shapeIndices.Length; i++)
-        {
-            shapeIndices[i] = -1;
-            shapeMaximumWeights[i] = 100f;
-        }
+        BindLantern();
+        ResolveShapes();
+        SyncCurrentFromRenderer();
+    }
 
-        if (lanternRenderer == null ||
-            lanternRenderer.sharedMesh == null)
-        {
-            Debug.LogError("MORPHIC: Lantern renderer or mesh is null!");
+    public void SyncCurrentFromRenderer()
+    {
+        if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
             return;
-        }
 
-        Mesh mesh = lanternRenderer.sharedMesh;
-        Debug.Log($"MORPHIC: Mesh has {mesh.blendShapeCount} blend shapes");
-
-        for (int i = 0; i < mesh.blendShapeCount; i++)
+        for (int c = 0; c < ChannelCount; c++)
         {
-            string importedName = mesh.GetBlendShapeName(i);
-            Debug.Log($"MORPHIC: Blend shape {i}: {importedName}");
-
-            for (int j = 0; j < shapeNames.Length; j++)
-            {
-                // FBX exporters may append whitespace to blend shape names
-                // (the bamboo channel in the current model has a trailing
-                // space). Normalize names before matching scene settings.
-                if (string.Equals(
-                    importedName?.Trim(),
-                    shapeNames[j]?.Trim(),
-                    System.StringComparison.OrdinalIgnoreCase))
-                {
-                    shapeIndices[j] = i;
-                    int frameCount = mesh.GetBlendShapeFrameCount(i);
-                    if (frameCount > 0)
-                    {
-                        float frameMaximum = Mathf.Abs(
-                            mesh.GetBlendShapeFrameWeight(i, frameCount - 1));
-                        if (frameMaximum > 0.001f)
-                            shapeMaximumWeights[j] = frameMaximum;
-                    }
-                }
-            }
+            if (shapeIndex[c] >= 0)
+                current[c] = lanternRenderer.GetBlendShapeWeight(shapeIndex[c]);
         }
+    }
 
-        for (int i = 0; i < shapeIndices.Length; i++)
+    public void ArmPopVariant(bool isTop, bool useRectangle)
+    {
+        if (isTop)
+            topPopUsesRectangle = useRectangle;
+        else
+            bottomPopUsesRectangle = useRectangle;
+
+        BindLantern();
+        ApplyPopVariantBindings();
+        SyncCurrentFromRenderer();
+    }
+
+    public void ArmTasselVariant(bool useTriple)
+    {
+        tasselUsesTriple = useTriple;
+        BindLantern();
+        ApplyTasselBinding();
+        int tassel = ActiveTasselChannel();
+        if (tassel >= 0 && shapeIndex[tassel] >= 0)
         {
-            if (shapeIndices[i] < 0)
-                Debug.LogWarning(
-                    "Missing BlendShape: " + shapeNames[i], this
-                );
-            else
-            {
-                currentWeights[i] =
-                    lanternRenderer.GetBlendShapeWeight(shapeIndices[i]);
-                if (i == MIDDLE)
-                    middleTargetWeight = currentWeights[i];
-                if (i == TOPPER)
-                {
-                    int frameCount = mesh.GetBlendShapeFrameCount(shapeIndices[i]);
-                    if (frameCount > 0)
-                        topperMaximumWeight = mesh.GetBlendShapeFrameWeight(
-                            shapeIndices[i], frameCount - 1);
-                    topperTargetWeight = currentWeights[i];
-                }
-                else if (i == BOTTOM)
-                {
-                    int frameCount = mesh.GetBlendShapeFrameCount(shapeIndices[i]);
-                    if (frameCount > 0)
-                        bottomMaximumWeight = mesh.GetBlendShapeFrameWeight(
-                            shapeIndices[i], frameCount - 1);
-                    bottomTargetWeight = currentWeights[i];
-                }
-                Debug.Log($"MORPHIC: Found blend shape '{shapeNames[i]}' at index {shapeIndices[i]}");
-                if (i == POP_BAMBOO)
-                    Debug.Log($"MORPHIC: Bamboo blend shape maximum weight is {shapeMaximumWeights[i]:0.##}");
-
-                // Clear shape keys that do not have an active gesture mapping.
-                if (i != WIDTH && i != HEIGHT && i != TOPPER &&
-                    i != BOTTOM && i != MIDDLE)
-                {
-                    currentWeights[i] = 0f;
-                    lanternRenderer.SetBlendShapeWeight(shapeIndices[i], 0f);
-                }
-            }
+            lanternRenderer.SetBlendShapeWeight(shapeIndex[tassel], 0f);
+            current[tassel] = 0f;
         }
+
+        if (unusedTasselShape >= 0)
+            lanternRenderer.SetBlendShapeWeight(unusedTasselShape, 0f);
+        SyncCurrentFromRenderer();
     }
 
     private void Update()
     {
+        if (Input.GetKeyDown(KeyCode.T))
+            current[PopTop] = current[PopTop] > 50f ? 0f : 100f;
+        if (Input.GetKeyDown(KeyCode.B))
+            current[PopBottom] = current[PopBottom] > 50f ? 0f : 100f;
+        if (Input.GetKeyDown(KeyCode.V))
+            current[PopBamboo] = current[PopBamboo] > 50f ? 0f : 100f;
+        if (Input.GetKeyDown(KeyCode.G))
+        {
+            int tassel = ActiveTasselChannel();
+            if (tassel >= 0)
+                current[tassel] = current[tassel] > 50f ? 0f : 100f;
+        }
+
         if (handRunner == null || lanternRenderer == null)
         {
-            SetGestureText("GESTURE: NONE");
+            SetStatus("GESTURE: NONE");
             return;
         }
 
-        bool hasTwoHands = handRunner.TryGetLatestTwoHands(
-            out SculptHandFrame first,
-            out SculptHandFrame second);
-
-        if (!hasTwoHands)
+        bool hasTwo = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first, out SculptHandFrame second);
+        if (!hasTwo && !handRunner.TryGetLatestHand(out first))
         {
-            if (handRunner.TryGetLatestHand(out SculptHandFrame singleHand))
+            widthHeightArmed = false;
+            bambooArmed = false;
+            tasselArmed = false;
+            SetStatus("GESTURE: NO HANDS");
+            return;
+        }
+
+        if (!hasTwo)
+            second = default;
+
+        float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
+        bool twoV = hasTwo && IsVSign(first) && IsVSign(second);
+        bool twoFists = !twoV && hasTwo && LooksLikeFist(first) && LooksLikeFist(second);
+        bool twoIndex = !twoFists && !twoV && hasTwo &&
+                        IsIndexPointing(first) && IsIndexPointing(second);
+        int openPalms = CountOpenPalms(first, second, hasTwo);
+        bool firstRight = IsPhysicalRightHand(first, second, hasTwo);
+        ref bool firstHeld = ref (firstRight ? ref rightPinchHeld : ref leftPinchHeld);
+        bool pinchOrThumb = IsPinching(first, firstRight, ref firstHeld) ||
+                            TryThumbWeight(first, out _);
+        if (hasTwo)
+        {
+            bool secondRight = IsPhysicalRightHand(second, first, true);
+            ref bool secondHeld = ref (secondRight ? ref rightPinchHeld : ref leftPinchHeld);
+            pinchOrThumb = pinchOrThumb ||
+                           IsPinching(second, secondRight, ref secondHeld) ||
+                           TryThumbWeight(second, out _);
+        }
+
+        if (openPalms >= 1 && madeDeformation && !twoIndex && !twoFists && !twoV && !pinchOrThumb)
+            deformationLocked = true;
+
+        if (twoIndex || twoFists || twoV || pinchOrThumb)
+            deformationLocked = false;
+
+        if (deformationLocked)
+        {
+            widthHeightArmed = false;
+            bambooArmed = false;
+            tasselArmed = false;
+            SetStatus("LOCKED  |  open palm  |  TOP " +
+                      current[PopTop].ToString("0") +
+                      "  BOT " + current[PopBottom].ToString("0") +
+                      "  BAM " + current[PopBamboo].ToString("0") +
+                      "  TAS " + current[ActiveTasselChannel()].ToString("0"));
+            return;
+        }
+
+        if (ownWidthHeight)
+        {
+            if (twoIndex)
             {
-                first = singleHand;
-                second = default;
+                DriveWidthHeight(first, second, blend);
+                madeDeformation = true;
             }
             else
-            {
-                HandleTrackingLoss();
-                SetGestureText("GESTURE: NO HANDS");
-                return;
-            }
+                widthHeightArmed = false;
         }
 
-        gestureLostTimer = 0f;
-
-        float dt = Time.deltaTime;
-        float factor = 1f - Mathf.Exp(-smoothing * dt);
-        singleThumbModeTimer = hasTwoHands ? 0f : singleThumbModeTimer + dt;
-
-        // Detect which gesture is active
-        string detectedGesture = hasTwoHands
-            ? DetectGesture(first, second)
-            : singleThumbModeTimer >= singleThumbModeGracePeriod
-                ? DetectSingleHandGesture(first)
-                : "NONE";
-
-        // Before lock, a gesture owns the controller. A pose change pauses
-        // deformation until the user returns to the same pose and holds its
-        // control value still for the full lock interval.
-        if (!gestureLocked && currentGestureName != "NONE")
-        {
-            if (detectedGesture != currentGestureName)
-            {
-                ResetGestureHold();
-                ApplyWeights();
-                string switchTarget = detectedGesture == "NONE"
-                    ? string.Empty
-                    : " BEFORE " + detectedGesture;
-                SetGestureText(
-                    "HOLD STILL 2 SEC TO LOCK " + currentGestureName + switchTarget);
-                return;
-            }
-
-            candidateGestureName = currentGestureName;
-            gestureActivationTimer = 0f;
-            ApplyGestureEffects(first, second, hasTwoHands, factor);
-            UpdateGestureHold(first, second, hasTwoHands, detectedGesture, dt);
-            ApplyWeights();
-            SetGestureText(gestureLocked
-                ? "LOCKED: " + currentGestureName + " - SWITCH GESTURE"
-                : "HOLD STILL 2 SEC TO LOCK " + currentGestureName);
-            return;
-        }
-
-        // After lock, ignore the old pose and accept a different recognized
-        // gesture only after its classification remains stable briefly.
-        if (gestureLocked)
-        {
-            if (detectedGesture != "NONE" && detectedGesture != currentGestureName)
-            {
-                if (candidateGestureName != detectedGesture)
-                {
-                    candidateGestureName = detectedGesture;
-                    gestureActivationTimer = 0f;
-                }
-                else
-                    gestureActivationTimer += dt;
-
-                if (gestureActivationTimer >= GetGestureActivationTime(detectedGesture))
-                {
-                    currentGestureName = detectedGesture;
-                    gestureLocked = false;
-                    gestureActivationTimer = 0f;
-                    candidateGestureName = currentGestureName;
-                    ResetGestureHold();
-                    twoHandGestureActive = false;
-                }
-            }
-            else
-            {
-                candidateGestureName = currentGestureName;
-                gestureActivationTimer = 0f;
-            }
-
-            ApplyWeights();
-            SetGestureText(gestureLocked
-                ? "LOCKED: " + currentGestureName + " - SWITCH GESTURE"
-                : "GESTURE: " + currentGestureName);
-            return;
-        }
-
-        // No gesture is active yet. Select the first valid gesture after
-        // consistent detection, then let it own the controller until locked.
-        if (detectedGesture == currentGestureName)
-        {
-            candidateGestureName = currentGestureName;
-            gestureActivationTimer = 0f;
-        }
+        if (twoV)
+            DriveBambooSpread(first, second);
         else
+            bambooArmed = false;
+
+        if (twoFists)
+            DriveTasselDown(first, second);
+        else
+            tasselArmed = false;
+
+        if (!twoIndex && !twoFists && !twoV)
         {
-            if (candidateGestureName != detectedGesture)
-            {
-                candidateGestureName = detectedGesture;
-                gestureActivationTimer = 0f;
-            }
-            else
-            {
-                gestureActivationTimer += dt;
-                if (gestureActivationTimer >= GetGestureActivationTime(detectedGesture))
-                {
-                    currentGestureName = candidateGestureName;
-                    gestureActivationTimer = 0f;
-                    ResetGestureHold();
-                }
-            }
+            DriveHand(first, second, hasTwo, blend);
+            if (hasTwo)
+                DriveHand(second, first, true, blend);
         }
 
-        if (currentGestureName != "INDEX FINGERS")
-            twoHandGestureActive = false;
-
-        if (currentGestureName != "NONE")
-        {
-            ApplyGestureEffects(first, second, hasTwoHands, factor);
-            UpdateGestureHold(first, second, hasTwoHands, detectedGesture, dt);
-        }
-
-        ApplyWeights();
-
-        SetGestureText(gestureLocked
-            ? "LOCKED: " + currentGestureName + " - SWITCH GESTURE"
-            : currentGestureName == "NONE"
-                ? "GESTURE: NONE"
-                : "HOLD STILL 2 SEC TO LOCK " + currentGestureName);
+        SetStatus(
+            BuildStatus(twoIndex, twoFists, twoV, hasTwo, first, second) +
+            "  |  TOP " + current[PopTop].ToString("0") +
+            "  BOT " + current[PopBottom].ToString("0") +
+            "  BAM " + current[PopBamboo].ToString("0") +
+            "  TAS " + current[ActiveTasselChannel()].ToString("0"));
     }
 
     private void LateUpdate()
     {
-        UpdateProgressCardFade();
-
         if (lanternRenderer == null)
             return;
 
-        // Keep the Topper easing independent from detector frame stalls. A
-        // missed or slow inference frame must not turn a toggle into a snap.
-        float dt = Mathf.Min(Time.unscaledDeltaTime, 1f / 30f);
-        EaseBlendShape(TOPPER, topperTargetWeight, ref topperVelocity, dt);
-        EaseBlendShape(BOTTOM, bottomTargetWeight, ref bottomVelocity, dt);
-        EaseBlendShape(MIDDLE, middleTargetWeight, ref middleVelocity, dt);
-        // Apply gesture-driven shape keys after Animator evaluation so its
-        // animation update cannot overwrite Width, Height, or the Pop-Up keys.
-        ApplyWeights();
-    }
-
-    private string DetectGesture(SculptHandFrame first, SculptHandFrame second)
-    {
-        if (IsMiddlePinchPose(first) && IsMiddlePinchPose(second))
-            return "DOUBLE PINCH";
-
-        // Keep this interaction focused: other recognized poses must not
-        // leave extra shape keys latched while Width/Height are being edited.
-        if (IsIndexPointing(first) && IsIndexPointing(second))
-            return "INDEX FINGERS";
-
-        bool firstPinching = IsPinching(first);
-        bool secondPinching = IsPinching(second);
-        if (firstPinching != secondPinching)
+        if (ownWidthHeight)
         {
-            SculptHandFrame pinchingHand = firstPinching ? first : second;
-            if (pinchingHand.HasHandedness)
-                return pinchingHand.IsRightHand
-                    ? "POP UP BOTTOM PINCH"
-                    : "POP UP TOP PINCH";
+            Write(Width, current[Width]);
+            Write(Height, current[Height]);
         }
 
-        bool firstThumb = IsThumbPose(first) && first.HasHandedness;
-        bool secondThumb = IsThumbPose(second) && second.HasHandedness;
-        if (firstThumb != secondThumb)
+        Write(Topper, current[Topper]);
+        Write(Bottom, current[Bottom]);
+        Write(PopTop, current[PopTop]);
+        Write(PopBottom, current[PopBottom]);
+        WriteUnusedPop(unusedPopTopShape);
+        WriteUnusedPop(unusedPopBottomShape);
+        Write(PopBamboo, current[PopBamboo]);
+        if (shapeIndex[PopTassel] >= 0 && shapeIndex[PopTassel] != shapeIndex[PopBamboo])
+            Write(PopTassel, current[PopTassel]);
+        WriteUnusedPop(unusedTasselShape);
+        UpdateProgressCardFade();
+    }
+
+    private void DriveHand(
+        SculptHandFrame hand,
+        SculptHandFrame other,
+        bool hasTwo,
+        float blend)
+    {
+        bool physicalRight = IsPhysicalRightHand(hand, other, hasTwo);
+        if (DrivePop(hand, physicalRight, blend))
+            return;
+
+        if (TryThumbWeight(hand, out float thumbWeight))
         {
-            SculptHandFrame thumbHand = firstThumb ? first : second;
-            // Camera input is mirrored in this scene, so MediaPipe's handedness
-            // label is opposite the user's physical left/right hand.
-            return thumbHand.IsRightHand
-                ? "LEFT THUMB ROTATION"
-                : "RIGHT THUMB ROTATION";
+            int slot = physicalRight ? Topper : Bottom;
+            current[slot] = Mathf.Lerp(current[slot], thumbWeight, blend);
+            madeDeformation = true;
+        }
+    }
+
+    private bool DrivePop(SculptHandFrame hand, bool physicalRight, float blend)
+    {
+        ref bool held = ref (physicalRight ? ref rightPinchHeld : ref leftPinchHeld);
+        ref float timer = ref (physicalRight ? ref rightPinchTimer : ref leftPinchTimer);
+        ref bool armed = ref (physicalRight ? ref rightPopArmed : ref leftPopArmed);
+        ref float startY = ref (physicalRight ? ref rightPopStartY : ref leftPopStartY);
+        ref float startPop = ref (physicalRight ? ref rightPopStart : ref leftPopStart);
+        int pop = physicalRight ? PopTop : PopBottom;
+        float pinchY = PinchHeight(hand);
+
+        if (!IsPinching(hand, physicalRight, ref held) || IsOpenPalm(hand))
+        {
+            timer = 0f;
+            armed = false;
+            return false;
         }
 
-        if (firstThumb && secondThumb &&
-            IsVerticalThumbRotationPose(first) &&
-            IsVerticalThumbRotationPose(second))
-            return "NONE";
+        timer += Time.deltaTime;
+        if (popConfirmTime > 0f && timer < popConfirmTime)
+            return true;
 
-        if (IsVSign(first) && IsVSign(second))
-            return "BAMBOO V SPACING";
+        if (!armed)
+        {
+            armed = true;
+            startY = pinchY;
+            startPop = current[pop];
+        }
 
-        return "NONE";
+        float lift = Mathf.Max(0f, pinchY - startY);
+        float target = Mathf.Clamp(startPop + lift * popLiftSensitivity, 0f, 100f);
+        float ease = 1f - Mathf.Exp(-popEase * Time.deltaTime);
+        current[pop] = Mathf.Lerp(current[pop], target, ease);
+        if (target > startPop + 0.5f)
+            madeDeformation = true;
+        return true;
     }
 
-    private string DetectSingleHandGesture(SculptHandFrame hand)
+    private static float PinchHeight(SculptHandFrame hand)
     {
-        if (!hand.HasHandedness)
-            return "NONE";
-
-        if (IsPinching(hand))
-            return hand.IsRightHand
-                ? "POP UP BOTTOM PINCH"
-                : "POP UP TOP PINCH";
-
-        if (!IsThumbPose(hand))
-            return "NONE";
-
-        return hand.IsRightHand
-            ? "LEFT THUMB ROTATION"
-            : "RIGHT THUMB ROTATION";
+        return (hand.ThumbTip.y + hand.IndexTip.y) * 0.5f;
     }
 
-    private SculptHandFrame GetPopUpControlHand(
+    private void DriveBambooSpread(SculptHandFrame first, SculptHandFrame second)
+    {
+        float spread = VSignSpread(first, second);
+        if (!bambooArmed)
+        {
+            bambooArmed = true;
+            bambooStartY = spread;
+            bambooStart = current[PopBamboo];
+            return;
+        }
+
+        float outward = Mathf.Max(0f, spread - bambooStartY);
+        float target = Mathf.Clamp(bambooStart + outward * popLiftSensitivity, 0f, 100f);
+        float ease = 1f - Mathf.Exp(-popEase * Time.deltaTime);
+        current[PopBamboo] = Mathf.Lerp(current[PopBamboo], target, ease);
+        if (target > bambooStart + 0.5f)
+            madeDeformation = true;
+    }
+
+    private void DriveTasselDown(SculptHandFrame first, SculptHandFrame second)
+    {
+        int channel = ActiveTasselChannel();
+        float fistY = FistHeight(first, second);
+        if (!tasselArmed)
+        {
+            tasselArmed = true;
+            tasselStartY = fistY;
+            tasselStart = current[channel];
+            return;
+        }
+
+        float drop = Mathf.Max(0f, tasselStartY - fistY);
+        float target = Mathf.Clamp(tasselStart + drop * popLiftSensitivity * 1.35f, 0f, 100f);
+        float ease = 1f - Mathf.Exp(-popEase * Time.deltaTime);
+        current[channel] = Mathf.Lerp(current[channel], target, ease);
+        if (target > tasselStart + 0.5f)
+            madeDeformation = true;
+    }
+
+    private int ActiveTasselChannel()
+    {
+        if (shapeIndex[PopTassel] >= 0 && shapeIndex[PopTassel] != shapeIndex[PopBamboo])
+            return PopTassel;
+        return PopBamboo;
+    }
+
+    private static float FistHeight(SculptHandFrame first, SculptHandFrame second)
+    {
+        return (first.PalmCenter.y + second.PalmCenter.y) * 0.5f;
+    }
+
+    private static float VSignSpread(SculptHandFrame first, SculptHandFrame second)
+    {
+        float leftX = (first.IndexTip.x + first.MiddleTip.x) * 0.5f;
+        float rightX = (second.IndexTip.x + second.MiddleTip.x) * 0.5f;
+        return Mathf.Abs(rightX - leftX);
+    }
+
+    private void DriveWidthHeight(
         SculptHandFrame first,
         SculptHandFrame second,
-        bool hasTwoHands,
-        bool controlPhysicalRightHand)
+        float blend)
     {
-        // Prefer the hand that is actually pinching. Looking it up again from
-        // handedness can select the other hand if MediaPipe changes hand order
-        // or its mirrored label during tracking, which delayed the top pop-up.
-        bool firstPinching = IsPinching(first);
-        bool secondPinching = hasTwoHands && IsPinching(second);
-        if (firstPinching != secondPinching)
-            return firstPinching ? first : second;
+        float horizontal = Mathf.Abs(first.IndexTip.x - second.IndexTip.x);
+        float vertical = Mathf.Abs(first.IndexTip.y - second.IndexTip.y);
 
-        if (!hasTwoHands && firstPinching)
-            return first;
-
-        bool expectedMediaPipeRight = !controlPhysicalRightHand;
-        if (first.HasHandedness && first.IsRightHand == expectedMediaPipeRight)
-            return first;
-        if (hasTwoHands && second.HasHandedness &&
-            second.IsRightHand == expectedMediaPipeRight)
-            return second;
-        return default;
-    }
-
-    private void ApplyGestureEffects(
-        SculptHandFrame first,
-        SculptHandFrame second,
-        bool hasTwoHands,
-        float factor)
-    {
-        switch (currentGestureName)
+        if (!widthHeightArmed)
         {
-            case "INDEX FINGERS":
-                if (hasTwoHands)
-                    ApplyWidthHeightGesture(first, second, factor);
-                break;
-            case "DOUBLE PINCH":
-                if (hasTwoHands &&
-                    IsMiddlePinchPose(first) && IsMiddlePinchPose(second))
-                {
-                    float palmWidth = (first.PalmWidth + second.PalmWidth) * 0.5f;
-                    Vector2 firstPinch = GetPinchCenter(first);
-                    Vector2 secondPinch = GetPinchCenter(second);
-                    float pinchSeparation = Vector2.Distance(firstPinch, secondPinch);
-                    float separationInPalmWidths = pinchSeparation / Mathf.Max(palmWidth, 0.001f);
-                    float normalized = Mathf.InverseLerp(
-                        middleMinPinchSeparation,
-                        Mathf.Max(middleMaxPinchSeparation, middleMinPinchSeparation + 0.01f),
-                        separationInPalmWidths);
-                    SetTarget(MIDDLE, normalized * 100f, factor);
-                }
-                break;
-            case "BAMBOO V SPACING":
-                if (hasTwoHands && IsVSign(first) && IsVSign(second))
-                {
-                    float palmWidth = (first.PalmWidth + second.PalmWidth) * 0.5f;
-                    float horizontalSeparation = Mathf.Abs(
-                        first.PalmCenter.x - second.PalmCenter.x);
-                    float separationInPalmWidths = horizontalSeparation /
-                        Mathf.Max(palmWidth, 0.001f);
-                    float normalizedOpen = Mathf.InverseLerp(
-                        bambooMinimumVSeparation,
-                        Mathf.Max(bambooMaximumVSeparation,
-                            bambooMinimumVSeparation + 0.01f),
-                        separationInPalmWidths);
-                    SetTarget(
-                        POP_BAMBOO,
-                        normalizedOpen * shapeMaximumWeights[POP_BAMBOO],
-                        factor);
-                }
-                break;
-            case "POP UP TOP PINCH":
-            case "POP UP BOTTOM PINCH":
-                bool controlPhysicalRightHand = currentGestureName == "POP UP TOP PINCH";
-                SculptHandFrame popUpHand = GetPopUpControlHand(
-                    first, second, hasTwoHands, controlPhysicalRightHand);
-                if (IsPinching(popUpHand))
-                {
-                    float minimumHeight = Mathf.Min(
-                        popUpMinimumHandHeight, popUpMaximumHandHeight);
-                    float maximumHeight = Mathf.Max(
-                        popUpMinimumHandHeight, popUpMaximumHandHeight);
-                    float normalizedHeight = Mathf.InverseLerp(
-                        minimumHeight,
-                        Mathf.Max(maximumHeight, minimumHeight + 0.01f),
-                        GetPinchCenter(popUpHand).y);
-                    SetTarget(
-                        controlPhysicalRightHand ? POP_TOP : POP_BOTTOM,
-                        normalizedHeight * 100f,
-                        factor);
-                }
-                break;
-            case "RIGHT THUMB ROTATION":
-            case "LEFT THUMB ROTATION":
-                bool controlRightThumb = currentGestureName == "RIGHT THUMB ROTATION";
-                SculptHandFrame thumbControlHand = GetHandBySide(
-                    first, second, hasTwoHands, controlRightThumb);
-                int shapeSlot = controlRightThumb ? TOPPER : BOTTOM;
-                if (IsThumbPose(thumbControlHand) &&
-                    TryGetThumbRotationValue(thumbControlHand, shapeSlot, out float target))
-                    SetTarget(shapeSlot, target, factor);
-                break;
-        }
-    }
-
-    private void ApplyWidthHeightGesture(SculptHandFrame first, SculptHandFrame second, float factor)
-    {
-        Vector2 firstIndex = new Vector2(first.IndexTip.x, first.IndexTip.y);
-        Vector2 secondIndex = new Vector2(second.IndexTip.x, second.IndexTip.y);
-
-        if (!twoHandGestureActive)
-        {
-            firstBaselineIndex = firstIndex;
-            secondBaselineIndex = secondIndex;
-            baselineHorizontal = Mathf.Abs(firstIndex.x - secondIndex.x);
-            baselineVertical = Mathf.Abs(firstIndex.y - secondIndex.y);
-            gestureStartWeights[WIDTH] = currentWeights[WIDTH];
-            gestureStartWeights[HEIGHT] = currentWeights[HEIGHT];
-            twoHandGestureActive = true;
-            Debug.Log($"MORPHIC: Index gesture started. Baseline: H={baselineHorizontal:F3}, V={baselineVertical:F3}");
+            widthHeightBaselineX = horizontal;
+            widthHeightBaselineY = vertical;
+            widthHeightStartW = ReadRenderer(Width, current[Width]);
+            widthHeightStartH = ReadRenderer(Height, current[Height]);
+            current[Width] = widthHeightStartW;
+            current[Height] = widthHeightStartH;
+            widthHeightArmed = true;
+            return;
         }
 
-        float currentHorizontal = Mathf.Abs(firstIndex.x - secondIndex.x);
-        float currentVertical = Mathf.Abs(firstIndex.y - secondIndex.y);
-
-        float horizontalChange = currentHorizontal - baselineHorizontal;
-        float verticalChange = currentVertical - baselineVertical;
-
-        horizontalChange = ApplyMovementDeadZone(horizontalChange);
-        verticalChange = ApplyMovementDeadZone(verticalChange);
-
-        // Make it more responsive - scale changes by sensitivity
-        float widthTarget = gestureStartWeights[WIDTH] + horizontalChange * widthSensitivity;
-        float heightTarget = gestureStartWeights[HEIGHT] + verticalChange * heightSensitivity;
-
-        // Clamp to valid range
-        widthTarget = Mathf.Clamp(widthTarget, 0f, 100f);
-        heightTarget = Mathf.Clamp(heightTarget, 0f, 100f);
-
-        SetTarget(WIDTH, widthTarget, factor);
-        SetTarget(HEIGHT, heightTarget, factor);
+        float dx = DeadZone(horizontal - widthHeightBaselineX);
+        float dy = DeadZone(vertical - widthHeightBaselineY);
+        current[Width] = Mathf.Lerp(
+            current[Width],
+            Mathf.Clamp(widthHeightStartW + dx * widthSensitivity, 0f, 100f),
+            blend);
+        current[Height] = Mathf.Lerp(
+            current[Height],
+            Mathf.Clamp(widthHeightStartH + dy * heightSensitivity, 0f, 100f),
+            blend);
     }
 
-    private float ApplyMovementDeadZone(float change)
+    private void Write(int slot, float weight)
     {
-        float magnitude = Mathf.Abs(change);
-        if (magnitude <= movementDeadZone)
+        if (shapeIndex[slot] < 0)
+            return;
+        lanternRenderer.SetBlendShapeWeight(shapeIndex[slot], weight);
+    }
+
+    private void WriteUnusedPop(int shape)
+    {
+        if (shape < 0)
+            return;
+        lanternRenderer.SetBlendShapeWeight(shape, 0f);
+    }
+
+    private void ResolveShapes()
+    {
+        for (int i = 0; i < ChannelCount; i++)
+            shapeIndex[i] = -1;
+
+        if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
+            return;
+
+        Mesh mesh = lanternRenderer.sharedMesh;
+        for (int i = 0; i < mesh.blendShapeCount; i++)
         {
-            return 0f;
+            string imported = Normalize(mesh.GetBlendShapeName(i));
+            for (int c = 0; c < ChannelCount; c++)
+            {
+                if (shapeIndex[c] < 0 && imported == Normalize(lookupNames[c]))
+                    shapeIndex[c] = i;
+            }
         }
 
-        return Mathf.Sign(change) * (magnitude - movementDeadZone);
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            string imported = mesh.GetBlendShapeName(i);
+            for (int c = 0; c < ChannelCount; c++)
+            {
+                if (shapeIndex[c] < 0 && NamesMatch(imported, lookupNames[c]) &&
+                    c != Bottom && c != Topper)
+                    shapeIndex[c] = i;
+            }
+
+            if (shapeIndex[PopTop] < 0 &&
+                (TokenMatch(imported, "TOP CIRCLE") || TokenMatch(imported, "TOPCIRCLE")))
+                shapeIndex[PopTop] = i;
+            if (shapeIndex[PopBottom] < 0 &&
+                (TokenMatch(imported, "CIRCLE BOTTOM") || TokenMatch(imported, "BOTTOMCIRCLE")))
+                shapeIndex[PopBottom] = i;
+        }
+
+        if (shapeIndex[PopBamboo] < 0)
+            shapeIndex[PopBamboo] = FindBambooShape(mesh);
+
+        ApplyPopVariantBindings();
+        ApplyTasselBinding();
+
+        for (int c = 0; c < ChannelCount; c++)
+        {
+            if (shapeIndex[c] >= 0)
+                current[c] = lanternRenderer.GetBlendShapeWeight(shapeIndex[c]);
+        }
+
+        if (shapeIndex[PopBamboo] >= 0)
+            Debug.Log("MORPHIC: Two-V bamboo uses " + mesh.GetBlendShapeName(shapeIndex[PopBamboo]));
+        else
+            Debug.LogWarning("MORPHIC: Pop Up Bamboo was not found on " + mesh.name);
+        if (shapeIndex[PopTassel] >= 0)
+            Debug.Log("MORPHIC: Two-fist tassel uses " + mesh.GetBlendShapeName(shapeIndex[PopTassel]));
     }
 
-    private float GetGestureActivationTime(string gesture)
+    private void ApplyPopVariantBindings()
     {
-        if (gesture == "POP UP TOP PINCH" || gesture == "POP UP BOTTOM PINCH")
-            return popUpGestureActivationTime;
+        if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
+            return;
 
-        return GESTURE_ACTIVATION_TIME;
+        Mesh mesh = lanternRenderer.sharedMesh;
+        BindExclusivePop(mesh, PopTop, true, topPopUsesRectangle, ref unusedPopTopShape, ref popTopLabel);
+        BindExclusivePop(mesh, PopBottom, false, bottomPopUsesRectangle, ref unusedPopBottomShape, ref popBottomLabel);
     }
 
-    private void ApplyPinchGesture(SculptHandFrame hand, int shapeIndex, float factor)
+    private void ApplyTasselBinding()
     {
-        float target = Mathf.Clamp01(
-            1f - hand.PinchDistance / Mathf.Max(hand.PalmWidth * pinchThreshold, 0.001f));
-        SetTarget(shapeIndex, target * 100f, factor);
+        if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
+            return;
+
+        Mesh mesh = lanternRenderer.sharedMesh;
+        int active = FindTasselShape(mesh, tasselUsesTriple);
+        int unused = FindTasselShape(mesh, !tasselUsesTriple);
+        if (active >= 0)
+            shapeIndex[PopTassel] = active;
+        unusedTasselShape = unused >= 0 && unused != active && unused != shapeIndex[PopBamboo]
+            ? unused
+            : -1;
+        if (unusedTasselShape >= 0)
+            lanternRenderer.SetBlendShapeWeight(unusedTasselShape, 0f);
     }
 
-    private void ApplyFistGesture(SculptHandFrame hand, int shapeIndex, float factor)
+    private static int FindBambooShape(Mesh mesh)
     {
-        float curl = Mathf.Clamp01(
-            (fistThreshold - hand.FingerCurlRatio) / Mathf.Max(fistThreshold, 0.001f));
-        SetTarget(shapeIndex, curl * 100f, factor);
+        int fallback = -1;
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            string compact = Normalize(mesh.GetBlendShapeName(i));
+            if (!compact.Contains("BAMBOO"))
+                continue;
+            if (compact.Contains("TASSEL") || compact.Contains("TASSLE") ||
+                compact.Contains("3") || compact.Contains("THREE"))
+            {
+                if (fallback < 0)
+                    fallback = i;
+                continue;
+            }
+
+            return i;
+        }
+
+        return fallback;
+    }
+
+    private static int FindTasselShape(Mesh mesh, bool useTriple)
+    {
+        int fallback = -1;
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            string compact = Normalize(mesh.GetBlendShapeName(i));
+            bool isTassel = compact.Contains("TASSEL") || compact.Contains("TASSLE");
+            if (!isTassel)
+                continue;
+
+            bool isTriple = compact.Contains("3") || compact.Contains("THREE");
+            bool isSingle = compact.Contains("SINGLE");
+            if (useTriple)
+            {
+                if (isTriple)
+                    return i;
+                continue;
+            }
+
+            if (isSingle)
+                return i;
+            if (!isTriple && fallback < 0)
+                fallback = i;
+        }
+
+        return fallback;
+    }
+
+    private void BindExclusivePop(
+        Mesh mesh,
+        int channel,
+        bool isTop,
+        bool useRectangle,
+        ref int unusedShape,
+        ref string label)
+    {
+        int active = FindPopShape(mesh, isTop, useRectangle);
+        int unused = FindPopShape(mesh, isTop, !useRectangle);
+        if (active >= 0)
+            shapeIndex[channel] = active;
+        unusedShape = unused;
+        if (unused >= 0)
+            lanternRenderer.SetBlendShapeWeight(unused, 0f);
+        label = isTop
+            ? (useRectangle ? "TOP RECTANGLE" : "TOP CIRCLE")
+            : (useRectangle ? "BOTTOM RECTANGLE" : "BOTTOM CIRCLE");
+    }
+
+    private static int FindPopShape(Mesh mesh, bool isTop, bool useRectangle)
+    {
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            string compact = Normalize(mesh.GetBlendShapeName(i));
+            bool onEnd = isTop ? compact.Contains("TOP") : compact.Contains("BOTTOM");
+            if (!onEnd)
+                continue;
+            if (useRectangle)
+            {
+                if (compact.Contains("RECTANGLE"))
+                    return i;
+                continue;
+            }
+
+            if (compact.Contains("CIRCLE") && !compact.Contains("RECTANGLE"))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static int FindShapeContaining(Mesh mesh, string token)
+    {
+        string needle = Normalize(token);
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            if (Normalize(mesh.GetBlendShapeName(i)).Contains(needle))
+                return i;
+        }
+
+        return -1;
     }
 
     private bool IsIndexPointing(SculptHandFrame hand)
     {
-        // A straight index also occurs in an open palm. Require the other three
-        // fingers to be curled so an open palm cannot enter the sculpt gesture.
-        bool indexIsStraight =
-            hand.IndexExtensionAngle >= minimumPointingIndexAngle;
-        bool otherFingersAreCurled =
-            hand.OtherFingersCurlRatio <= maximumOtherFingerExtension;
-
-        return indexIsStraight && otherFingersAreCurled;
+        return hand.IndexExtensionAngle >= minimumPointingIndexAngle &&
+               hand.IndexTipPalmRatio >= minimumIndexTipExtension &&
+               hand.OtherFingersCurlRatio <= maximumOtherFingerExtension &&
+               hand.PinchDistance >= hand.PalmWidth * minimumThumbIndexSeparation;
     }
 
-    private bool IsPinching(SculptHandFrame hand)
+    private bool IsPinching(SculptHandFrame hand, bool physicalRight, ref bool held)
     {
-        return hand.PinchDistance <
-            Mathf.Max(hand.PalmWidth * pinchThreshold, 0.001f);
-    }
-
-    private bool TryGetThumbRotationValue(
-        SculptHandFrame hand,
-        int shapeSlot,
-        out float targetWeight)
-    {
-        Vector2 thumbAxis = new Vector2(
-            hand.ThumbTip.x - hand.ThumbMcp.x,
-            hand.ThumbTip.y - hand.ThumbMcp.y);
-
-        if (thumbAxis.magnitude < hand.PalmWidth * minimumThumbLength)
+        if (IsOpenPalm(hand) || IsIndexPointing(hand) || LooksLikeFist(hand) || LooksLikeVSign(hand))
         {
-            targetWeight = currentWeights[shapeSlot];
+            held = false;
             return false;
         }
 
-        // Image points are converted to Unity screen coordinates (Y up).
-        // Thumbs up is the minimum; rotating toward thumbs down increases the value.
-        float verticalAmount = Mathf.Clamp(
-            thumbAxis.normalized.y, -1f, 1f);
-        float normalizedValue = (1f - verticalAmount) * 0.5f;
-        float minimumWeight = shapeSlot == TOPPER
-            ? topperMinimumWeight
-            : bottomMinimumWeight;
-        float maximumWeight = shapeSlot == TOPPER
-            ? topperMaximumWeight
-            : bottomMaximumWeight;
-        targetWeight = Mathf.Lerp(minimumWeight, maximumWeight, normalizedValue);
-        return true;
-    }
-
-    private void UpdateGestureHold(
-        SculptHandFrame first,
-        SculptHandFrame second,
-        bool hasTwoHands,
-        string detectedGesture,
-        float dt)
-    {
-        if (detectedGesture != currentGestureName)
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        float thumbIndex = TipDistance(hand.ThumbTip, hand.IndexTip) / palm;
+        float thumbMiddle = TipDistance(hand.ThumbTip, hand.MiddleTip) / palm;
+        float start = pinchThreshold;
+        float release = Mathf.Max(pinchReleaseThreshold, pinchThreshold + 0.12f);
+        if (!physicalRight)
         {
-            ResetGestureHold();
-            return;
+            start *= leftPinchBoost;
+            release *= leftPinchBoost;
         }
 
-        float measurementA;
-        float measurementB = 0f;
-        float tolerance;
+        if (!held && thumbIndex > thumbMiddle + 0.04f)
+        {
+            held = false;
+            return false;
+        }
 
-        if (currentGestureName == "INDEX FINGERS" && hasTwoHands)
-        {
-            measurementA = Mathf.Abs(first.IndexTip.x - second.IndexTip.x);
-            measurementB = Mathf.Abs(first.IndexTip.y - second.IndexTip.y);
-            tolerance = indexHoldStillTolerance;
-        }
-        else if (currentGestureName == "DOUBLE PINCH" && hasTwoHands)
-        {
-            float palmWidth = (first.PalmWidth + second.PalmWidth) * 0.5f;
-            measurementA = Vector2.Distance(
-                GetPinchCenter(first),
-                GetPinchCenter(second)) /
-                Mathf.Max(palmWidth, 0.001f);
-            tolerance = middleHoldStillTolerance;
-        }
-        else if (currentGestureName == "BAMBOO V SPACING" && hasTwoHands &&
-                 IsVSign(first) && IsVSign(second))
-        {
-            float palmWidth = (first.PalmWidth + second.PalmWidth) * 0.5f;
-            measurementA = Mathf.Abs(
-                first.PalmCenter.x - second.PalmCenter.x) /
-                Mathf.Max(palmWidth, 0.001f);
-            tolerance = middleHoldStillTolerance;
-        }
-        else if (currentGestureName == "POP UP TOP PINCH" ||
-                 currentGestureName == "POP UP BOTTOM PINCH")
-        {
-            bool controlPhysicalRightHand = currentGestureName == "POP UP TOP PINCH";
-            SculptHandFrame popUpHand = GetPopUpControlHand(
-                first, second, hasTwoHands, controlPhysicalRightHand);
-            if (!IsPinching(popUpHand))
-            {
-                ResetGestureHold();
-                return;
-            }
-
-            measurementA = GetPinchCenter(popUpHand).y;
-            tolerance = middleHoldStillTolerance;
-        }
-        else if (currentGestureName == "RIGHT THUMB ROTATION" ||
-                 currentGestureName == "LEFT THUMB ROTATION")
-        {
-            bool controlRightThumb = currentGestureName == "RIGHT THUMB ROTATION";
-            SculptHandFrame thumbHand = GetHandBySide(
-                first, second, hasTwoHands, controlRightThumb);
-            int shapeSlot = controlRightThumb ? TOPPER : BOTTOM;
-            if (!IsThumbPose(thumbHand) ||
-                !TryGetThumbRotationValue(thumbHand, shapeSlot, out measurementA))
-            {
-                ResetGestureHold();
-                return;
-            }
-
-            tolerance = thumbHoldStillTolerance;
-        }
+        if (held)
+            held = thumbIndex < release;
         else
-        {
-            ResetGestureHold();
-            return;
-        }
-
-        if (!hasStabilityAnchor)
-        {
-            stabilityAnchorA = measurementA;
-            stabilityAnchorB = measurementB;
-            hasStabilityAnchor = true;
-            gestureHoldTimer = 0f;
-            return;
-        }
-
-        if (Mathf.Abs(measurementA - stabilityAnchorA) > tolerance ||
-            Mathf.Abs(measurementB - stabilityAnchorB) > tolerance)
-        {
-            stabilityAnchorA = measurementA;
-            stabilityAnchorB = measurementB;
-            gestureHoldTimer = 0f;
-            return;
-        }
-
-        gestureHoldTimer += dt;
-        float requiredHoldDuration = currentGestureName == "INDEX FINGERS"
-            ? gestureLockHoldDuration
-            : thumbGestureLockHoldDuration;
-        if (gestureHoldTimer >= requiredHoldDuration)
-        {
-            gestureLocked = true;
-            gestureHoldTimer = 0f;
-            hasStabilityAnchor = false;
-            twoHandGestureActive = false;
-            if (currentGestureName == "RIGHT THUMB ROTATION")
-            {
-                topperTargetWeight = currentWeights[TOPPER];
-                topperVelocity = 0f;
-            }
-            else if (currentGestureName == "LEFT THUMB ROTATION")
-            {
-                bottomTargetWeight = currentWeights[BOTTOM];
-                bottomVelocity = 0f;
-            }
-            Debug.Log("MORPHIC: Gesture locked: " + currentGestureName);
-        }
+            held = thumbIndex < start;
+        return held;
     }
 
-    private void ResetGestureHold()
+    private static bool LooksLikeVSign(SculptHandFrame hand)
     {
-        gestureHoldTimer = 0f;
-        hasStabilityAnchor = false;
-    }
-
-    private static SculptHandFrame GetHandBySide(
-        SculptHandFrame first,
-        SculptHandFrame second,
-        bool hasTwoHands,
-        bool rightHand)
-    {
-        bool expectedMediaPipeRight = !rightHand;
-        if (first.HasHandedness && first.IsRightHand == expectedMediaPipeRight)
-            return first;
-        if (hasTwoHands && second.HasHandedness &&
-            second.IsRightHand == expectedMediaPipeRight)
-            return second;
-        return default;
-    }
-
-    private void EaseBlendShape(int slot, float target, ref float velocity, float dt)
-    {
-        if (shapeIndices[slot] < 0)
-            return;
-
-        float easeTime = slot == MIDDLE ? middleEaseTime : topperEaseTime;
-        currentWeights[slot] = Mathf.SmoothDamp(
-            currentWeights[slot], target, ref velocity, easeTime,
-            Mathf.Infinity, dt);
-
-        if (Mathf.Abs(currentWeights[slot] - target) < 0.1f)
-        {
-            currentWeights[slot] = target;
-            velocity = 0f;
-        }
-
-        lanternRenderer.SetBlendShapeWeight(shapeIndices[slot], currentWeights[slot]);
-    }
-
-    private bool IsThumbPose(SculptHandFrame hand)
-    {
-        // Require the four fingers to be curled around the palm. This rejects
-        // open palms and keeps the thumb command distinct from index sculpting.
-        return hand.OtherFingersCurlRatio <= maximumOtherFingerExtension &&
-               hand.IndexExtensionAngle < minimumPointingIndexAngle;
-    }
-
-    private bool IsVerticalThumbRotationPose(SculptHandFrame hand)
-    {
-        Vector2 thumbAxis = new Vector2(
-            hand.ThumbTip.x - hand.ThumbMcp.x,
-            hand.ThumbTip.y - hand.ThumbMcp.y);
-        return thumbAxis.magnitude >= hand.PalmWidth * minimumThumbLength &&
-               Mathf.Abs(thumbAxis.normalized.y) >= 0.65f;
-    }
-
-    private bool IsMiddlePinchPose(SculptHandFrame hand)
-    {
-        // Require an actual thumb-index pinch and the other fingers extended,
-        // separating this two-hand control from the curled-finger thumb poses.
-        return IsPinching(hand) && hand.OtherFingersCurlRatio >= 1.1f;
-    }
-
-    private static Vector2 GetPinchCenter(SculptHandFrame hand)
-    {
-        return new Vector2(
-            (hand.ThumbTip.x + hand.IndexTip.x) * 0.5f,
-            (hand.ThumbTip.y + hand.IndexTip.y) * 0.5f);
+        return IsVSign(hand);
     }
 
     private static bool IsVSign(SculptHandFrame hand)
     {
-        // V pose: index and middle extended and separated, with ring and pinky
-        // folded. This avoids confusing an open palm or single-pointing pose.
-        float indexMiddleTipGap = Vector2.Distance(
-            new Vector2(hand.IndexTip.x, hand.IndexTip.y),
-            new Vector2(hand.MiddleTip.x, hand.MiddleTip.y)) /
-            Mathf.Max(hand.PalmWidth, 0.001f);
-        return hand.IndexExtensionAngle >= 140f &&
+        return hand.IndexTipPalmRatio >= 1.02f &&
+               hand.MiddleTipPalmRatio >= 1.02f &&
+               hand.RingTipPalmRatio < 1.00f &&
+               hand.PinkyTipPalmRatio < 1.00f &&
+               hand.PinchDistance >= hand.PalmWidth * 0.38f;
+    }
+
+    private static bool LooksLikeFist(SculptHandFrame hand)
+    {
+        return hand.FingerCurlRatio <= 1.12f &&
+               hand.IndexTipPalmRatio <= 1.02f &&
+               hand.OtherFingersCurlRatio <= 1.12f;
+    }
+
+    private bool LooksLikeThumbOnly(SculptHandFrame hand)
+    {
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        Vector2 thumb = new Vector2(
+            hand.ThumbTip.x - hand.ThumbMcp.x,
+            hand.ThumbTip.y - hand.ThumbMcp.y);
+        return hand.PinchDistance >= palm * minimumThumbIndexSeparation &&
+               thumb.magnitude >= palm * minimumThumbLength;
+    }
+
+    private static float TipDistance(Vector3 a, Vector3 b)
+    {
+        return Vector2.Distance(new Vector2(a.x, a.y), new Vector2(b.x, b.y));
+    }
+
+    private bool IsOpenPalm(SculptHandFrame hand)
+    {
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        return hand.PinchDistance >= palm * 0.55f &&
+               hand.FingerCurlRatio >= openPalmExtension &&
+               hand.OtherFingersCurlRatio >= openPalmExtension * 0.92f &&
                hand.IndexTipPalmRatio >= 1.05f &&
-               hand.MiddleTipPalmRatio >= 1.05f &&
-               hand.RingTipPalmRatio <= 1.4f &&
-               hand.PinkyTipPalmRatio <= 1.4f &&
-               indexMiddleTipGap >= 0.16f;
+               !IsIndexPointing(hand);
     }
 
-    private void SetTarget(int slot, float target, float factor)
+    private int CountOpenPalms(SculptHandFrame first, SculptHandFrame second, bool hasTwo)
     {
-        if (shapeIndices[slot] < 0)
-            return;
-
-        target = Mathf.Clamp(target, 0f, 100f);
-
-        if (slot == TOPPER)
-        {
-            if (Mathf.Abs(target - topperTargetWeight) < thumbOutputDeadZone)
-                return;
-            topperTargetWeight = target;
-            return;
-        }
-        if (slot == BOTTOM)
-        {
-            if (Mathf.Abs(target - bottomTargetWeight) < thumbOutputDeadZone)
-                return;
-            bottomTargetWeight = target;
-            return;
-        }
-        if (slot == MIDDLE)
-        {
-            middleTargetWeight = target;
-            return;
-        }
-
-        currentWeights[slot] = Mathf.Lerp(
-            currentWeights[slot],
-            target,
-            factor);
+        int count = IsOpenPalm(first) ? 1 : 0;
+        if (hasTwo && IsOpenPalm(second))
+            count++;
+        return count;
     }
 
-    private void ApplyWeights()
+    private bool TryThumbWeight(SculptHandFrame hand, out float weight)
     {
-        // Width/Height and the directly mapped shape keys are written here.
-        // Topper and Bottom are eased in LateUpdate, so leave those two to
-        // their easing path. Middle was previously updated in currentWeights
-        // but never sent to the renderer, which made DOUBLE PINCH appear to
-        // detect correctly while the lantern did not move.
-        for (int i = 0; i < shapeIndices.Length; i++)
+        weight = 0f;
+        bool dummy = false;
+        if (IsPinching(hand, true, ref dummy) || IsIndexPointing(hand) ||
+            IsOpenPalm(hand) || LooksLikeVSign(hand) || LooksLikeFist(hand))
+            return false;
+
+        Vector2 thumb = new Vector2(
+            hand.ThumbTip.x - hand.ThumbMcp.x,
+            hand.ThumbTip.y - hand.ThumbMcp.y);
+        if (thumb.magnitude < hand.PalmWidth * minimumThumbLength)
+            return false;
+
+        float vertical = Mathf.Clamp(thumb.normalized.y, -1f, 1f);
+        weight = Mathf.InverseLerp(0.55f, -0.75f, vertical) * 100f;
+        return true;
+    }
+
+    private float PinchClosedAmount(SculptHandFrame hand, bool physicalRight)
+    {
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        float open = palm * pinchThreshold * (physicalRight ? 1f : leftPinchBoost);
+        float closed = palm * 0.08f;
+        float t = 1f - Mathf.InverseLerp(
+            closed, Mathf.Max(open, closed + 0.001f), hand.PinchDistance);
+        return Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
+    }
+
+    private bool IsPhysicalRightHand(
+        SculptHandFrame hand,
+        SculptHandFrame other,
+        bool hasTwo)
+    {
+        if (hand.HasHandedness)
+            return !hand.IsRightHand;
+        if (hasTwo)
+            return hand.PalmCenter.x >= other.PalmCenter.x;
+        return hand.PalmCenter.x >= 0.5f;
+    }
+
+    private float ReadRenderer(int slot, float fallback)
+    {
+        if (shapeIndex[slot] < 0)
+            return fallback;
+        return lanternRenderer.GetBlendShapeWeight(shapeIndex[slot]);
+    }
+
+    private float DeadZone(float value)
+    {
+        float mag = Mathf.Abs(value);
+        if (mag <= movementDeadZone)
+            return 0f;
+        return Mathf.Sign(value) * (mag - movementDeadZone);
+    }
+
+    private void BindLantern()
+    {
+        if (lanternRenderer != null && lanternRenderer.sharedMesh != null &&
+            lanternRenderer.sharedMesh.blendShapeCount > 0)
+            return;
+
+        SkinnedMeshRenderer best = null;
+        int bestScore = -1;
+        SkinnedMeshRenderer[] renderers = FindObjectsByType<SkinnedMeshRenderer>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int r = 0; r < renderers.Length; r++)
         {
-            if (i != TOPPER && i != BOTTOM && i != MIDDLE && shapeIndices[i] >= 0)
+            SkinnedMeshRenderer renderer = renderers[r];
+            Mesh mesh = renderer.sharedMesh;
+            if (mesh == null || mesh.blendShapeCount == 0)
+                continue;
+
+            int score = 0;
+            string objectName = renderer.gameObject.name.ToUpperInvariant();
+            if (objectName.Contains("FINALLANTERN") || objectName.Contains("LANTERN"))
+                score += 10;
+
+            for (int i = 0; i < mesh.blendShapeCount; i++)
             {
-                lanternRenderer.SetBlendShapeWeight(
-                    shapeIndices[i],
-                    currentWeights[i]);
+                string imported = Normalize(mesh.GetBlendShapeName(i));
+                if (imported.Contains("HEIGHT"))
+                    score++;
+                if (imported.Contains("WIDTH"))
+                    score++;
+                if (imported.Contains("TOPPER"))
+                    score++;
+                if (imported.Contains("CIRCLE") && imported.Contains("POP"))
+                    score += 2;
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = renderer;
             }
         }
+
+        if (best != null)
+            lanternRenderer = best;
     }
 
-    private void HandleTrackingLoss()
+    private static bool NamesMatch(string imported, string configured)
     {
-        gestureLostTimer += Time.deltaTime;
-
-        if (gestureLostTimer > gestureGracePeriod)
-        {
-            twoHandGestureActive = false;
-            currentGestureName = "NONE";
-            candidateGestureName = "NONE";
-            gestureActivationTimer = 0f;
-            gestureLocked = false;
-            ResetGestureHold();
-            SetGestureText("GESTURE: NO HANDS");
-        }
+        string a = Normalize(imported);
+        string b = Normalize(configured);
+        return a.Length > 0 && b.Length > 0 && (a == b || a.Contains(b) || b.Contains(a));
     }
 
-    private void SetGestureText(string message)
+    private static bool TokenMatch(string imported, string tokens)
+    {
+        string value = Normalize(imported);
+        string[] parts = tokens.Split(' ');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (parts[i].Length == 0)
+                continue;
+            if (!value.Contains(Normalize(parts[i])))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static string Normalize(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        int dot = value.LastIndexOf('.');
+        if (dot >= 0 && dot < value.Length - 1)
+            value = value.Substring(dot + 1);
+
+        char[] chars = value.ToCharArray();
+        int count = 0;
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (char.IsLetterOrDigit(chars[i]))
+                chars[count++] = char.ToUpperInvariant(chars[i]);
+        }
+
+        return new string(chars, 0, count);
+    }
+
+    private string BuildStatus(
+        bool twoIndex,
+        bool twoFists,
+        bool twoV,
+        bool hasTwo,
+        SculptHandFrame first,
+        SculptHandFrame second)
+    {
+        if (twoV)
+            return "TWO V SIDE: BAMBOO";
+        if (twoFists)
+            return "TWO FISTS DOWN: TASSEL";
+        if (twoIndex)
+            return "WIDTH + HEIGHT";
+
+        string text = "";
+        AppendHandStatus(ref text, first, second, hasTwo);
+        if (hasTwo)
+            AppendHandStatus(ref text, second, first, true);
+        return text.Length == 0 ? "GESTURE: NONE" : text;
+    }
+
+    private void AppendHandStatus(
+        ref string text,
+        SculptHandFrame hand,
+        SculptHandFrame other,
+        bool hasTwo)
+    {
+        bool right = IsPhysicalRightHand(hand, other, hasTwo);
+        ref bool held = ref (right ? ref rightPinchHeld : ref leftPinchHeld);
+        if (IsPinching(hand, right, ref held))
+            text = Append(text, right
+                ? "RIGHT PINCH: " + popTopLabel
+                : "LEFT PINCH: " + popBottomLabel);
+        else if (IsOpenPalm(hand))
+            text = Append(text, "OPEN PALM");
+        else if (TryThumbWeight(hand, out _))
+            text = Append(text, right ? "RIGHT THUMB: TOPPER" : "LEFT THUMB: BOTTOM");
+    }
+
+    private static string Append(string current, string part)
+    {
+        return current.Length == 0 ? part : current + "  |  " + part;
+    }
+
+    private void SetStatus(string message)
     {
         if (gestureIndicator != null)
             gestureIndicator.text = message;
-
         UpdateProgressCard(message);
-    }
-
-    private bool TryGetProgressInfo(string message, out string label, out float percentage)
-    {
-        label = null;
-        percentage = 0f;
-        if (currentGestureName == "NONE" || message.Contains("NO HANDS"))
-            return false;
-
-        switch (currentGestureName)
-        {
-            case "INDEX FINGERS":
-                label = "WIDTH + HEIGHT";
-                percentage = (GetProgressPercent(WIDTH) + GetProgressPercent(HEIGHT)) * 0.5f;
-                return true;
-            case "DOUBLE PINCH":
-                label = "MIDDLE";
-                percentage = GetProgressPercent(MIDDLE);
-                return true;
-            case "BAMBOO V SPACING":
-                label = "BAMBOO";
-                percentage = GetProgressPercent(POP_BAMBOO);
-                return true;
-            case "POP UP TOP PINCH":
-                label = "TOP POP-UP";
-                percentage = GetProgressPercent(POP_TOP);
-                return true;
-            case "POP UP BOTTOM PINCH":
-                label = "BOTTOM POP-UP";
-                percentage = GetProgressPercent(POP_BOTTOM);
-                return true;
-            case "RIGHT THUMB ROTATION":
-                label = "TOPPER";
-                percentage = GetProgressPercent(TOPPER);
-                return true;
-            case "LEFT THUMB ROTATION":
-                label = "BOTTOM";
-                percentage = GetProgressPercent(BOTTOM);
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private float GetProgressPercent(int slot)
-    {
-        float maximum = Mathf.Max(shapeMaximumWeights[slot], 0.001f);
-        return Mathf.Clamp01(currentWeights[slot] / maximum) * 100f;
     }
 
     private void CreateProgressCard()
@@ -1015,7 +972,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
         Transform canvasParent = gestureIndicator.transform.parent;
         GameObject card = new GameObject("LanternProgressCard",
-            typeof(RectTransform), typeof(CanvasGroup), typeof(Image), typeof(Outline));
+            typeof(RectTransform), typeof(CanvasGroup), typeof(Image));
         card.transform.SetParent(canvasParent, false);
         card.transform.SetAsLastSibling();
 
@@ -1025,75 +982,42 @@ public class TaiwanLanternGestureController : MonoBehaviour
         cardRect.pivot = Vector2.one;
         cardRect.anchoredPosition = new Vector2(-24f, -24f);
         cardRect.sizeDelta = new Vector2(310f, 112f);
+        card.GetComponent<Image>().color = new Color32(15, 24, 38, 242);
 
-        Image background = card.GetComponent<Image>();
-        background.color = new Color32(15, 24, 38, 242);
-        Sprite panelSprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Background.psd");
-        if (panelSprite != null)
-        {
-            background.sprite = panelSprite;
-            background.type = Image.Type.Sliced;
-        }
-
-        Outline outline = card.GetComponent<Outline>();
-        outline.effectColor = new Color32(82, 188, 189, 105);
-        outline.effectDistance = new Vector2(1f, -1f);
-
-        RectTransform accentRect = new GameObject("AccentStripe",
-            typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        progressAccentStripe = new GameObject("AccentStripe",
+            typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        RectTransform accentRect = progressAccentStripe.rectTransform;
         accentRect.SetParent(card.transform, false);
         accentRect.anchorMin = new Vector2(0f, 0f);
         accentRect.anchorMax = new Vector2(0f, 1f);
-        accentRect.pivot = new Vector2(0f, 0.5f);
-        accentRect.anchoredPosition = Vector2.zero;
         accentRect.sizeDelta = new Vector2(4f, -18f);
-        progressAccentStripe = accentRect.GetComponent<Image>();
-        progressAccentStripe.color = progressAccent;
+        progressAccentStripe.color = new Color32(77, 220, 203, 255);
 
         progressCardGroup = card.GetComponent<CanvasGroup>();
         progressCardGroup.alpha = 0f;
-        progressCardGroup.interactable = false;
         progressCardGroup.blocksRaycasts = false;
 
         progressPartText = CreateProgressLabel(card.transform, "Part",
-            new Vector2(18f, -38f), new Vector2(190f, 28f), 19f,
-            Color.white, TextAlignmentOptions.Left, FontStyles.Bold);
-        TMP_Text header = CreateProgressLabel(card.transform, "Header",
-            new Vector2(18f, -14f), new Vector2(190f, 17f), 11f,
-            new Color32(155, 187, 202, 255), TextAlignmentOptions.Left, FontStyles.Bold);
-        header.text = "LIVE SCULPTING";
+            new Vector2(18f, -38f), new Vector2(190f, 28f), 19f);
         progressPercentText = CreateProgressLabel(card.transform, "Percent",
-            new Vector2(-16f, -31f), new Vector2(92f, 34f), 25f,
-            progressAccent, TextAlignmentOptions.Right, FontStyles.Bold);
+            new Vector2(-16f, -31f), new Vector2(92f, 34f), 25f);
         RectTransform percentRect = progressPercentText.rectTransform;
         percentRect.anchorMin = Vector2.one;
         percentRect.anchorMax = Vector2.one;
         percentRect.pivot = Vector2.one;
 
-        RectTransform barBackgroundRect = new GameObject("ProgressTrack",
-            typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
-        barBackgroundRect.SetParent(card.transform, false);
-        barBackgroundRect.anchorMin = new Vector2(0f, 0f);
-        barBackgroundRect.anchorMax = new Vector2(1f, 0f);
-        barBackgroundRect.pivot = new Vector2(0.5f, 0f);
-        barBackgroundRect.anchoredPosition = new Vector2(0f, 16f);
-        barBackgroundRect.sizeDelta = new Vector2(-36f, 8f);
-        barBackgroundRect.GetComponent<Image>().color = new Color32(48, 63, 79, 255);
-
-        RectTransform fillRect = new GameObject("ProgressFill",
-            typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
-        fillRect.SetParent(barBackgroundRect, false);
-        fillRect.anchorMin = Vector2.zero;
-        fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = Vector2.zero;
-        fillRect.offsetMax = Vector2.zero;
-        progressBarFill = fillRect.GetComponent<Image>();
-        progressBarFill.sprite = panelSprite;
+        GameObject fill = new GameObject("ProgressFill", typeof(RectTransform), typeof(Image));
+        fill.transform.SetParent(card.transform, false);
+        RectTransform fillRect = fill.GetComponent<RectTransform>();
+        fillRect.anchorMin = new Vector2(0f, 0f);
+        fillRect.anchorMax = new Vector2(1f, 0f);
+        fillRect.pivot = new Vector2(0.5f, 0f);
+        fillRect.anchoredPosition = new Vector2(0f, 16f);
+        fillRect.sizeDelta = new Vector2(-36f, 8f);
+        progressBarFill = fill.GetComponent<Image>();
+        progressBarFill.color = new Color32(77, 220, 203, 255);
         progressBarFill.type = Image.Type.Filled;
         progressBarFill.fillMethod = Image.FillMethod.Horizontal;
-        progressBarFill.fillOrigin = (int)Image.OriginHorizontal.Left;
-        progressBarFill.color = progressAccent;
-        progressBarFill.fillAmount = 0f;
     }
 
     private TMP_Text CreateProgressLabel(
@@ -1101,10 +1025,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
         string objectName,
         Vector2 anchoredPosition,
         Vector2 size,
-        float fontSize,
-        Color color,
-        TextAlignmentOptions alignment,
-        FontStyles style)
+        float fontSize)
     {
         GameObject labelObject = new GameObject(objectName,
             typeof(RectTransform), typeof(TextMeshProUGUI));
@@ -1115,54 +1036,53 @@ public class TaiwanLanternGestureController : MonoBehaviour
         rect.pivot = new Vector2(0f, 1f);
         rect.anchoredPosition = anchoredPosition;
         rect.sizeDelta = size;
-
         TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
         label.font = gestureIndicator.font;
         label.fontSize = fontSize;
-        label.fontStyle = style;
-        label.color = color;
-        label.alignment = alignment;
-        label.text = string.Empty;
+        label.fontStyle = FontStyles.Bold;
+        label.color = Color.white;
         label.raycastTarget = false;
-        label.textWrappingMode = TextWrappingModes.NoWrap;
         return label;
     }
 
     private void UpdateProgressCard(string message)
     {
-        if (progressCardGroup == null || !TryGetProgressInfo(message, out string label, out float percentage))
+        if (progressCardGroup == null)
+            return;
+        if (message == "GESTURE: NONE" || message.Contains("NO HANDS"))
         {
             showProgressCard = false;
             return;
         }
 
         showProgressCard = true;
-        progressAccent = GetProgressAccentColor();
-        progressPartText.text = label;
-        progressPercentText.text = Mathf.RoundToInt(percentage) + "%";
-        progressPercentText.color = progressAccent;
-        progressAccentStripe.color = progressAccent;
-        progressBarFill.color = progressAccent;
-        progressBarFill.fillAmount = percentage / 100f;
-    }
+        float percent = 0f;
+        if (message.Contains("WIDTH"))
+            percent = (ReadRenderer(Width, current[Width]) + ReadRenderer(Height, current[Height])) * 0.5f;
+        else if (message.Contains("TASSEL"))
+            percent = current[ActiveTasselChannel()];
+        else if (message.Contains("BAMBOO"))
+            percent = current[PopBamboo];
+        else if (message.Contains("TOP CIRCLE") || message.Contains("TOP RECTANGLE"))
+            percent = current[PopTop];
+        else if (message.Contains("BOTTOM CIRCLE") || message.Contains("BOTTOM RECTANGLE"))
+            percent = current[PopBottom];
+        else if (message.Contains("TOPPER"))
+            percent = current[Topper];
+        else if (message.Contains("BOTTOM"))
+            percent = current[Bottom];
 
-    private Color GetProgressAccentColor()
-    {
-        if (currentGestureName == "BAMBOO V SPACING")
-            return new Color32(244, 185, 91, 255);
-        if (currentGestureName == "POP UP TOP PINCH" ||
-            currentGestureName == "POP UP BOTTOM PINCH")
-            return new Color32(77, 220, 203, 255);
-        return new Color32(139, 164, 255, 255);
+        progressPartText.text = message;
+        progressPercentText.text = Mathf.RoundToInt(percent) + "%";
+        progressBarFill.fillAmount = Mathf.Clamp01(percent / 100f);
     }
 
     private void UpdateProgressCardFade()
     {
         if (progressCardGroup == null)
             return;
-
-        float targetAlpha = showProgressCard ? 1f : 0f;
         progressCardGroup.alpha = Mathf.MoveTowards(
-            progressCardGroup.alpha, targetAlpha, Time.unscaledDeltaTime * 5f);
+            progressCardGroup.alpha, showProgressCard ? 1f : 0f,
+            Time.unscaledDeltaTime * 5f);
     }
 }

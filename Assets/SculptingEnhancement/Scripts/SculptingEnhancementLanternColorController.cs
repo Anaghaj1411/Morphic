@@ -16,6 +16,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         Sculpt,
         MainMenu,
         SelectPart,
+        SelectVariant,
         SelectColor,
         Selfie
     }
@@ -90,6 +91,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private readonly List<HitTarget> hitTargets = new List<HitTarget>();
     private Material[] runtimeMaterials;
     private Color[] committedMaterialColors;
+    private int[][] partMaterialIndices;
+    private Mesh runtimePartMesh;
+    private readonly List<Material> isolatedLidMaterials = new List<Material>();
+    private readonly List<Material> isolatedTasselMaterials = new List<Material>();
 
     private Canvas canvas;
     private RectTransform canvasRect;
@@ -98,6 +103,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private GameObject panel;
     private GameObject mainActionGroup;
     private GameObject partGroup;
+    private GameObject variantGroup;
     private GameObject colorGroup;
     private GameObject selfiePanel;
     private GameObject selfieGroup;
@@ -125,6 +131,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private HitTarget selectedColorTarget;
     private ColorMode mode = ColorMode.Sculpt;
     private int selectedPart = -1;
+    private int selectedVariant = -1;
+    private string selectedVariantLabel = "";
+    private bool popGestureArmed;
+    private readonly Button[] variantButtons = new Button[2];
+    private readonly TMP_Text[] variantButtonLabels = new TMP_Text[2];
     private float dwellTimer;
     private bool colorsCaptured;
     private bool colorSelectionLocked;
@@ -147,6 +158,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private const float MainMenuPanelHeight = 230f;
     private const float PartSelectionPanelHeight = 500f;
+    private const float VariantSelectionPanelHeight = 320f;
     private const float ColorSelectionPanelHeight = 585f;
     private const float SelfiePanelHeight = 515f;
 
@@ -213,6 +225,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         DestroyRuntimeObject(selfieDecalMaterial);
         DestroyRuntimeObject(selfieQuadMesh);
         DestroyRuntimeObject(selfieBoundsBakeMesh);
+        DestroyRuntimeObject(runtimePartMesh);
+        for (int i = 0; i < isolatedLidMaterials.Count; i++)
+            DestroyRuntimeObject(isolatedLidMaterials[i]);
+        isolatedLidMaterials.Clear();
+        for (int i = 0; i < isolatedTasselMaterials.Count; i++)
+            DestroyRuntimeObject(isolatedTasselMaterials[i]);
+        isolatedTasselMaterials.Clear();
     }
 
     private void Update()
@@ -246,6 +265,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetHoveredTarget(nextHovered);
         UpdateFreePalettePreview(nextHovered, interactionScreenPosition);
         UpdateDwellSelection(nextHovered);
+        UpdateSculptLockFromUi(IsCursorOverColorUi(interactionScreenPosition));
     }
 
     private void LateUpdate()
@@ -415,13 +435,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         freeColorPaletteButton.onClick.AddListener(CommitFreePaletteColor);
         RegisterHitTarget(
             freeColorPaletteButton, true, true, Color.white, true);
-        backButton.onClick.AddListener(ShowPartSelection);
+        backButton.onClick.AddListener(NavigateBack);
         RegisterHitTarget(backButton, false, false, default);
         colorDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(colorDoneButton, false, false, default);
 
         BindSelfieButtons();
         ApplyCenteredTypography();
+        EnsureVariantGroup();
         return true;
     }
 
@@ -535,6 +556,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             new Vector2(294f, 44f), "DONE", new Color32(74, 155, 143, 255));
         partDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(partDoneButton, false, false, default);
+        EnsureVariantGroup();
 
         colorGroup = new GameObject("ColorSelection", typeof(RectTransform));
         colorGroup.transform.SetParent(panelRect, false);
@@ -571,7 +593,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         Button backButton = CreateButton(
             "Back", colorRect, new Vector2(0f, -340f),
             new Vector2(294f, 44f), "SELECT PART", new Color32(42, 56, 72, 255));
-        backButton.onClick.AddListener(ShowPartSelection);
+        backButton.onClick.AddListener(NavigateBack);
         RegisterHitTarget(backButton, false, false, default);
 
         Button colorDoneButton = CreateButton(
@@ -701,8 +723,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         CaptureInitialColors();
         colorSelectionLocked = false;
         partSelectionLocked = false;
+        popGestureArmed = false;
 
-        SetSculptControllersEnabled(true);
+        SetSculptControllersEnabled(false);
         mode = ColorMode.MainMenu;
         SetPanelHeight(MainMenuPanelHeight);
         panel.SetActive(true);
@@ -715,6 +738,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         mainActionGroup.SetActive(true);
         partGroup.SetActive(false);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
         colorGroup.SetActive(false);
         headerText.text = "COLOR PALETTE";
         instructionText.gameObject.SetActive(false);
@@ -733,6 +758,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     {
         mode = ColorMode.Sculpt;
         selectedPart = -1;
+        selectedVariant = -1;
+        selectedVariantLabel = "";
+        popGestureArmed = false;
         colorSelectionLocked = false;
         partSelectionLocked = false;
         ClearSelectedPartVisual();
@@ -753,11 +781,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         colorSelectionLocked = false;
         partSelectionLocked = false;
         ClearSelectedColorVisual();
+        popGestureArmed = false;
         SetSculptControllersEnabled(false);
         mode = ColorMode.SelectPart;
         SetPanelHeight(PartSelectionPanelHeight);
         mainActionGroup.SetActive(false);
         partGroup.SetActive(true);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
         colorGroup.SetActive(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
@@ -774,10 +805,332 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
 
         selectedPart = partIndex;
+        selectedVariant = -1;
+        selectedVariantLabel = "";
+        popGestureArmed = false;
         partSelectionLocked = false;
+
+        if (PartNeedsVariant(partIndex))
+        {
+            ShowVariantSelection(partIndex);
+            return;
+        }
+
         headerText.text = "SELECT PART";
         instructionText.text = partNames[partIndex] + " selected.";
         SetHoveredTarget(null);
+    }
+
+    private void ShowVariantSelection(int partIndex)
+    {
+        EnsureVariantGroup();
+        mode = ColorMode.SelectVariant;
+        SetPanelHeight(VariantSelectionPanelHeight);
+        mainActionGroup.SetActive(false);
+        partGroup.SetActive(false);
+        if (variantGroup == null)
+            return;
+
+        variantGroup.SetActive(true);
+        colorGroup.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        string[] labels = GetVariantLabels(partIndex);
+        for (int i = 0; i < variantButtons.Length; i++)
+        {
+            if (variantButtonLabels[i] != null)
+                variantButtonLabels[i].text = labels[i];
+        }
+
+        headerText.text = partNames[partIndex];
+        SetHeaderBackLabel("← PARTS");
+        instructionText.gameObject.SetActive(true);
+        if (TryAdoptVisibleVariant(partIndex))
+        {
+            if (originalGestureController != null)
+            {
+                if (partIndex == 2 || partIndex == 3)
+                    originalGestureController.ArmPopVariant(partIndex == 2, selectedVariant == 1);
+                else if (partIndex == 4)
+                    originalGestureController.ArmTasselVariant(selectedVariant == 1);
+            }
+
+            instructionText.text = selectedVariantLabel +
+                " is already showing. Change color, or pick another shape.";
+        }
+        else
+        {
+            instructionText.text = partIndex == 4
+                ? "Choose one tassel or three tassels."
+                : "Choose Circle or Rectangle, then pinch and lift.";
+        }
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void SelectVariant(int variantIndex)
+    {
+        selectedVariant = variantIndex;
+        string[] labels = GetVariantLabels(selectedPart);
+        selectedVariantLabel = labels[variantIndex];
+        headerText.text = partNames[selectedPart];
+
+        if (selectedPart == 2 || selectedPart == 3)
+        {
+            popGestureArmed = true;
+            if (lanternRenderer != null)
+            {
+                int unusedShape = FindVariantShape(selectedPart, 1 - variantIndex);
+                if (unusedShape >= 0)
+                    lanternRenderer.SetBlendShapeWeight(unusedShape, 0f);
+            }
+            if (originalGestureController != null)
+                originalGestureController.ArmPopVariant(selectedPart == 2, variantIndex == 1);
+
+            instructionText.text = selectedPart == 2
+                ? "Pinch with your right hand and lift to pop the " +
+                  selectedVariantLabel.ToLowerInvariant() + " top."
+                : "Pinch with your left hand and lift to pop the " +
+                  selectedVariantLabel.ToLowerInvariant() + " bottom.";
+            SetHoveredTarget(null);
+            return;
+        }
+
+        if (selectedPart == 4)
+        {
+            popGestureArmed = true;
+            if (lanternRenderer != null)
+            {
+                int unusedShape = FindVariantShape(selectedPart, 1 - variantIndex);
+                if (unusedShape >= 0)
+                    lanternRenderer.SetBlendShapeWeight(unusedShape, 0f);
+            }
+
+            if (originalGestureController != null)
+                originalGestureController.ArmTasselVariant(variantIndex == 1);
+
+            instructionText.text =
+                "Make two fists and pull down to ease the " +
+                selectedVariantLabel.ToLowerInvariant() + " out.";
+            SetHoveredTarget(null);
+            return;
+        }
+
+        ApplyPartVariantShapes(selectedPart, variantIndex);
+        instructionText.text = selectedVariantLabel + " selected.";
+        if (originalGestureController != null)
+            originalGestureController.SyncCurrentFromRenderer();
+        SetHoveredTarget(null);
+    }
+
+    private static string[] GetVariantLabels(int partIndex)
+    {
+        if (partIndex == 4)
+            return new[] { "Single Tassel", "3 Tassel" };
+        return new[] { "Circle", "Rectangle" };
+    }
+
+    private static bool PartNeedsVariant(int partIndex)
+    {
+        return partIndex == 2 || partIndex == 3 || partIndex == 4;
+    }
+
+    private bool TryAdoptVisibleVariant(int partIndex)
+    {
+        int visible = FindVisibleVariant(partIndex);
+        if (visible < 0)
+            return false;
+
+        selectedVariant = visible;
+        selectedVariantLabel = GetVariantLabels(partIndex)[visible];
+        return true;
+    }
+
+    private int FindVisibleVariant(int partIndex)
+    {
+        if (lanternRenderer == null || !PartNeedsVariant(partIndex))
+            return -1;
+
+        float first = ReadShapeWeight(FindVariantShape(partIndex, 0));
+        float second = ReadShapeWeight(FindVariantShape(partIndex, 1));
+        const float visibleWeight = 8f;
+        if (first < visibleWeight && second < visibleWeight)
+            return -1;
+        return first >= second ? 0 : 1;
+    }
+
+    private float ReadShapeWeight(int shapeIndex)
+    {
+        if (lanternRenderer == null || shapeIndex < 0)
+            return 0f;
+        return lanternRenderer.GetBlendShapeWeight(shapeIndex);
+    }
+
+    private void EnsureVariantGroup()
+    {
+        if (variantGroup != null || panel == null)
+            return;
+
+        Transform panelTransform = panel.transform;
+        Transform existing = panelTransform.Find("VariantSelection");
+        if (existing != null)
+        {
+            variantGroup = existing.gameObject;
+            BindExistingVariantButtons(existing);
+            variantGroup.SetActive(false);
+            return;
+        }
+
+        variantGroup = new GameObject("VariantSelection", typeof(RectTransform));
+        variantGroup.transform.SetParent(panelTransform, false);
+        RectTransform variantRect = variantGroup.GetComponent<RectTransform>();
+        variantRect.anchorMin = new Vector2(0f, 1f);
+        variantRect.anchorMax = new Vector2(1f, 1f);
+        variantRect.pivot = new Vector2(0.5f, 1f);
+        variantRect.anchoredPosition = new Vector2(0f, -120f);
+        variantRect.sizeDelta = new Vector2(-36f, 220f);
+
+        for (int i = 0; i < variantButtons.Length; i++)
+        {
+            int variantIndex = i;
+            variantButtons[i] = CreateButton(
+                "Variant" + i,
+                variantRect,
+                new Vector2(0f, -i * 52f),
+                new Vector2(294f, 44f),
+                GetVariantLabels(2)[i],
+                new Color32(42, 56, 72, 255));
+            variantButtons[i].onClick.AddListener(() => SelectVariant(variantIndex));
+            variantButtonLabels[i] = variantButtons[i].GetComponentInChildren<TMP_Text>();
+            RegisterHitTarget(variantButtons[i], false, true, default);
+        }
+
+        Button nextColorsButton = CreateButton(
+            "NextColors", variantRect, new Vector2(0f, -116f),
+            new Vector2(294f, 44f), "CHANGE COLOR", new Color32(61, 124, 124, 255));
+        nextColorsButton.onClick.AddListener(ContinueToColorSelection);
+        RegisterHitTarget(nextColorsButton, false, false, default);
+
+        Button variantDoneButton = CreateButton(
+            "Done", variantRect, new Vector2(0f, -168f),
+            new Vector2(294f, 44f), "DONE", new Color32(74, 155, 143, 255));
+        variantDoneButton.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(variantDoneButton, false, false, default);
+        variantGroup.SetActive(false);
+    }
+
+    private void BindExistingVariantButtons(Transform variantRoot)
+    {
+        for (int i = 0; i < variantButtons.Length; i++)
+        {
+            int variantIndex = i;
+            Transform buttonTransform = variantRoot.Find("Variant" + i);
+            if (buttonTransform == null ||
+                !buttonTransform.TryGetComponent(out Button button))
+                continue;
+
+            variantButtons[i] = button;
+            variantButtonLabels[i] = button.GetComponentInChildren<TMP_Text>();
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(() => SelectVariant(variantIndex));
+            RegisterHitTarget(button, false, true, default);
+        }
+
+        Transform nextColors = variantRoot.Find("NextColors");
+        if (nextColors != null && nextColors.TryGetComponent(out Button nextButton))
+        {
+            nextButton.onClick.RemoveAllListeners();
+            nextButton.onClick.AddListener(ContinueToColorSelection);
+            RegisterHitTarget(nextButton, false, false, default);
+        }
+
+        Transform done = variantRoot.Find("Done");
+        if (done != null && done.TryGetComponent(out Button doneButton))
+        {
+            doneButton.onClick.RemoveAllListeners();
+            doneButton.onClick.AddListener(ShowMainMenu);
+            RegisterHitTarget(doneButton, false, false, default);
+        }
+    }
+
+    private void ApplyPartVariantShapes(int partIndex, int variantIndex)
+    {
+        if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
+            return;
+
+        int activeShape = FindVariantShape(partIndex, variantIndex);
+        int inactiveShape = FindVariantShape(partIndex, 1 - variantIndex);
+        if (inactiveShape >= 0)
+            lanternRenderer.SetBlendShapeWeight(inactiveShape, 0f);
+        if (activeShape >= 0)
+            lanternRenderer.SetBlendShapeWeight(activeShape, 100f);
+    }
+
+    private int FindVariantShape(int partIndex, int variantIndex)
+    {
+        Mesh mesh = lanternRenderer.sharedMesh;
+        if (mesh == null)
+            return -1;
+
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            if (IsVariantShape(mesh.GetBlendShapeName(i), partIndex, variantIndex))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static bool IsVariantShape(string shapeName, int partIndex, int variantIndex)
+    {
+        string compact = CompactShapeName(shapeName);
+        if (partIndex == 2)
+        {
+            if (!compact.Contains("TOP"))
+                return false;
+            return variantIndex == 0
+                ? compact.Contains("CIRCLE") && !compact.Contains("RECTANGLE")
+                : compact.Contains("RECTANGLE");
+        }
+
+        if (partIndex == 3)
+        {
+            if (!compact.Contains("BOTTOM"))
+                return false;
+            return variantIndex == 0
+                ? compact.Contains("CIRCLE") && !compact.Contains("RECTANGLE")
+                : compact.Contains("RECTANGLE");
+        }
+
+        if (partIndex == 4)
+        {
+            bool isTassel = compact.Contains("TASSEL") ||
+                            compact.Contains("TASSLE") ||
+                            compact.Contains("BAMBOO");
+            if (!isTassel)
+                return false;
+            bool isSingle = compact.Contains("SINGLE");
+            bool isTriple = compact.Contains("3") || compact.Contains("THREE");
+            return variantIndex == 0 ? !isTriple : isTriple && !isSingle;
+        }
+
+        return false;
+    }
+
+    private static string CompactShapeName(string shapeName)
+    {
+        if (string.IsNullOrEmpty(shapeName))
+            return "";
+
+        char[] chars = shapeName.ToUpperInvariant().ToCharArray();
+        int count = 0;
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (char.IsLetterOrDigit(chars[i]))
+                chars[count++] = chars[i];
+        }
+
+        return new string(chars, 0, count);
     }
 
     private void ContinueToColorSelection()
@@ -785,20 +1138,44 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (selectedPart < 0)
             selectedPart = 0;
 
+        if (PartNeedsVariant(selectedPart) && selectedVariant < 0 &&
+            !TryAdoptVisibleVariant(selectedPart))
+        {
+            if (mode == ColorMode.SelectVariant)
+            {
+                instructionText.text = "Choose a shape first.";
+                return;
+            }
+
+            ShowVariantSelection(selectedPart);
+            return;
+        }
+
         partSelectionLocked = false;
         colorSelectionLocked = false;
+        popGestureArmed = false;
         SetSculptControllersEnabled(false);
         mode = ColorMode.SelectColor;
         SetPanelHeight(ColorSelectionPanelHeight);
         mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
         colorGroup.SetActive(true);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
-        headerText.text = partNames[selectedPart];
-        SetHeaderBackLabel("← PARTS");
+        headerText.text = string.IsNullOrEmpty(selectedVariantLabel)
+            ? partNames[selectedPart]
+            : partNames[selectedPart] + " · " + selectedVariantLabel;
+        SetHeaderBackLabel(PartNeedsVariant(selectedPart) ? "← SHAPE" : "← PARTS");
         instructionText.text = "Point and hold until the border completes.";
+        Transform colorBack = colorGroup != null ? colorGroup.transform.Find("Back") : null;
+        TMP_Text colorBackLabel = colorBack != null
+            ? colorBack.GetComponentInChildren<TMP_Text>()
+            : null;
+        if (colorBackLabel != null)
+            colorBackLabel.text = PartNeedsVariant(selectedPart) ? "SELECT SHAPE" : "SELECT PART";
         SetHoveredTarget(null);
     }
 
@@ -1523,6 +1900,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     {
         if (mode == ColorMode.SelectColor)
         {
+            if (PartNeedsVariant(selectedPart))
+                ShowVariantSelection(selectedPart);
+            else
+                ShowPartSelection();
+            return;
+        }
+
+        if (mode == ColorMode.SelectVariant)
+        {
             ShowPartSelection();
             return;
         }
@@ -1624,6 +2010,62 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             indexGestureController.enabled = enabled;
     }
 
+    private void UpdateSculptLockFromUi(bool overUi)
+    {
+        if (mode == ColorMode.Sculpt)
+            return;
+
+        bool allowSculpt = !overUi &&
+            (mode == ColorMode.MainMenu ||
+             (mode == ColorMode.SelectVariant && popGestureArmed));
+
+        if (allowSculpt)
+        {
+            if (mode == ColorMode.SelectVariant && popGestureArmed)
+            {
+                if (originalGestureController != null)
+                    originalGestureController.enabled = true;
+                if (indexGestureController != null)
+                    indexGestureController.enabled = false;
+            }
+            else
+            {
+                SetSculptControllersEnabled(true);
+            }
+        }
+        else
+        {
+            SetSculptControllersEnabled(false);
+        }
+    }
+
+    private bool IsCursorOverColorUi(Vector2 screenPosition)
+    {
+        if (hoveredTarget != null)
+            return true;
+
+        if (ContainsScreenPoint(panel, screenPosition) ||
+            ContainsScreenPoint(selfiePanel, screenPosition))
+            return true;
+
+        if (selfieEntryButton != null &&
+            selfieEntryButton.gameObject.activeInHierarchy &&
+            ContainsScreenPoint(selfieEntryButton.gameObject, screenPosition))
+            return true;
+
+        return false;
+    }
+
+    private bool ContainsScreenPoint(GameObject root, Vector2 screenPosition)
+    {
+        if (root == null || !root.activeInHierarchy)
+            return false;
+
+        RectTransform rect = root.GetComponent<RectTransform>();
+        return rect != null &&
+            RectTransformUtility.RectangleContainsScreenPoint(rect, screenPosition, canvasCamera);
+    }
+
     private void CaptureInitialColors()
     {
         if (colorsCaptured || lanternRenderer == null)
@@ -1632,8 +2074,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         // Renderer.materials creates runtime-only material instances. Changing them
         // cannot modify the student's original material assets.
         runtimeMaterials = lanternRenderer.materials;
-        committedMaterialColors = new Color[runtimeMaterials.Length];
+        IsolateTopLidOntoOwnMaterials();
+        IsolateTasselOntoOwnMaterials();
+        CaptureCommittedColors();
+        colorsCaptured = true;
+        ResolvePartMaterialIndices();
+    }
 
+    private void CaptureCommittedColors()
+    {
+        if (runtimeMaterials == null)
+            return;
+
+        committedMaterialColors = new Color[runtimeMaterials.Length];
         for (int i = 0; i < runtimeMaterials.Length; i++)
         {
             Material material = runtimeMaterials[i];
@@ -1650,8 +2103,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             else
                 committedMaterialColors[i] = Color.white;
         }
-
-        colorsCaptured = true;
     }
 
     private void ApplyColor(int partIndex, Color color)
@@ -1659,15 +2110,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (!colorsCaptured || runtimeMaterials == null || partIndex < 0)
             return;
 
-        if (partIndex == 0)
-        {
-            for (int i = 0; i < runtimeMaterials.Length; i++)
-                SetMaterialColor(i, color);
-            return;
-        }
-
-        int materialIndex = GetMaterialIndex(partIndex);
-        SetMaterialColor(materialIndex, color);
+        int[] slots = GetMaterialIndices(partIndex);
+        for (int i = 0; i < slots.Length; i++)
+            SetMaterialColor(slots[i], color);
     }
 
     private void SetMaterialColor(int materialIndex, Color color)
@@ -1691,16 +2136,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (committedMaterialColors == null)
             return;
 
-        if (partIndex == 0)
+        int[] slots = GetMaterialIndices(partIndex);
+        for (int i = 0; i < slots.Length; i++)
         {
-            for (int i = 0; i < committedMaterialColors.Length; i++)
-                committedMaterialColors[i] = color;
-            return;
+            int materialIndex = slots[i];
+            if (materialIndex >= 0 && materialIndex < committedMaterialColors.Length)
+                committedMaterialColors[materialIndex] = color;
         }
-
-        int materialIndex = GetMaterialIndex(partIndex);
-        if (materialIndex >= 0 && materialIndex < committedMaterialColors.Length)
-            committedMaterialColors[materialIndex] = color;
     }
 
     private void RestoreSelectedPreview()
@@ -1708,16 +2150,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (selectedPart < 0 || committedMaterialColors == null)
             return;
 
-        if (selectedPart == 0)
+        int[] slots = GetMaterialIndices(selectedPart);
+        for (int i = 0; i < slots.Length; i++)
         {
-            for (int i = 0; i < committedMaterialColors.Length; i++)
-                SetMaterialColor(i, committedMaterialColors[i]);
-            return;
+            int materialIndex = slots[i];
+            if (materialIndex >= 0 && materialIndex < committedMaterialColors.Length)
+                SetMaterialColor(materialIndex, committedMaterialColors[materialIndex]);
         }
-
-        int materialIndex = GetMaterialIndex(selectedPart);
-        if (materialIndex >= 0 && materialIndex < committedMaterialColors.Length)
-            SetMaterialColor(materialIndex, committedMaterialColors[materialIndex]);
     }
 
     private void MoveCursor(Vector2 screenPosition)
@@ -1780,6 +2219,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         hoveredTarget = target;
         if (hoveredTarget != null && hoveredTarget.Outline != null)
             hoveredTarget.Outline.enabled = true;
+
+        if (hoveredTarget != null)
+            DialogueButtonClickSound.Instance?.PlayHover();
 
         if (!colorSelectionLocked && mode == ColorMode.SelectColor && selectedPart >= 0 &&
             hoveredTarget != null && hoveredTarget.IsColor)
@@ -1852,8 +2294,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (partIndex == 0)
             return materialCount > 0;
 
-        int materialIndex = GetMaterialIndex(partIndex);
-        return materialIndex >= 0 && materialIndex < materialCount;
+        int[] slots = GetMaterialIndices(partIndex);
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i] >= 0 && slots[i] < materialCount)
+                return true;
+        }
+
+        return false;
     }
 
     private int GetMaterialIndex(int partIndex)
@@ -1866,6 +2314,204 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             case 4: return tasselMaterialIndex;
             default: return -1;
         }
+    }
+
+    private int[] GetMaterialIndices(int partIndex)
+    {
+        if (partIndex == 0)
+        {
+            int count = runtimeMaterials != null
+                ? runtimeMaterials.Length
+                : lanternRenderer != null ? lanternRenderer.sharedMaterials.Length : 0;
+            int[] all = new int[count];
+            for (int i = 0; i < count; i++)
+                all[i] = i;
+            return all;
+        }
+
+        if (partMaterialIndices != null &&
+            partIndex >= 0 &&
+            partIndex < partMaterialIndices.Length &&
+            partMaterialIndices[partIndex] != null &&
+            partMaterialIndices[partIndex].Length > 0)
+            return partMaterialIndices[partIndex];
+
+        int fallback = GetMaterialIndex(partIndex);
+        return fallback >= 0 ? new[] { fallback } : Array.Empty<int>();
+    }
+
+    private void ResolvePartMaterialIndices()
+    {
+        partMaterialIndices = new int[partNames.Length][];
+        partMaterialIndices[1] = new[] { bodyMaterialIndex };
+        partMaterialIndices[2] = IsolatedOrFallback(isolatedLidMaterials, topMaterialIndex);
+        partMaterialIndices[3] = new[] { bottomMaterialIndex };
+        partMaterialIndices[4] = IsolatedOrFallback(isolatedTasselMaterials, tasselMaterialIndex);
+    }
+
+    private int[] IsolatedOrFallback(List<Material> isolated, int fallbackIndex)
+    {
+        if (isolated != null && isolated.Count > 0 && runtimeMaterials != null)
+        {
+            List<int> slots = new List<int>();
+            for (int i = 0; i < runtimeMaterials.Length; i++)
+            {
+                if (isolated.Contains(runtimeMaterials[i]))
+                    slots.Add(i);
+            }
+
+            if (slots.Count > 0)
+                return slots.ToArray();
+        }
+
+        return fallbackIndex >= 0 ? new[] { fallbackIndex } : Array.Empty<int>();
+    }
+
+    private void IsolateTopLidOntoOwnMaterials()
+    {
+        IsolateMovingPartOntoOwnMaterials(IsTopLidShape, isolatedLidMaterials, "_TopLid");
+    }
+
+    private void IsolateTasselOntoOwnMaterials()
+    {
+        IsolateMovingPartOntoOwnMaterials(IsTasselColorShape, isolatedTasselMaterials, "_Tassel");
+    }
+
+    private void IsolateMovingPartOntoOwnMaterials(
+        Func<string, bool> match,
+        List<Material> isolated,
+        string suffix)
+    {
+        Mesh source = lanternRenderer != null ? lanternRenderer.sharedMesh : null;
+        if (source == null || !source.isReadable || runtimeMaterials == null)
+            return;
+
+        bool[] partVerts = MarkMovingVertices(source, match);
+        if (!HasMarkedVertex(partVerts))
+            return;
+
+        if (runtimePartMesh == null)
+        {
+            runtimePartMesh = Instantiate(source);
+            runtimePartMesh.name = source.name + "_PartColors";
+            lanternRenderer.sharedMesh = runtimePartMesh;
+        }
+
+        List<Material> materials = new List<Material>(runtimeMaterials);
+        int originalCount = runtimePartMesh.subMeshCount;
+        for (int subMesh = 0; subMesh < originalCount; subMesh++)
+        {
+            int[] triangles = runtimePartMesh.GetTriangles(subMesh);
+            if (triangles.Length < 3)
+                continue;
+
+            List<int> partTris = new List<int>(triangles.Length);
+            List<int> restTris = new List<int>(triangles.Length);
+            for (int i = 0; i < triangles.Length; i += 3)
+            {
+                int partCount = 0;
+                if (IsMarked(partVerts, triangles[i]))
+                    partCount++;
+                if (IsMarked(partVerts, triangles[i + 1]))
+                    partCount++;
+                if (IsMarked(partVerts, triangles[i + 2]))
+                    partCount++;
+
+                List<int> dest = partCount >= 2 ? partTris : restTris;
+                dest.Add(triangles[i]);
+                dest.Add(triangles[i + 1]);
+                dest.Add(triangles[i + 2]);
+            }
+
+            if (partTris.Count == 0)
+                continue;
+
+            if (restTris.Count == 0)
+            {
+                if (subMesh != bodyMaterialIndex &&
+                    subMesh != topMaterialIndex &&
+                    subMesh != bottomMaterialIndex &&
+                    subMesh < materials.Count)
+                    isolated.Add(materials[subMesh]);
+                continue;
+            }
+
+            runtimePartMesh.SetTriangles(restTris, subMesh, false);
+            int partSlot = runtimePartMesh.subMeshCount;
+            runtimePartMesh.subMeshCount = partSlot + 1;
+            runtimePartMesh.SetTriangles(partTris, partSlot, false);
+
+            Material sourceMat = subMesh < materials.Count ? materials[subMesh] : null;
+            Material partMat = sourceMat != null
+                ? new Material(sourceMat)
+                : new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            partMat.name = (sourceMat != null ? sourceMat.name : "Lantern") + suffix;
+            materials.Add(partMat);
+            isolated.Add(partMat);
+        }
+
+        runtimePartMesh.RecalculateBounds();
+        runtimeMaterials = materials.ToArray();
+        lanternRenderer.materials = runtimeMaterials;
+    }
+
+    private static bool[] MarkMovingVertices(Mesh mesh, Func<string, bool> match)
+    {
+        bool[] moving = new bool[mesh.vertexCount];
+        Vector3[] delta = new Vector3[mesh.vertexCount];
+        for (int shape = 0; shape < mesh.blendShapeCount; shape++)
+        {
+            if (!match(mesh.GetBlendShapeName(shape)))
+                continue;
+
+            mesh.GetBlendShapeFrameVertices(shape, 0, delta, null, null);
+            float peak = 0f;
+            for (int i = 0; i < delta.Length; i++)
+                peak = Mathf.Max(peak, delta[i].sqrMagnitude);
+            if (peak < 1e-10f)
+                continue;
+
+            float cutoff = peak * 0.18f * 0.18f;
+            for (int i = 0; i < delta.Length; i++)
+            {
+                if (delta[i].sqrMagnitude >= cutoff)
+                    moving[i] = true;
+            }
+        }
+
+        return moving;
+    }
+
+    private static bool HasMarkedVertex(bool[] marks)
+    {
+        for (int i = 0; i < marks.Length; i++)
+        {
+            if (marks[i])
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsMarked(bool[] marks, int index)
+    {
+        return index >= 0 && index < marks.Length && marks[index];
+    }
+
+    private static bool IsTopLidShape(string shapeName)
+    {
+        string compact = CompactShapeName(shapeName);
+        if (!compact.Contains("TOP") || compact.Contains("BOTTOM"))
+            return false;
+        return compact.Contains("CIRCLE") || compact.Contains("RECTANGLE");
+    }
+
+    private static bool IsTasselColorShape(string shapeName)
+    {
+        string compact = CompactShapeName(shapeName);
+        return compact.Contains("TASSEL") ||
+               compact.Contains("TASSLE") ||
+               compact.Contains("BAMBOO");
     }
 
     private void RegisterHitTarget(
