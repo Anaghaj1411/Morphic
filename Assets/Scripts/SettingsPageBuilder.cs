@@ -455,30 +455,34 @@ public static class SettingsPageBuilder
         RectTransform root,
         SettingsPageController controller)
     {
+        Transform card = root.Find("Card");
+        RectTransform parent = card != null
+            ? card as RectTransform
+            : root;
+
+        Sprite icon = MorphicBackButton.LoadSprite();
         Image back = LanguagePageBuilder.CreateImage(
             "Back Button",
-            root,
-            LanguagePageBuilder.Circle(128));
+            parent,
+            icon != null ? icon : LanguagePageBuilder.Circle(128));
 
         RectTransform rt = back.rectTransform;
+        MorphicBackButton.PlaceOnPanel(rt, 88f);
 
-        rt.sizeDelta = new Vector2(104f, 104f);
-        rt.anchorMin = new Vector2(1f, 1f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(1f, 1f);
-        rt.anchoredPosition = new Vector2(96f, 84f);
+        if (icon != null)
+            MorphicBackButton.ApplyIcon(back);
+        else
+            back.color = LanguagePageBuilder.Pink;
 
-        back.color = LanguagePageBuilder.Pink;
-
-        Image arrow = LanguagePageBuilder.CreateImage(
-            "Arrow",
-            back.transform,
-            LanguagePageBuilder.ArrowSprite(128, 96));
-
-        arrow.rectTransform.sizeDelta =
-            new Vector2(58f, 44f);
-
-        arrow.color = LanguagePageBuilder.Green;
+        // #region agent log
+        MorphicBackButton.AgentLog(
+            "D",
+            "SettingsPageBuilder.BuildBackButton",
+            "Settings back placed",
+            "{\"parent\":\"" + parent.name +
+            "\",\"x\":" + rt.anchoredPosition.x +
+            ",\"y\":" + rt.anchoredPosition.y + "}");
+        // #endregion
 
         Button button = back.gameObject.AddComponent<Button>();
         button.targetGraphic = back;

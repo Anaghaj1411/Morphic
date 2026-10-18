@@ -16,8 +16,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         Sculpt,
         MainMenu,
         SelectPart,
+        SelectBodyActions,
         SelectVariant,
         SelectColor,
+        SelectDesign,
         Selfie
     }
 
@@ -70,6 +72,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     [InspectorName("Selfie Brush Corner Cut")]
     [SerializeField, Range(0f, 0.8f)] private float selfieBrushCornerRoundness = 0.28f;
 
+    [Header("Body Designs")]
+    [SerializeField] private Texture2D[] stampPatterns;
+    [SerializeField, Range(3f, 12f)] private float designRepeatCount = 6f;
+    [SerializeField, Range(0.08f, 0.5f)] private float designPatchHalfAngle = 0.22f;
+    [SerializeField, Range(0.15f, 0.7f)] private float designVerticalHalfFraction = 0.38f;
+
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int ColorId = Shader.PropertyToID("_Color");
     private static readonly int BrushEdgeRoughnessId =
@@ -114,6 +122,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private GameObject mainActionGroup;
     private GameObject partGroup;
     private GameObject variantGroup;
+    private GameObject bodyActionGroup;
+    private GameObject designGroup;
     private GameObject colorGroup;
     private GameObject selfiePanel;
     private GameObject selfieGroup;
@@ -122,6 +132,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private TMP_Text cursorText;
     private TMP_Text headerText;
     private TMP_Text headerBackText;
+    private Button headerBackButton;
     private TMP_Text instructionText;
     private TMP_Text selfieHeaderText;
     private TMP_Text selfieInstructionText;
@@ -145,6 +156,16 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private bool popGestureArmed;
     private readonly Button[] variantButtons = new Button[2];
     private readonly TMP_Text[] variantButtonLabels = new TMP_Text[2];
+    private readonly Button[] designButtons = new Button[6];
+    private readonly RawImage[] designPreviews = new RawImage[6];
+    private Transform designSurfaceRoot;
+    private SkinnedMeshRenderer designSurfaceRenderer;
+    private Material designSurfaceMaterial;
+    private Material designHiddenMaterial;
+    private Texture appliedDesignTexture;
+    private Color committedDesignTint = Color.white;
+    private bool designTintActive;
+    private bool colorBackToDesigns;
     private float dwellTimer;
     private bool colorsCaptured;
     private bool colorSelectionLocked;
@@ -170,6 +191,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private const float MainMenuPanelHeight = 230f;
     private const float PartSelectionPanelHeight = 500f;
     private const float VariantSelectionPanelHeight = 320f;
+    private const float BodyActionsPanelHeight = 280f;
+    private const float DesignSelectionPanelHeight = 500f;
     private const float ColorSelectionPanelHeight = 585f;
     private const float SelfiePanelHeight = 515f;
 
@@ -194,6 +217,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void Start()
     {
         CaptureInitialColors();
+        LoadStampPatterns();
         BuildInterface();
 
         // DialogueManager can enable the palette before this component's
@@ -247,6 +271,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         DestroyRuntimeObject(selfieSurfaceMaterial);
         DestroyRuntimeObject(selfieHiddenMaterial);
         DestroyRuntimeObject(selfieBoundsMesh);
+        if (designSurfaceRoot != null)
+            DestroyRuntimeObject(designSurfaceRoot.gameObject);
+        DestroyRuntimeObject(designSurfaceMaterial);
+        DestroyRuntimeObject(designHiddenMaterial);
 
     }
 
@@ -302,20 +330,26 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (selfieSurfaceRenderer == null || lanternRenderer == null)
+        if (lanternRenderer == null)
             return;
 
         // Run after both sculpting controllers (orders 0 and 100), then copy
         // the exact BlendShape state used by the visible lantern this frame.
         // This makes the overlay deform as part of the same surface instead of
         // lagging one frame and disappearing inside the lantern while shaping.
-        SyncSelfieSurfaceRenderer();
+        if (selfieSurfaceRenderer != null)
+        {
+            SyncSelfieSurfaceRenderer();
+            if (appliedSelfieTexture != null)
+                ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
+        }
 
-        // Width/Height/Top/Bottom can change the true body centre and height.
-        // Recalculate the selfie projection from the current baked geometry so
-        // it remains centred continuously, not only when ATTACH is pressed.
-        if (appliedSelfieTexture != null)
-            ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
+        if (designSurfaceRenderer != null)
+        {
+            SyncDesignSurfaceRenderer();
+            if (appliedDesignTexture != null)
+                ConfigureDesignSurfaceMaterial(appliedDesignTexture);
+        }
     }
 
     private void BuildInterface()
@@ -468,14 +502,17 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         freeColorPaletteButton.onClick.AddListener(CommitFreePaletteColor);
         RegisterHitTarget(
             freeColorPaletteButton, true, true, Color.white, true);
-        backButton.onClick.AddListener(NavigateBack);
-        RegisterHitTarget(backButton, false, false, default);
+        backButton.gameObject.SetActive(false);
         colorDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(colorDoneButton, false, false, default);
 
         BindSelfieButtons();
         ApplyCenteredTypography();
+        EnsureHeaderBackButton();
+        StyleSelfieBackAsIcon();
         EnsureVariantGroup();
+        EnsureBodyActionGroup();
+        EnsureDesignGroup();
         return true;
     }
 
@@ -517,14 +554,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             new Vector2(194f, 34f), "COLOR MODE", 21f,
             TextAlignmentOptions.Left, FontStyles.Bold);
 
-        Button headerBackButton = CreateButton(
-            "HeaderBack", panelRect, new Vector2(112f, -13f),
-            new Vector2(88f, 34f), "← BACK",
-            new Color32(42, 56, 72, 255));
-
+        headerBackButton = CreateHeaderBackButton(panelRect, NavigateBack);
         headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>();
-        headerBackButton.onClick.AddListener(NavigateBack);
-        RegisterHitTarget(headerBackButton, false, false, default);
 
 
         instructionText = CreateText(
@@ -590,6 +621,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(partDoneButton, false, false, default);
         EnsureVariantGroup();
+        EnsureBodyActionGroup();
+        EnsureDesignGroup();
 
         colorGroup = new GameObject("ColorSelection", typeof(RectTransform));
         colorGroup.transform.SetParent(panelRect, false);
@@ -626,11 +659,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         Button backButton = CreateButton(
             "Back", colorRect, new Vector2(0f, -340f),
             new Vector2(294f, 44f), "SELECT PART", new Color32(42, 56, 72, 255));
-        backButton.onClick.AddListener(NavigateBack);
-        RegisterHitTarget(backButton, false, false, default);
+        backButton.gameObject.SetActive(false);
 
         Button colorDoneButton = CreateButton(
-            "Done", colorRect, new Vector2(0f, -392f),
+            "Done", colorRect, new Vector2(0f, -340f),
             new Vector2(294f, 44f), "DONE", new Color32(74, 155, 143, 255));
         colorDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(colorDoneButton, false, false, default);
@@ -774,9 +806,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partGroup.SetActive(false);
         if (variantGroup != null)
             variantGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
         colorGroup.SetActive(false);
         headerText.text = "COLOR PALETTE";
         instructionText.gameObject.SetActive(false);
+        SetHeaderBackVisible(false);
 
         ResetDwell();
         SetHoveredTarget(null);
@@ -823,12 +860,17 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partGroup.SetActive(true);
         if (variantGroup != null)
             variantGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
         colorGroup.SetActive(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         headerText.text = "SELECT PART";
         SetHeaderBackLabel("← SCULPT");
+        SetHeaderBackVisible(true);
         instructionText.text = "Choose the whole lantern or one part.";
         SetHoveredTarget(null);
     }
@@ -850,6 +892,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
         }
 
+        if (partIndex == 1)
+        {
+            ShowBodyActions();
+            return;
+        }
+
         headerText.text = "SELECT PART";
         instructionText.text = partNames[partIndex] + " selected.";
         SetHoveredTarget(null);
@@ -866,6 +914,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
 
         variantGroup.SetActive(true);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
         colorGroup.SetActive(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
@@ -1188,6 +1240,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partSelectionLocked = false;
         colorSelectionLocked = false;
         popGestureArmed = false;
+        if (!colorBackToDesigns)
+            designTintActive = false;
         SetSculptControllersEnabled(false);
         mode = ColorMode.SelectColor;
         SetPanelHeight(ColorSelectionPanelHeight);
@@ -1195,6 +1249,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partGroup.SetActive(false);
         if (variantGroup != null)
             variantGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
         colorGroup.SetActive(true);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
@@ -1202,14 +1260,28 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         headerText.text = string.IsNullOrEmpty(selectedVariantLabel)
             ? partNames[selectedPart]
             : partNames[selectedPart] + " · " + selectedVariantLabel;
-        SetHeaderBackLabel(PartNeedsVariant(selectedPart) ? "← SHAPE" : "← PARTS");
-        instructionText.text = "Point and hold until the border completes.";
+        if (colorBackToDesigns)
+            SetHeaderBackLabel("← DESIGNS");
+        else if (selectedPart == 1)
+            SetHeaderBackLabel("← BODY");
+        else
+            SetHeaderBackLabel(PartNeedsVariant(selectedPart) ? "← SHAPE" : "← PARTS");
+        instructionText.text = designTintActive
+            ? "Point at a color to tint the stamp."
+            : "Point and hold until the border completes.";
         Transform colorBack = colorGroup != null ? colorGroup.transform.Find("Back") : null;
         TMP_Text colorBackLabel = colorBack != null
             ? colorBack.GetComponentInChildren<TMP_Text>()
             : null;
         if (colorBackLabel != null)
-            colorBackLabel.text = PartNeedsVariant(selectedPart) ? "SELECT SHAPE" : "SELECT PART";
+        {
+            if (colorBackToDesigns)
+                colorBackLabel.text = "DESIGNS";
+            else if (selectedPart == 1)
+                colorBackLabel.text = "LANTERN BODY";
+            else
+                colorBackLabel.text = PartNeedsVariant(selectedPart) ? "SELECT SHAPE" : "SELECT PART";
+        }
         SetHoveredTarget(null);
     }
 
@@ -1927,37 +1999,178 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
 
         ApplyColor(selectedPart, color);
-        CommitTargetColor(selectedPart, color);
+        if (designTintActive)
+            committedDesignTint = color;
+        else
+            CommitTargetColor(selectedPart, color);
         colorSelectionLocked = false;
-        instructionText.text = "Color selected. Choose another color or press DONE.";
+        instructionText.text = designTintActive
+            ? "Stamp tint selected. Choose another color or press DONE."
+            : "Color selected. Choose another color or press DONE.";
     }
 
 
          private void NavigateBack()
     {
+        ColorMode fromMode = mode;
         if (mode == ColorMode.SelectColor)
         {
-            if (PartNeedsVariant(selectedPart))
+            if (colorBackToDesigns)
+                ShowDesignSelection();
+            else if (selectedPart == 1)
+                ShowBodyActions();
+            else if (PartNeedsVariant(selectedPart))
                 ShowVariantSelection(selectedPart);
             else
                 ShowPartSelection();
-            return;
         }
-
-        if (mode == ColorMode.SelectVariant)
+        else if (mode == ColorMode.SelectDesign)
+        {
+            ShowBodyActions();
+        }
+        else if (mode == ColorMode.SelectBodyActions || mode == ColorMode.SelectVariant)
         {
             ShowPartSelection();
-            return;
+        }
+        else if (mode == ColorMode.SelectPart)
+        {
+            ShowMainMenu();
         }
 
-        if (mode == ColorMode.SelectPart)
-            ShowSculptMode();
+        // #region agent log
+        AgentLog(
+            "C",
+            "LanternColorController.NavigateBack",
+            "Header back pressed",
+            "{\"from\":\"" + fromMode + "\",\"to\":\"" + mode + "\"}");
+        // #endregion
+    }
+
+    private Button CreateHeaderBackButton(RectTransform parent, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject buttonObject = new GameObject(
+            "HeaderBack",
+            typeof(RectTransform), typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+        RectTransform rect = buttonObject.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(1f, 1f);
+        rect.anchoredPosition = new Vector2(-10f, -8f);
+        rect.sizeDelta = new Vector2(52f, 52f);
+
+        Image image = buttonObject.GetComponent<Image>();
+        MorphicBackButton.ApplyIcon(image);
+        if (image.sprite == null)
+            image.color = new Color32(42, 56, 72, 255);
+
+        Button button = buttonObject.GetComponent<Button>();
+        button.targetGraphic = image;
+        button.onClick.AddListener(onClick);
+        RegisterHitTarget(button, false, false, default);
+        return button;
+    }
+
+    private void EnsureHeaderBackButton()
+    {
+        if (panel == null)
+            return;
+
+        if (headerBackButton == null)
+            headerBackButton = FindComponent<Button>(panel.transform, "HeaderBack");
+
+        if (headerBackButton == null)
+        {
+            headerBackButton = CreateHeaderBackButton(
+                panel.GetComponent<RectTransform>(), NavigateBack);
+        }
+        else
+        {
+            StyleExistingBackButton(headerBackButton);
+            headerBackButton.onClick.RemoveListener(NavigateBack);
+            headerBackButton.onClick.AddListener(NavigateBack);
+            RegisterHitTarget(headerBackButton, false, false, default);
+        }
+
+        headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>();
+        if (headerBackText != null)
+            headerBackText.gameObject.SetActive(false);
+
+        Image icon = headerBackButton.GetComponent<Image>();
+        // #region agent log
+        AgentLog(
+            "B",
+            "LanternColorController.EnsureHeaderBackButton",
+            "Header back ready",
+            "{\"hasButton\":true,\"hasSprite\":" +
+            (icon != null && icon.sprite != null ? "true" : "false") + "}");
+        // #endregion
+    }
+
+    private void StyleSelfieBackAsIcon()
+    {
+        if (selfieBackButton == null || selfiePanel == null)
+            return;
+
+        selfieBackButton.transform.SetParent(selfiePanel.transform, false);
+        StyleExistingBackButton(selfieBackButton);
+        TMP_Text label = selfieBackButton.GetComponentInChildren<TMP_Text>();
+        if (label != null)
+            label.gameObject.SetActive(false);
+    }
+
+    private static void StyleExistingBackButton(Button button)
+    {
+        if (button == null)
+            return;
+
+        RectTransform rect = button.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(1f, 1f);
+        rect.anchoredPosition = new Vector2(-10f, -8f);
+        rect.sizeDelta = new Vector2(52f, 52f);
+
+        Image image = button.GetComponent<Image>();
+        MorphicBackButton.ApplyIcon(image);
+        if (image != null && image.sprite == null)
+            image.color = new Color32(42, 56, 72, 255);
+    }
+
+    private static void AgentLog(
+        string hypothesisId,
+        string location,
+        string message,
+        string dataJson)
+    {
+        try
+        {
+            long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            string path = System.IO.Path.Combine(
+                System.IO.Directory.GetParent(Application.dataPath).FullName,
+                "debug-9395c5.log");
+            System.IO.File.AppendAllText(
+                path,
+                "{\"sessionId\":\"9395c5\",\"hypothesisId\":\"" + hypothesisId +
+                "\",\"location\":\"" + location +
+                "\",\"message\":\"" + message +
+                "\",\"data\":" + dataJson +
+                ",\"timestamp\":" + timestamp + "}\n");
+        }
+        catch
+        {
+        }
     }
 
     private void SetHeaderBackLabel(string label)
     {
         if (headerBackText != null)
             headerBackText.text = label;
+        SetHeaderBackVisible(true);
+    }
+
+    private void SetHeaderBackVisible(bool visible)
+    {
+        if (headerBackButton != null)
+            headerBackButton.gameObject.SetActive(visible);
     }
 
     private void CommitFreePaletteColor()
@@ -2163,6 +2376,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void ApplyColor(int partIndex, Color color)
     {
+        if (designTintActive && appliedDesignTexture != null)
+        {
+            ApplyDesignTint(color);
+            return;
+        }
+
         if (!colorsCaptured || runtimeMaterials == null || partIndex < 0)
             return;
 
@@ -2203,6 +2422,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void RestoreSelectedPreview()
     {
+        if (designTintActive && appliedDesignTexture != null)
+        {
+            ApplyDesignTint(committedDesignTint);
+            return;
+        }
+
         if (selectedPart < 0 || committedMaterialColors == null)
             return;
 
@@ -2944,6 +3169,478 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         rect.anchorMax = Vector2.one;
         rect.offsetMin = Vector2.zero;
         rect.offsetMax = Vector2.zero;
+    }
+
+    private void ShowBodyActions()
+    {
+        EnsureBodyActionGroup();
+        colorBackToDesigns = false;
+        designTintActive = appliedDesignTexture != null;
+        selectedPart = 1;
+        mode = ColorMode.SelectBodyActions;
+        SetPanelHeight(BodyActionsPanelHeight);
+        mainActionGroup.SetActive(false);
+        partGroup.SetActive(false);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
+        colorGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(true);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        instructionText.gameObject.SetActive(true);
+        headerText.text = "LANTERN BODY";
+        SetHeaderBackLabel("← PARTS");
+        instructionText.text = appliedDesignTexture != null
+            ? "Change the paper color, or add another design."
+            : "Change the paper color, or add a stamped design.";
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void ShowDesignSelection()
+    {
+        LoadStampPatterns();
+        EnsureDesignGroup();
+        RefreshDesignButtons();
+        colorBackToDesigns = true;
+        selectedPart = 1;
+        mode = ColorMode.SelectDesign;
+        SetPanelHeight(DesignSelectionPanelHeight);
+        mainActionGroup.SetActive(false);
+        partGroup.SetActive(false);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        colorGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(true);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        instructionText.gameObject.SetActive(true);
+        headerText.text = "ADD DESIGN";
+        SetHeaderBackLabel("← BODY");
+        instructionText.text = stampPatterns == null || stampPatterns.Length == 0
+            ? "No stamps found in StampPatterns."
+            : "Choose a stamp. Then tint it with Change Color.";
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void OpenBodyPaperColor()
+    {
+        colorBackToDesigns = false;
+        designTintActive = false;
+        selectedPart = 1;
+        ContinueToColorSelection();
+    }
+
+    private void OpenDesignTintColor()
+    {
+        if (appliedDesignTexture == null)
+        {
+            instructionText.text = "Choose a stamp first.";
+            return;
+        }
+
+        colorBackToDesigns = true;
+        designTintActive = true;
+        selectedPart = 1;
+        ContinueToColorSelection();
+    }
+
+    private void ApplyStamp(int stampIndex)
+    {
+        if (stampPatterns == null || stampIndex < 0 || stampIndex >= stampPatterns.Length)
+            return;
+
+        Texture2D stamp = stampPatterns[stampIndex];
+        if (stamp == null)
+            return;
+
+        EnsureDesignOverlay();
+        appliedDesignTexture = stamp;
+        committedDesignTint = Color.white;
+        designTintActive = true;
+        ConfigureDesignSurfaceMaterial(stamp);
+        ApplyDesignTint(committedDesignTint);
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = true;
+        instructionText.text = stamp.name + " applied. Change Color tints the stamp.";
+    }
+
+    private void ClearDesign()
+    {
+        appliedDesignTexture = null;
+        designTintActive = false;
+        committedDesignTint = Color.white;
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = false;
+        instructionText.text = "Design cleared.";
+    }
+
+    private void EnsureBodyActionGroup()
+    {
+        if (bodyActionGroup != null || panel == null)
+            return;
+
+        Transform existing = panel.transform.Find("BodyActions");
+        if (existing != null)
+        {
+            bodyActionGroup = existing.gameObject;
+            Button existingColor = existing.Find("ChangeColor") != null
+                ? existing.Find("ChangeColor").GetComponent<Button>()
+                : null;
+            Button existingDesign = existing.Find("AddDesign") != null
+                ? existing.Find("AddDesign").GetComponent<Button>()
+                : null;
+            Button existingDone = existing.Find("Done") != null
+                ? existing.Find("Done").GetComponent<Button>()
+                : null;
+            if (existingColor != null)
+            {
+                existingColor.onClick.AddListener(OpenBodyPaperColor);
+                RegisterHitTarget(existingColor, false, false, default);
+            }
+
+            if (existingDesign != null)
+            {
+                existingDesign.onClick.AddListener(ShowDesignSelection);
+                RegisterHitTarget(existingDesign, false, false, default);
+            }
+
+            if (existingDone != null)
+            {
+                existingDone.onClick.AddListener(ShowMainMenu);
+                RegisterHitTarget(existingDone, false, false, default);
+            }
+
+            bodyActionGroup.SetActive(false);
+            return;
+        }
+
+        bodyActionGroup = new GameObject("BodyActions", typeof(RectTransform));
+        bodyActionGroup.transform.SetParent(panel.transform, false);
+        RectTransform bodyRect = bodyActionGroup.GetComponent<RectTransform>();
+        bodyRect.anchorMin = new Vector2(0f, 1f);
+        bodyRect.anchorMax = new Vector2(1f, 1f);
+        bodyRect.pivot = new Vector2(0.5f, 1f);
+        bodyRect.anchoredPosition = new Vector2(0f, -120f);
+        bodyRect.sizeDelta = new Vector2(-36f, 180f);
+
+        Button changeColor = CreateButton(
+            "ChangeColor", bodyRect, new Vector2(0f, 0f),
+            new Vector2(294f, 44f), "CHANGE COLOR", new Color32(61, 124, 124, 255));
+        changeColor.onClick.AddListener(OpenBodyPaperColor);
+        RegisterHitTarget(changeColor, false, false, default);
+
+        Button addDesign = CreateButton(
+            "AddDesign", bodyRect, new Vector2(0f, -52f),
+            new Vector2(294f, 44f), "ADD DESIGN", new Color32(42, 56, 72, 255));
+        addDesign.onClick.AddListener(ShowDesignSelection);
+        RegisterHitTarget(addDesign, false, false, default);
+
+        Button done = CreateButton(
+            "Done", bodyRect, new Vector2(0f, -104f),
+            new Vector2(294f, 44f), "DONE", new Color32(74, 155, 143, 255));
+        done.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(done, false, false, default);
+        bodyActionGroup.SetActive(false);
+    }
+
+    private void EnsureDesignGroup()
+    {
+        if (designGroup != null || panel == null)
+            return;
+
+        Transform existing = panel.transform.Find("DesignSelection");
+        if (existing != null)
+        {
+            designGroup = existing.gameObject;
+            BindExistingDesignButtons(existing);
+            designGroup.SetActive(false);
+            return;
+        }
+
+        designGroup = new GameObject("DesignSelection", typeof(RectTransform));
+        designGroup.transform.SetParent(panel.transform, false);
+        RectTransform designRect = designGroup.GetComponent<RectTransform>();
+        designRect.anchorMin = new Vector2(0f, 1f);
+        designRect.anchorMax = new Vector2(1f, 1f);
+        designRect.pivot = new Vector2(0.5f, 1f);
+        designRect.anchoredPosition = new Vector2(0f, -120f);
+        designRect.sizeDelta = new Vector2(-36f, 360f);
+
+        for (int i = 0; i < designButtons.Length; i++)
+        {
+            int stampIndex = i;
+            int column = i % 2;
+            int row = i / 2;
+            designButtons[i] = CreateButton(
+                "Stamp" + i,
+                designRect,
+                new Vector2(-76f + column * 152f, -row * 78f),
+                new Vector2(138f, 70f),
+                "Stamp " + (i + 1),
+                new Color32(42, 56, 72, 255));
+            designButtons[i].onClick.AddListener(() => ApplyStamp(stampIndex));
+            designPreviews[i] = CreateDesignPreview(designButtons[i].GetComponent<RectTransform>());
+            RegisterHitTarget(designButtons[i], false, true, default);
+        }
+
+        Button tintButton = CreateButton(
+            "ChangeColor", designRect, new Vector2(0f, -246f),
+            new Vector2(294f, 40f), "CHANGE COLOR", new Color32(61, 124, 124, 255));
+        tintButton.onClick.AddListener(OpenDesignTintColor);
+        RegisterHitTarget(tintButton, false, false, default);
+
+        Button clearButton = CreateButton(
+            "ClearDesign", designRect, new Vector2(0f, -292f),
+            new Vector2(294f, 40f), "CLEAR DESIGN", new Color32(122, 58, 58, 255));
+        clearButton.onClick.AddListener(ClearDesign);
+        RegisterHitTarget(clearButton, false, false, default);
+
+        Button done = CreateButton(
+            "Done", designRect, new Vector2(0f, -338f),
+            new Vector2(294f, 40f), "DONE", new Color32(74, 155, 143, 255));
+        done.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(done, false, false, default);
+        designGroup.SetActive(false);
+    }
+
+    private void BindExistingDesignButtons(Transform designRoot)
+    {
+        for (int i = 0; i < designButtons.Length; i++)
+        {
+            int stampIndex = i;
+            Transform stampTransform = designRoot.Find("Stamp" + i);
+            if (stampTransform == null)
+                continue;
+
+            designButtons[i] = stampTransform.GetComponent<Button>();
+            designPreviews[i] = stampTransform.GetComponentInChildren<RawImage>();
+            if (designButtons[i] != null)
+            {
+                designButtons[i].onClick.AddListener(() => ApplyStamp(stampIndex));
+                RegisterHitTarget(designButtons[i], false, true, default);
+            }
+        }
+
+        Transform tint = designRoot.Find("ChangeColor");
+        if (tint != null)
+        {
+            Button tintButton = tint.GetComponent<Button>();
+            tintButton.onClick.AddListener(OpenDesignTintColor);
+            RegisterHitTarget(tintButton, false, false, default);
+        }
+
+        Transform clear = designRoot.Find("ClearDesign");
+        if (clear != null)
+        {
+            Button clearButton = clear.GetComponent<Button>();
+            clearButton.onClick.AddListener(ClearDesign);
+            RegisterHitTarget(clearButton, false, false, default);
+        }
+
+        Transform done = designRoot.Find("Done");
+        if (done != null)
+        {
+            Button doneButton = done.GetComponent<Button>();
+            doneButton.onClick.AddListener(ShowMainMenu);
+            RegisterHitTarget(doneButton, false, false, default);
+        }
+    }
+
+    private static RawImage CreateDesignPreview(RectTransform parent)
+    {
+        GameObject previewObject = new GameObject("Preview", typeof(RectTransform), typeof(RawImage));
+        previewObject.transform.SetParent(parent, false);
+        RectTransform rect = previewObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.08f, 0.28f);
+        rect.anchorMax = new Vector2(0.92f, 0.92f);
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        RawImage image = previewObject.GetComponent<RawImage>();
+        image.color = Color.white;
+        image.raycastTarget = false;
+        return image;
+    }
+
+    private void RefreshDesignButtons()
+    {
+        int stampCount = stampPatterns != null ? stampPatterns.Length : 0;
+        for (int i = 0; i < designButtons.Length; i++)
+        {
+            bool visible = i < stampCount && stampPatterns[i] != null;
+            if (designButtons[i] != null)
+                designButtons[i].gameObject.SetActive(visible);
+            if (!visible)
+                continue;
+
+            if (designPreviews[i] != null)
+                designPreviews[i].texture = stampPatterns[i];
+            TMP_Text label = designButtons[i].GetComponentInChildren<TMP_Text>();
+            if (label != null)
+            {
+                label.text = stampPatterns[i].name;
+                RectTransform labelRect = label.rectTransform;
+                labelRect.anchorMin = new Vector2(0f, 0f);
+                labelRect.anchorMax = new Vector2(1f, 0.28f);
+                labelRect.offsetMin = Vector2.zero;
+                labelRect.offsetMax = Vector2.zero;
+            }
+        }
+    }
+
+    private void LoadStampPatterns()
+    {
+        if (stampPatterns != null && stampPatterns.Length > 0)
+            return;
+
+#if UNITY_EDITOR
+        string[] guids = UnityEditor.AssetDatabase.FindAssets(
+            "t:Texture2D",
+            new[] { "Assets/SculptingEnhancement/Art/StampPatterns" });
+        var loaded = new List<Texture2D>(guids.Length);
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
+            Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (texture != null)
+                loaded.Add(texture);
+        }
+
+        loaded.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+        stampPatterns = loaded.ToArray();
+#endif
+    }
+
+    private void EnsureDesignOverlay()
+    {
+        if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
+            return;
+
+        Shader shader = Shader.Find("Morphic/Lantern Body Design Overlay");
+        if (shader == null)
+        {
+            Debug.LogError(
+                "MORPHIC: Body design shader was not found.",
+                this);
+            return;
+        }
+
+        if (designSurfaceRoot == null)
+        {
+            GameObject overlayObject = new GameObject("LanternBodyDesignOverlay");
+            designSurfaceRoot = overlayObject.transform;
+            designSurfaceRenderer = overlayObject.AddComponent<SkinnedMeshRenderer>();
+        }
+
+        if (designSurfaceMaterial == null)
+        {
+            designSurfaceMaterial = new Material(shader)
+            {
+                name = "Morphic Body Design Material",
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 15
+            };
+        }
+
+        if (designHiddenMaterial == null)
+        {
+            designHiddenMaterial = new Material(shader)
+            {
+                name = "Morphic Hidden Design Submesh Material",
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 15
+            };
+            designHiddenMaterial.SetFloat("_Opacity", 0f);
+        }
+
+        Transform rendererTransform = lanternRenderer.transform;
+        designSurfaceRoot.SetParent(rendererTransform.parent, false);
+        designSurfaceRoot.localPosition = rendererTransform.localPosition;
+        designSurfaceRoot.localRotation = rendererTransform.localRotation;
+        designSurfaceRoot.localScale = rendererTransform.localScale;
+        designSurfaceRoot.gameObject.layer = lanternRenderer.gameObject.layer;
+        designSurfaceRoot.gameObject.SetActive(true);
+
+        designSurfaceRenderer.sharedMesh = lanternRenderer.sharedMesh;
+        designSurfaceRenderer.rootBone = lanternRenderer.rootBone;
+        designSurfaceRenderer.bones = lanternRenderer.bones;
+        designSurfaceRenderer.localBounds = lanternRenderer.localBounds;
+        designSurfaceRenderer.quality = lanternRenderer.quality;
+        designSurfaceRenderer.updateWhenOffscreen = lanternRenderer.updateWhenOffscreen;
+        designSurfaceRenderer.skinnedMotionVectors = false;
+        designSurfaceRenderer.shadowCastingMode =
+            UnityEngine.Rendering.ShadowCastingMode.Off;
+        designSurfaceRenderer.receiveShadows = false;
+        designSurfaceRenderer.forceRenderingOff = false;
+        designSurfaceRenderer.allowOcclusionWhenDynamic = false;
+        designSurfaceRenderer.renderingLayerMask = lanternRenderer.renderingLayerMask;
+        designSurfaceRenderer.sortingOrder = 15;
+
+        int subMeshCount = Mathf.Max(1, lanternRenderer.sharedMesh.subMeshCount);
+        Material[] overlayMaterials = new Material[subMeshCount];
+        for (int i = 0; i < overlayMaterials.Length; i++)
+            overlayMaterials[i] = designHiddenMaterial;
+        overlayMaterials[Mathf.Clamp(bodyMaterialIndex, 0, subMeshCount - 1)] =
+            designSurfaceMaterial;
+        designSurfaceRenderer.sharedMaterials = overlayMaterials;
+        designSurfaceRenderer.enabled = true;
+    }
+
+    private void SyncDesignSurfaceRenderer()
+    {
+        if (designSurfaceRenderer == null || lanternRenderer == null)
+            return;
+
+        Transform rendererTransform = lanternRenderer.transform;
+        if (designSurfaceRoot.parent != rendererTransform.parent)
+            designSurfaceRoot.SetParent(rendererTransform.parent, false);
+        designSurfaceRoot.localPosition = rendererTransform.localPosition;
+        designSurfaceRoot.localRotation = rendererTransform.localRotation;
+        designSurfaceRoot.localScale = rendererTransform.localScale;
+
+        designSurfaceRenderer.rootBone = lanternRenderer.rootBone;
+        designSurfaceRenderer.bones = lanternRenderer.bones;
+        designSurfaceRenderer.localBounds = lanternRenderer.localBounds;
+
+        Mesh mesh = lanternRenderer.sharedMesh;
+        if (mesh == null)
+            return;
+        if (designSurfaceRenderer.sharedMesh != mesh)
+            designSurfaceRenderer.sharedMesh = mesh;
+
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            designSurfaceRenderer.SetBlendShapeWeight(
+                i, lanternRenderer.GetBlendShapeWeight(i));
+        }
+    }
+
+    private void ConfigureDesignSurfaceMaterial(Texture texture)
+    {
+        if (designSurfaceMaterial == null || lanternRenderer == null || texture == null)
+            return;
+
+        Bounds localBounds = GetCurrentLanternObjectBounds();
+        designSurfaceMaterial.SetTexture("_DesignTex", texture);
+        designSurfaceMaterial.SetFloat("_Opacity", 1f);
+        designSurfaceMaterial.SetFloat("_RepeatCount", designRepeatCount);
+        designSurfaceMaterial.SetFloat("_PatchHalfAngle", designPatchHalfAngle);
+        designSurfaceMaterial.SetFloat("_VerticalHalfFraction", designVerticalHalfFraction);
+        designSurfaceMaterial.SetVector("_ObjectCenter", localBounds.center);
+        designSurfaceMaterial.SetVector("_ObjectExtents", localBounds.extents);
+    }
+
+    private void ApplyDesignTint(Color color)
+    {
+        if (designSurfaceMaterial == null)
+            return;
+
+        designSurfaceMaterial.SetColor("_DesignColor", color);
     }
 
 #if UNITY_EDITOR

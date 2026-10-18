@@ -291,32 +291,35 @@ public static class LanguagePageBuilder
         LanguagePageController controller
     )
     {
+        Transform card = root.Find("Card");
+        RectTransform parent = card != null
+            ? card as RectTransform
+            : root;
+
+        Sprite icon = MorphicBackButton.LoadSprite();
         Image back =
             CreateImage(
                 "Back Button",
-                root,
-                Circle(128));
+                parent,
+                icon != null ? icon : Circle(128));
 
         RectTransform rt = back.rectTransform;
+        MorphicBackButton.PlaceOnPanel(rt, 88f);
 
-        rt.sizeDelta = new Vector2(104f, 104f);
-        rt.anchorMin = new Vector2(1f, 1f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(1f, 1f);
-        rt.anchoredPosition = new Vector2(96f, 84f);
+        if (icon != null)
+            MorphicBackButton.ApplyIcon(back);
+        else
+            back.color = Pink;
 
-        back.color = Pink;
-
-        Image arrow =
-            CreateImage(
-                "Arrow",
-                back.transform,
-                ArrowSprite(128, 96));
-
-        arrow.rectTransform.sizeDelta =
-            new Vector2(58f, 44f);
-
-        arrow.color = Green;
+        // #region agent log
+        MorphicBackButton.AgentLog(
+            "D",
+            "LanguagePageBuilder.BuildBackButton",
+            "Language back placed",
+            "{\"parent\":\"" + parent.name +
+            "\",\"x\":" + rt.anchoredPosition.x +
+            ",\"y\":" + rt.anchoredPosition.y + "}");
+        // #endregion
 
         Button uiButton =
             back.gameObject.AddComponent<Button>();
