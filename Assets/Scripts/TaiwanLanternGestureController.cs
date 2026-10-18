@@ -34,12 +34,14 @@ public class TaiwanLanternGestureController : MonoBehaviour
     [SerializeField, Range(0.2f, 0.8f)] private float minimumThumbIndexSeparation = 0.42f;
 
     [Header("Pinch / Thumb")]
-    [SerializeField] private float pinchThreshold = 0.58f;
-    [SerializeField] private float pinchReleaseThreshold = 0.80f;
-    [SerializeField] private float leftPinchBoost = 1.2f;
-    [SerializeField] private float popConfirmTime = 0.05f;
+    [SerializeField] private float pinchThreshold = 0.72f;
+    [SerializeField] private float pinchReleaseThreshold = 0.95f;
+    [SerializeField] private float leftPinchBoost = 1.35f;
+    [SerializeField] private float popConfirmTime = 0f;
     [SerializeField] private float popEase = 12f;
     [SerializeField] private float popLiftSensitivity = 420f;
+    [SerializeField] private float popPinchSensitivity = 920f;
+    [SerializeField] private float popPinchEase = 28f;
     [SerializeField] private float smoothing = 18f;
     [SerializeField, Range(0.05f, 0.5f)] private float minimumThumbLength = 0.08f;
     [SerializeField, Min(0.05f)] private float shapeEaseTime = 0.12f;
@@ -82,71 +84,22 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
     private bool ownWidthHeight = true;
     private bool widthHeightArmed;
+    private int widthHeightAxis;
     private float widthHeightBaselineX;
     private float widthHeightBaselineY;
     private float widthHeightStartW;
     private float widthHeightStartH;
-
-    [Header("Middle: Two-Hand Pinch Distance")]
-    [SerializeField, Min(0.1f)] private float middleMinPinchSeparation = 1f;
-    [SerializeField, Min(0.2f)] private float middleMaxPinchSeparation = 4f;
-    [SerializeField, Range(0.01f, 0.3f)] private float middleHoldStillTolerance = 0.05f;
-    [SerializeField, Range(0f, 1f)] private float singleThumbModeGracePeriod = 0.4f;
-
-    [Header("Pop-Up: Single-Hand Pinch Height")]
-    [SerializeField, Range(0f, 1f)] private float popUpMinimumHandHeight = 0.10f;
-    [SerializeField, Range(0f, 1f)] private float popUpMaximumHandHeight = 0.42f;
-    [SerializeField, Min(0.01f)] private float popUpGestureActivationTime = 0.08f;
-
-    [Header("Pop-Up Bamboo: Two-Hand V Spacing")]
-    [SerializeField, Min(0.1f)] private float bambooMinimumVSeparation = 1.2f;
-    [SerializeField, Min(0.2f)] private float bambooMaximumVSeparation = 4f;
-
-    [Header("Gesture Lock")]
-    [SerializeField, Min(0.25f)] private float gestureLockHoldDuration = 1f;
-    [SerializeField, Min(0.25f)] private float thumbGestureLockHoldDuration = 2f;
-    [SerializeField, Range(0.003f, 0.04f)] private float indexHoldStillTolerance = 0.01f;
-    [SerializeField, Range(2f, 20f)] private float thumbHoldStillTolerance = 15f;
-    [SerializeField, Range(0f, 12f)] private float thumbOutputDeadZone = 6f;
-
-    private readonly string[] shapeNames = new string[8];
-
-    private int[] shapeIndices = new int[8];
-    private float[] shapeMaximumWeights = new float[8];
-    private float[] currentWeights = new float[8];
-    private float[] gestureStartWeights = new float[8];
-
-    private float baselineHorizontal;
-    private float baselineVertical;
-    private float gestureLostTimer;
-    private float singleThumbModeTimer;
-    private float topperTargetWeight;
-    private float topperVelocity;
-    private float middleTargetWeight;
-    private float middleVelocity;
-    private float topperMinimumWeight;
-    private float topperMaximumWeight = 100f;
-    private float bottomTargetWeight;
-    private float bottomVelocity;
-    private float bottomMinimumWeight;
-    private float bottomMaximumWeight = 100f;
-    private float gestureHoldTimer;
-    private float stabilityAnchorA;
-    private float stabilityAnchorB;
-
-    private Vector2 firstBaselineIndex;
-    private Vector2 secondBaselineIndex;
-
-    private bool twoHandGestureActive;
-    private bool gestureLocked;
-    private bool hasStabilityAnchor;
-
-    private string currentGestureName = "NONE";
-    private string candidateGestureName = "NONE";
-    private float gestureActivationTimer = 0f;
-    private const float GESTURE_ACTIVATION_TIME = 0.2f;
     private bool externalFistRotationActive;
-
+    private float committedTopper;
+    private float committedBottom;
+    private bool topperLiveThisFrame;
+    private bool bottomLiveThisFrame;
+    private bool rightVArmed;
+    private bool leftVArmed;
+    private float rightVStartY;
+    private float leftVStartY;
+    private float rightVStart;
+    private float leftVStart;
 
     private CanvasGroup progressCardGroup;
     private TMP_Text progressPartText;
@@ -220,6 +173,9 @@ public class TaiwanLanternGestureController : MonoBehaviour
             if (shapeIndex[c] >= 0)
                 current[c] = lanternRenderer.GetBlendShapeWeight(shapeIndex[c]);
         }
+
+        committedTopper = current[Topper];
+        committedBottom = current[Bottom];
     }
 
     public void ArmPopVariant(bool isTop, bool useRectangle)
@@ -266,6 +222,9 @@ public class TaiwanLanternGestureController : MonoBehaviour
                 current[tassel] = current[tassel] > 50f ? 0f : 100f;
         }
 
+        topperLiveThisFrame = false;
+        bottomLiveThisFrame = false;
+
         if (handRunner == null || lanternRenderer == null)
         {
             SetStatus("GESTURE: NONE");
@@ -273,30 +232,22 @@ public class TaiwanLanternGestureController : MonoBehaviour
         }
 
 
-        bool hasTwo = handRunner.TryGetLatestTwoHands(
-            out SculptHandFrame first, out SculptHandFrame second);
-        if (!hasTwo && !handRunner.TryGetLatestHand(out first))
-
-        // Fist drag rotation is owned by the enhancement controller. While it
-        // is active, do not reinterpret the curled fingers as one of the
-        // existing thumb sculpting poses.
         if (externalFistRotationActive)
         {
-            ApplyWeights();
-            SetGestureText("GESTURE: FIST ROTATE");
+            RestoreCommittedThumbShapes();
+            SetStatus("GESTURE: FIST ROTATE");
             return;
         }
 
-        bool hasTwoHands = handRunner.TryGetLatestTwoHands(
-            out SculptHandFrame first,
-            out SculptHandFrame second);
-
-        if (!hasTwoHands)
-
+        bool hasTwo = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first, out SculptHandFrame second);
+        if (!hasTwo && !handRunner.TryGetLatestHand(out first))
         {
             widthHeightArmed = false;
             bambooArmed = false;
             tasselArmed = false;
+            rightVArmed = false;
+            leftVArmed = false;
             SetStatus("GESTURE: NO HANDS");
             return;
         }
@@ -307,26 +258,28 @@ public class TaiwanLanternGestureController : MonoBehaviour
         float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
         bool twoV = hasTwo && IsVSign(first) && IsVSign(second);
         bool twoFists = !twoV && hasTwo && LooksLikeFist(first) && LooksLikeFist(second);
-        bool twoIndex = !twoFists && !twoV && hasTwo &&
+        bool foundLeftV = TryGetHandV(first, second, hasTwo, false, out SculptHandFrame leftV);
+        bool foundRightV = TryGetHandV(first, second, hasTwo, true, out SculptHandFrame rightV);
+        bool leftVBottom = !twoV && foundLeftV;
+        bool rightVTopper = !twoV && foundRightV;
+        bool twoIndex = !twoV && !leftVBottom && !rightVTopper && hasTwo &&
                         IsIndexPointing(first) && IsIndexPointing(second);
         int openPalms = CountOpenPalms(first, second, hasTwo);
         bool firstRight = IsPhysicalRightHand(first, second, hasTwo);
         ref bool firstHeld = ref (firstRight ? ref rightPinchHeld : ref leftPinchHeld);
-        bool pinchOrThumb = IsPinching(first, firstRight, ref firstHeld) ||
-                            TryThumbWeight(first, out _);
+        bool pinchOrV = IsPinching(first, firstRight, ref firstHeld) ||
+                        leftVBottom || rightVTopper;
         if (hasTwo)
         {
             bool secondRight = IsPhysicalRightHand(second, first, true);
             ref bool secondHeld = ref (secondRight ? ref rightPinchHeld : ref leftPinchHeld);
-            pinchOrThumb = pinchOrThumb ||
-                           IsPinching(second, secondRight, ref secondHeld) ||
-                           TryThumbWeight(second, out _);
+            pinchOrV = pinchOrV || IsPinching(second, secondRight, ref secondHeld);
         }
 
-        if (openPalms >= 1 && madeDeformation && !twoIndex && !twoFists && !twoV && !pinchOrThumb)
+        if (openPalms >= 1 && madeDeformation && !twoIndex && !twoFists && !twoV && !pinchOrV)
             deformationLocked = true;
 
-        if (twoIndex || twoFists || twoV || pinchOrThumb)
+        if (twoIndex || twoFists || twoV || pinchOrV)
             deformationLocked = false;
 
         if (deformationLocked)
@@ -363,15 +316,28 @@ public class TaiwanLanternGestureController : MonoBehaviour
         else
             tasselArmed = false;
 
-        if (!twoIndex && !twoFists && !twoV)
+        if (rightVTopper)
+            DriveVShape(rightV, Topper, blend, ref rightVArmed, ref rightVStartY,
+                ref rightVStart, ref committedTopper, ref topperLiveThisFrame);
+        else
+            rightVArmed = false;
+
+        if (leftVBottom)
+            DriveVShape(leftV, Bottom, blend, ref leftVArmed, ref leftVStartY,
+                ref leftVStart, ref committedBottom, ref bottomLiveThisFrame);
+        else
+            leftVArmed = false;
+
+        if (!twoIndex && !twoV && !twoFists)
         {
-            DriveHand(first, second, hasTwo, blend);
-            if (hasTwo)
-                DriveHand(second, first, true, blend);
+            if (!IsVSign(first))
+                DrivePop(first, firstRight, blend);
+            if (hasTwo && !IsVSign(second))
+                DrivePop(second, IsPhysicalRightHand(second, first, true), blend);
         }
 
         SetStatus(
-            BuildStatus(twoIndex, twoFists, twoV, hasTwo, first, second) +
+            BuildStatus(twoIndex, rightVTopper, leftVBottom, twoFists, twoV, hasTwo, first, second) +
             "  |  TOP " + current[PopTop].ToString("0") +
             "  BOT " + current[PopBottom].ToString("0") +
             "  BAM " + current[PopBamboo].ToString("0") +
@@ -380,45 +346,19 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
     public void SetExternalFistRotationActive(bool active)
     {
-        if (externalFistRotationActive == active)
-            return;
-
         externalFistRotationActive = active;
         if (!active)
             return;
 
-        currentGestureName = "NONE";
-        candidateGestureName = "NONE";
-        gestureActivationTimer = 0f;
-        gestureLocked = false;
-        twoHandGestureActive = false;
-        ResetGestureHold();
+        RestoreCommittedThumbShapes();
+        widthHeightArmed = false;
+        bambooArmed = false;
+        tasselArmed = false;
     }
 
     public void SynchronizeWeightsFromRenderer()
     {
-        if (lanternRenderer == null)
-            return;
-
-        for (int i = 0; i < shapeIndices.Length; i++)
-        {
-            if (shapeIndices[i] >= 0)
-                currentWeights[i] = lanternRenderer.GetBlendShapeWeight(
-                    shapeIndices[i]);
-        }
-
-        topperTargetWeight = currentWeights[TOPPER];
-        bottomTargetWeight = currentWeights[BOTTOM];
-        middleTargetWeight = currentWeights[MIDDLE];
-        topperVelocity = 0f;
-        bottomVelocity = 0f;
-        middleVelocity = 0f;
-        currentGestureName = "NONE";
-        candidateGestureName = "NONE";
-        gestureActivationTimer = 0f;
-        twoHandGestureActive = false;
-        gestureLocked = false;
-        ResetGestureHold();
+        SyncCurrentFromRenderer();
     }
 
     private void LateUpdate()
@@ -432,6 +372,10 @@ public class TaiwanLanternGestureController : MonoBehaviour
             Write(Height, current[Height]);
         }
 
+        if (!topperLiveThisFrame)
+            current[Topper] = committedTopper;
+        if (!bottomLiveThisFrame)
+            current[Bottom] = committedBottom;
         Write(Topper, current[Topper]);
         Write(Bottom, current[Bottom]);
         Write(PopTop, current[PopTop]);
@@ -445,24 +389,6 @@ public class TaiwanLanternGestureController : MonoBehaviour
         UpdateProgressCardFade();
     }
 
-    private void DriveHand(
-        SculptHandFrame hand,
-        SculptHandFrame other,
-        bool hasTwo,
-        float blend)
-    {
-        bool physicalRight = IsPhysicalRightHand(hand, other, hasTwo);
-        if (DrivePop(hand, physicalRight, blend))
-            return;
-
-        if (TryThumbWeight(hand, out float thumbWeight))
-        {
-            int slot = physicalRight ? Topper : Bottom;
-            current[slot] = Mathf.Lerp(current[slot], thumbWeight, blend);
-            madeDeformation = true;
-        }
-    }
-
     private bool DrivePop(SculptHandFrame hand, bool physicalRight, float blend)
     {
         ref bool held = ref (physicalRight ? ref rightPinchHeld : ref leftPinchHeld);
@@ -473,10 +399,12 @@ public class TaiwanLanternGestureController : MonoBehaviour
         int pop = physicalRight ? PopTop : PopBottom;
         float pinchY = PinchHeight(hand);
 
-        if (!IsPinching(hand, physicalRight, ref held) || IsOpenPalm(hand))
+        if (LooksLikeFist(hand) || IsOpenPalm(hand) ||
+            !IsPinching(hand, physicalRight, ref held))
         {
             timer = 0f;
             armed = false;
+            held = false;
             return false;
         }
 
@@ -492,8 +420,9 @@ public class TaiwanLanternGestureController : MonoBehaviour
         }
 
         float lift = Mathf.Max(0f, pinchY - startY);
-        float target = Mathf.Clamp(startPop + lift * popLiftSensitivity, 0f, 100f);
-        float ease = 1f - Mathf.Exp(-popEase * Time.deltaTime);
+        float target = Mathf.Clamp(startPop + lift * popPinchSensitivity, 0f, 100f);
+        target = Mathf.Max(target, current[pop]);
+        float ease = 1f - Mathf.Exp(-popPinchEase * Time.deltaTime);
         current[pop] = Mathf.Lerp(current[pop], target, ease);
         if (target > startPop + 0.5f)
             madeDeformation = true;
@@ -527,7 +456,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private void DriveTasselDown(SculptHandFrame first, SculptHandFrame second)
     {
         int channel = ActiveTasselChannel();
-        float fistY = FistHeight(first, second);
+        float fistY = (first.PalmCenter.y + second.PalmCenter.y) * 0.5f;
         if (!tasselArmed)
         {
             tasselArmed = true;
@@ -544,6 +473,58 @@ public class TaiwanLanternGestureController : MonoBehaviour
             madeDeformation = true;
     }
 
+    private void DriveVShape(
+        SculptHandFrame hand,
+        int slot,
+        float blend,
+        ref bool armed,
+        ref float startY,
+        ref float startValue,
+        ref float committed,
+        ref bool live)
+    {
+        float vY = VSignHeight(hand);
+        if (!armed)
+        {
+            armed = true;
+            startY = vY;
+            startValue = current[slot];
+            return;
+        }
+
+        // Raise the V to increase, lower it to decrease.
+        float target = Mathf.Clamp(
+            startValue + (vY - startY) * popLiftSensitivity, 0f, 100f);
+        current[slot] = Mathf.Lerp(current[slot], target, blend);
+        committed = current[slot];
+        live = true;
+        if (Mathf.Abs(target - startValue) > 0.5f)
+            madeDeformation = true;
+    }
+
+    private bool TryGetHandV(
+        SculptHandFrame first,
+        SculptHandFrame second,
+        bool hasTwo,
+        bool wantRight,
+        out SculptHandFrame match)
+    {
+        match = default;
+        if (IsPhysicalRightHand(first, second, hasTwo) == wantRight && IsVSign(first))
+        {
+            match = first;
+            return true;
+        }
+
+        if (hasTwo && IsPhysicalRightHand(second, first, true) == wantRight && IsVSign(second))
+        {
+            match = second;
+            return true;
+        }
+
+        return false;
+    }
+
     private int ActiveTasselChannel()
     {
         if (shapeIndex[PopTassel] >= 0 && shapeIndex[PopTassel] != shapeIndex[PopBamboo])
@@ -551,9 +532,9 @@ public class TaiwanLanternGestureController : MonoBehaviour
         return PopBamboo;
     }
 
-    private static float FistHeight(SculptHandFrame first, SculptHandFrame second)
+    private static float VSignHeight(SculptHandFrame hand)
     {
-        return (first.PalmCenter.y + second.PalmCenter.y) * 0.5f;
+        return (hand.IndexTip.y + hand.MiddleTip.y) * 0.5f;
     }
 
     private static float VSignSpread(SculptHandFrame first, SculptHandFrame second)
@@ -580,19 +561,42 @@ public class TaiwanLanternGestureController : MonoBehaviour
             current[Width] = widthHeightStartW;
             current[Height] = widthHeightStartH;
             widthHeightArmed = true;
+            widthHeightAxis = 0;
             return;
         }
 
         float dx = DeadZone(horizontal - widthHeightBaselineX);
         float dy = DeadZone(vertical - widthHeightBaselineY);
-        current[Width] = Mathf.Lerp(
-            current[Width],
-            Mathf.Clamp(widthHeightStartW + dx * widthSensitivity, 0f, 100f),
-            blend);
-        current[Height] = Mathf.Lerp(
-            current[Height],
-            Mathf.Clamp(widthHeightStartH + dy * heightSensitivity, 0f, 100f),
-            blend);
+        if (widthHeightAxis == 0)
+        {
+            float ax = Mathf.Abs(dx);
+            float ay = Mathf.Abs(dy);
+            if (ax <= 0f && ay <= 0f)
+                return;
+            if (ax >= ay * 1.2f)
+                widthHeightAxis = 1;
+            else if (ay >= ax * 1.2f)
+                widthHeightAxis = 2;
+            else
+                return;
+        }
+
+        if (widthHeightAxis == 1)
+        {
+            current[Width] = Mathf.Lerp(
+                current[Width],
+                Mathf.Clamp(widthHeightStartW + dx * widthSensitivity, 0f, 100f),
+                blend);
+            current[Height] = widthHeightStartH;
+        }
+        else
+        {
+            current[Width] = widthHeightStartW;
+            current[Height] = Mathf.Lerp(
+                current[Height],
+                Mathf.Clamp(widthHeightStartH + dy * heightSensitivity, 0f, 100f),
+                blend);
+        }
     }
 
     private void Write(int slot, float weight)
@@ -663,7 +667,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
         else
             Debug.LogWarning("MORPHIC: Pop Up Bamboo was not found on " + mesh.name);
         if (shapeIndex[PopTassel] >= 0)
-            Debug.Log("MORPHIC: Two-fist tassel uses " + mesh.GetBlendShapeName(shapeIndex[PopTassel]));
+            Debug.Log("MORPHIC: Left-V tassel uses " + mesh.GetBlendShapeName(shapeIndex[PopTassel]));
     }
 
     private void ApplyPopVariantBindings()
@@ -851,21 +855,69 @@ public class TaiwanLanternGestureController : MonoBehaviour
                hand.PinchDistance >= hand.PalmWidth * 0.38f;
     }
 
-    private static bool LooksLikeFist(SculptHandFrame hand)
+    private void RestoreCommittedThumbShapes()
     {
-        return hand.FingerCurlRatio <= 1.12f &&
-               hand.IndexTipPalmRatio <= 1.02f &&
-               hand.OtherFingersCurlRatio <= 1.12f;
+        current[Topper] = committedTopper;
+        current[Bottom] = committedBottom;
     }
 
-    private bool LooksLikeThumbOnly(SculptHandFrame hand)
+    private static bool HoldsThumbShape(SculptHandFrame hand)
+    {
+        return LooksLikeFist(hand) ||
+               IsFormingFist(hand) ||
+               ThumbAgainstFingers(hand) ||
+               (FingersClosed(hand, 1.32f, 1.20f) && !HasExtendedThumb(hand));
+    }
+
+    private static bool LooksLikeFist(SculptHandFrame hand)
+    {
+        return FingersClosed(hand, 1.12f, 1.02f) && !HasExtendedThumb(hand);
+    }
+
+    private static bool IsFormingFist(SculptHandFrame hand)
+    {
+        return FingersClosed(hand, 1.28f, 1.16f) && !HasExtendedThumb(hand);
+    }
+
+    private static bool FingersClosed(
+        SculptHandFrame hand,
+        float maximumCurl,
+        float maximumIndex)
+    {
+        return hand.FingerCurlRatio <= maximumCurl &&
+               hand.IndexTipPalmRatio <= maximumIndex &&
+               hand.OtherFingersCurlRatio <= maximumCurl;
+    }
+
+    private static bool ThumbAgainstFingers(SculptHandFrame hand)
+    {
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        return TipDistance(hand.ThumbTip, hand.IndexTip) / palm < 0.52f ||
+               TipDistance(hand.ThumbTip, hand.MiddleTip) / palm < 0.50f;
+    }
+
+    public static bool HasExtendedThumb(SculptHandFrame hand)
     {
         float palm = Mathf.Max(hand.PalmWidth, 0.001f);
         Vector2 thumb = new Vector2(
             hand.ThumbTip.x - hand.ThumbMcp.x,
             hand.ThumbTip.y - hand.ThumbMcp.y);
-        return hand.PinchDistance >= palm * minimumThumbIndexSeparation &&
-               thumb.magnitude >= palm * minimumThumbLength;
+        float thumbToPalm = Vector2.Distance(
+            new Vector2(hand.ThumbTip.x, hand.ThumbTip.y),
+            new Vector2(hand.PalmCenter.x, hand.PalmCenter.y)) / palm;
+        // A wrap-around fist parks the thumb on the fingers. That must not
+        // count as a thumb-sculpt pose or Topper gets driven back to 0.
+        return thumbToPalm >= 1.32f &&
+               thumb.magnitude >= palm * 0.32f &&
+               hand.PinchDistance >= palm * 0.52f &&
+               TipDistance(hand.ThumbTip, hand.IndexTip) / palm >= 0.55f &&
+               TipDistance(hand.ThumbTip, hand.MiddleTip) / palm >= 0.50f &&
+               !ThumbAgainstFingers(hand);
+    }
+
+    private bool LooksLikeThumbOnly(SculptHandFrame hand)
+    {
+        return HasExtendedThumb(hand);
     }
 
     private static float TipDistance(Vector3 a, Vector3 b)
@@ -896,18 +948,29 @@ public class TaiwanLanternGestureController : MonoBehaviour
         weight = 0f;
         bool dummy = false;
         if (IsPinching(hand, true, ref dummy) || IsIndexPointing(hand) ||
-            IsOpenPalm(hand) || LooksLikeVSign(hand) || LooksLikeFist(hand))
+            IsOpenPalm(hand) || LooksLikeVSign(hand) || LooksLikeFist(hand) ||
+            IsFormingFist(hand) || ThumbAgainstFingers(hand) ||
+            !HasExtendedThumb(hand))
             return false;
 
         Vector2 thumb = new Vector2(
             hand.ThumbTip.x - hand.ThumbMcp.x,
             hand.ThumbTip.y - hand.ThumbMcp.y);
-        if (thumb.magnitude < hand.PalmWidth * minimumThumbLength)
-            return false;
 
         float vertical = Mathf.Clamp(thumb.normalized.y, -1f, 1f);
         weight = Mathf.InverseLerp(0.55f, -0.75f, vertical) * 100f;
         return true;
+    }
+
+    private static bool IsThumbPointingUp(SculptHandFrame hand)
+    {
+        if (!HasExtendedThumb(hand))
+            return false;
+
+        Vector2 thumb = new Vector2(
+            hand.ThumbTip.x - hand.ThumbMcp.x,
+            hand.ThumbTip.y - hand.ThumbMcp.y);
+        return thumb.sqrMagnitude > 0.0001f && thumb.normalized.y >= 0.35f;
     }
 
     private float PinchClosedAmount(SculptHandFrame hand, bool physicalRight)
@@ -1037,6 +1100,8 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
     private string BuildStatus(
         bool twoIndex,
+        bool rightVTopper,
+        bool leftVBottom,
         bool twoFists,
         bool twoV,
         bool hasTwo,
@@ -1047,6 +1112,10 @@ public class TaiwanLanternGestureController : MonoBehaviour
             return "TWO V SIDE: BAMBOO";
         if (twoFists)
             return "TWO FISTS DOWN: TASSEL";
+        if (rightVTopper)
+            return "RIGHT V: TOPPER";
+        if (leftVBottom)
+            return "LEFT V: BOTTOM";
         if (twoIndex)
             return "WIDTH + HEIGHT";
 
@@ -1071,8 +1140,8 @@ public class TaiwanLanternGestureController : MonoBehaviour
                 : "LEFT PINCH: " + popBottomLabel);
         else if (IsOpenPalm(hand))
             text = Append(text, "OPEN PALM");
-        else if (TryThumbWeight(hand, out _))
-            text = Append(text, right ? "RIGHT THUMB: TOPPER" : "LEFT THUMB: BOTTOM");
+        else if (IsVSign(hand))
+            text = Append(text, right ? "RIGHT V: TOPPER" : "LEFT V: BOTTOM");
     }
 
     private static string Append(string current, string part)

@@ -20,15 +20,20 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     [SerializeField, Min(1f)] private float heightSensitivity = 550f;
     [SerializeField, Range(0f, 0.03f)] private float movementDeadZone = 0.002f;
     [SerializeField, Min(1f)] private float smoothing = 24f;
+    [Tooltip("Once width or height starts, the other axis stays frozen until the fingers pause.")]
+    [SerializeField, Range(1f, 2.5f)] private float exclusiveAxisRatio = 1.2f;
 
     [Header("Single-Fist Lantern-Vertical Rotation")]
     [SerializeField] private Transform lanternRotationTarget;
     [SerializeField] private TaiwanLanternGestureController originalGestureController;
     [Tooltip("Degrees of lantern rotation produced by horizontal fist movement. Lower values make rotation less sensitive.")]
-    [SerializeField, Range(100f, 5000f)] private float fistRotationSensitivity = 1800f;
-    [SerializeField, Range(0f, 0.05f)] private float fistHorizontalDeadZone = 0.001f;
-    [SerializeField, Min(1f)] private float fistRotationSmoothing = 36f;
-    [SerializeField, Range(0.02f, 0.5f)] private float fistActivationTime = 0.12f;
+    [SerializeField, Range(100f, 5000f)] private float fistRotationSensitivity = 3800f;
+    [SerializeField, Range(0f, 0.05f)] private float fistHorizontalDeadZone = 0.002f;
+    [SerializeField, Min(1f)] private float fistRotationSmoothing = 10f;
+    [SerializeField, Min(1f)] private float fistInputSmoothing = 12f;
+    [SerializeField, Min(30f)] private float fistMaxDegreesPerSecond = 650f;
+    [SerializeField, Range(0f, 0.5f)] private float fistTrackingGracePeriod = 0.25f;
+    [SerializeField, Range(0.02f, 0.5f)] private float fistActivationTime = 0.16f;
     [SerializeField, Range(0.7f, 1.4f)] private float fistMaximumExtension = 1.08f;
     [SerializeField, Range(0.7f, 1.5f)] private float activeFistMaximumExtension = 1.16f;
 
@@ -63,6 +68,7 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     private float trackingLostTimer;
     private bool gestureActive;
     private bool gesturePaused;
+    private int lockedWidthHeightAxis;
     private bool fistRotationActive;
     private float fistActivationTimer;
     private float fistBaselineX;
@@ -72,6 +78,9 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     private Vector3 fistLanternVerticalAxis;
     private float fistAppliedAngle;
     private float fistTargetAngle;
+    private float fistSmoothedX;
+    private float fistAngleVelocity;
+    private float fistLostTimer;
 
     private void Awake()
     {
@@ -102,6 +111,8 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         trackingLostTimer = 0f;
         fistRotationActive = false;
         fistActivationTimer = 0f;
+        fistLostTimer = 0f;
+        fistAngleVelocity = 0f;
         if (originalGestureController != null)
             originalGestureController.SetExternalFistRotationActive(false);
         ReadCurrentWeights();
@@ -150,25 +161,15 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         }
 
         if (!hasTwo)
-
-        bool hasTwoHands = handRunner.TryGetLatestTwoHands(
-            out SculptHandFrame first,
-            out SculptHandFrame second);
-
-        if (!hasTwoHands)
         {
-            if (handRunner.TryGetLatestHand(out SculptHandFrame singleHand))
+            if (hasOne && HandleFistRotation(first))
             {
-                if (HandleFistRotation(singleHand))
-                {
-                    EndGesture();
-                    return;
-                }
+                EndGesture();
+                return;
             }
-            else
-            {
+
+            if (!hasOne)
                 EndFistRotation();
-            }
         }
         else
         {
@@ -180,7 +181,7 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         if (widthIndex < 0 || heightIndex < 0)
             return;
 
-        if (!hasTwoHands)
+        if (!hasTwo)
 
         {
             activationTimer = 0f;
@@ -295,6 +296,7 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         targetHeight = currentHeight;
         baselineHorizontal = Mathf.Abs(firstTip.x - secondTip.x);
         baselineVertical = Mathf.Abs(firstTip.y - secondTip.y);
+        lockedWidthHeightAxis = 0;
         gesturePaused = false;
         trackingLostTimer = 0f;
     }
@@ -308,11 +310,25 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
 
         float horizontalChange = ApplyDeadZone(horizontal - baselineHorizontal);
         float verticalChange = ApplyDeadZone(vertical - baselineVertical);
+        if (!TryLockWidthHeightAxis(horizontalChange, verticalChange))
+        {
+            targetWidth = startingWidth;
+            targetHeight = startingHeight;
+            return;
+        }
 
-        targetWidth = Mathf.Clamp(
-            startingWidth + horizontalChange * widthSensitivity, 0f, 100f);
-        targetHeight = Mathf.Clamp(
-            startingHeight + verticalChange * heightSensitivity, 0f, 100f);
+        if (lockedWidthHeightAxis == 1)
+        {
+            targetWidth = Mathf.Clamp(
+                startingWidth + horizontalChange * widthSensitivity, 0f, 100f);
+            targetHeight = startingHeight;
+        }
+        else
+        {
+            targetWidth = startingWidth;
+            targetHeight = Mathf.Clamp(
+                startingHeight + verticalChange * heightSensitivity, 0f, 100f);
+        }
     }
 
     private void SmoothWeights(float deltaTime)
@@ -335,13 +351,31 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
 
     private bool HandleFistRotation(SculptHandFrame hand)
     {
-        bool fistDetected = IsFist(
-            hand, fistRotationActive || fistActivationTimer > 0f);
-        if (!fistDetected)
+        if (TaiwanLanternGestureController.HasExtendedThumb(hand))
         {
             EndFistRotation();
             return false;
         }
+
+        bool fistDetected = IsFist(
+            hand, fistRotationActive || fistActivationTimer > 0f);
+        if (!fistDetected)
+        {
+            if (!fistRotationActive && fistActivationTimer <= 0f)
+                return false;
+
+            fistLostTimer += Time.deltaTime;
+            if (fistLostTimer > fistTrackingGracePeriod)
+            {
+                EndFistRotation();
+                return false;
+            }
+
+            ApplySmoothedFistRotation();
+            return true;
+        }
+
+        fistLostTimer = 0f;
 
         // Claim the curled-finger pose immediately so the original controller
         // cannot treat it as a thumb sculpting command during activation.
@@ -357,7 +391,16 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
             BeginFistRotation(hand);
         }
 
-        float horizontalMovement = hand.PalmCenter.x - fistBaselineX;
+        float rawX = hand.PalmCenter.x;
+        // MediaPipe occasionally jumps a fist across the frame. Soften those
+        // spikes before the existing baseline-offset mapping sees them.
+        if (Mathf.Abs(rawX - fistSmoothedX) > 0.08f)
+            rawX = Mathf.Lerp(fistSmoothedX, rawX, 0.18f);
+
+        float inputFactor = 1f - Mathf.Exp(-fistInputSmoothing * Time.deltaTime);
+        fistSmoothedX = Mathf.Lerp(fistSmoothedX, rawX, inputFactor);
+
+        float horizontalMovement = fistSmoothedX - fistBaselineX;
         if (Mathf.Abs(horizontalMovement) <= fistHorizontalDeadZone)
             horizontalMovement = 0f;
         else
@@ -366,19 +409,32 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
                 (Mathf.Abs(horizontalMovement) - fistHorizontalDeadZone);
         }
 
-        fistTargetAngle = horizontalMovement * fistRotationSensitivity;
-        float factor = 1f - Mathf.Exp(-fistRotationSmoothing * Time.deltaTime);
-        fistAppliedAngle = Mathf.LerpAngle(
-            fistAppliedAngle, fistTargetAngle, factor);
+        // Fist moving right on screen turns the lantern the same way.
+        fistTargetAngle = -horizontalMovement * fistRotationSensitivity;
+        ApplySmoothedFistRotation();
+        return true;
+    }
 
-        // Rotate from the pose captured at gesture start around the camera's
-        // on-screen vertical direction. Rebuilding from that fixed pose every
-        // frame prevents tracking noise or Euler conversion from introducing
+    private void ApplySmoothedFistRotation()
+    {
+        if (lanternRotationPivot == null)
+            return;
+
+        float smoothTime = 1f / Mathf.Max(fistRotationSmoothing, 1f);
+        fistAppliedAngle = Mathf.SmoothDampAngle(
+            fistAppliedAngle,
+            fistTargetAngle,
+            ref fistAngleVelocity,
+            smoothTime,
+            fistMaxDegreesPerSecond);
+
+        // Rotate from the pose captured at gesture start around the lantern's
+        // authored height axis. Rebuilding from that fixed pose every frame
+        // prevents tracking noise or Euler conversion from introducing
         // rotation around any other axis.
         lanternRotationPivot.rotation =
             Quaternion.AngleAxis(fistAppliedAngle, fistLanternVerticalAxis) *
             fistStartingPivotRotation;
-        return true;
     }
 
     private void BeginFistRotation(SculptHandFrame hand)
@@ -390,15 +446,16 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
             return;
 
         fistStartingPivotRotation = lanternRotationPivot.rotation;
-        // This imported lantern is authored with local Z as its true height
-        // axis (the selfie surface shader uses the same convention). Rotate
-        // around that transformed axis through the rendered centre so the
-        // top and bottom stay aligned while the front turns toward the side.
-        fistLanternVerticalAxis = lanternRenderer.transform
-            .TransformDirection(Vector3.forward).normalized;
+        // Same authored height axis as before, but take it from rotation only
+        // so the root's non-uniform scale cannot tilt the spin.
+        fistLanternVerticalAxis =
+            (lanternRenderer.transform.rotation * Vector3.forward).normalized;
         fistAppliedAngle = 0f;
         fistTargetAngle = 0f;
-        fistBaselineX = hand.PalmCenter.x;
+        fistSmoothedX = hand.PalmCenter.x;
+        fistBaselineX = fistSmoothedX;
+        fistAngleVelocity = 0f;
+        fistLostTimer = 0f;
         fistRotationActive = true;
         fistActivationTimer = 0f;
     }
@@ -429,6 +486,8 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     {
         fistRotationActive = false;
         fistActivationTimer = 0f;
+        fistLostTimer = 0f;
+        fistAngleVelocity = 0f;
         if (originalGestureController != null)
             originalGestureController.SetExternalFistRotationActive(false);
     }
@@ -442,7 +501,8 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         return hand.FingerCurlRatio <= maximumExtension &&
                hand.OtherFingersCurlRatio <= maximumExtension &&
                hand.IndexTipPalmRatio <= maximumExtension + 0.12f &&
-               hand.IndexExtensionAngle < 130f;
+               hand.IndexExtensionAngle < 130f &&
+               !TaiwanLanternGestureController.HasExtendedThumb(hand);
     }
 
     private bool IsIndexPointing(SculptHandFrame hand, bool useActiveTolerance)
@@ -483,6 +543,31 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
                hand.MiddleTipPalmRatio > maximumMiddleFingerExtension;
     }
 
+    private bool TryLockWidthHeightAxis(float horizontalChange, float verticalChange)
+    {
+        if (lockedWidthHeightAxis != 0)
+            return true;
+
+        float horizontal = Mathf.Abs(horizontalChange);
+        float vertical = Mathf.Abs(verticalChange);
+        if (horizontal <= 0f && vertical <= 0f)
+            return false;
+
+        if (horizontal >= vertical * exclusiveAxisRatio)
+        {
+            lockedWidthHeightAxis = 1;
+            return true;
+        }
+
+        if (vertical >= horizontal * exclusiveAxisRatio)
+        {
+            lockedWidthHeightAxis = 2;
+            return true;
+        }
+
+        return false;
+    }
+
     private float ApplyDeadZone(float value)
     {
         float magnitude = Mathf.Abs(value);
@@ -500,6 +585,7 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         trackingLostTimer = 0f;
         targetWidth = currentWidth;
         targetHeight = currentHeight;
+        lockedWidthHeightAxis = 0;
     }
 
     private void PauseGesture()

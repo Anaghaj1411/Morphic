@@ -160,6 +160,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private SkinnedMeshRenderer selfieSurfaceRenderer;
     private Transform selfieSurfaceRoot;
     private Mesh selfieBoundsMesh;
+    private Material selfieDecalMaterial;
+    private Mesh selfieQuadMesh;
+    private Mesh selfieBoundsBakeMesh;
+    private Transform selfieDecalRoot;
+    private MeshFilter selfieDecalFilter;
+    private MeshRenderer selfieDecalRenderer;
 
     private const float MainMenuPanelHeight = 230f;
     private const float PartSelectionPanelHeight = 500f;
@@ -938,7 +944,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 originalGestureController.ArmTasselVariant(variantIndex == 1);
 
             instructionText.text =
-                "Make two fists and pull down to ease the " +
+                "Make a V with your left hand and lift it up to ease the " +
                 selectedVariantLabel.ToLowerInvariant() + " out.";
             SetHoveredTarget(null);
             return;

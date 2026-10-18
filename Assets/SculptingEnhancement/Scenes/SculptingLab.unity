@@ -7421,12 +7421,14 @@ MonoBehaviour:
   maximumOtherFingerExtension: 1.15
   minimumIndexTipExtension: 1.08
   minimumThumbIndexSeparation: 0.42
-  pinchThreshold: 0.58
-  pinchReleaseThreshold: 0.8
-  leftPinchBoost: 1.2
-  popConfirmTime: 0.05
+  pinchThreshold: 0.72
+  pinchReleaseThreshold: 0.95
+  leftPinchBoost: 1.35
+  popConfirmTime: 0
   popEase: 12
   popLiftSensitivity: 420
+  popPinchSensitivity: 920
+  popPinchEase: 28
   smoothing: 22
   minimumThumbLength: 0.08
   shapeEaseTime: 0.12
@@ -7510,10 +7512,13 @@ MonoBehaviour:
   smoothing: 24
   lanternRotationTarget: {fileID: 0}
   originalGestureController: {fileID: 549754495}
-  fistRotationSensitivity: 1800
-  fistHorizontalDeadZone: 0.001
-  fistRotationSmoothing: 36
-  fistActivationTime: 0.12
+  fistRotationSensitivity: 3800
+  fistHorizontalDeadZone: 0.002
+  fistRotationSmoothing: 10
+  fistInputSmoothing: 12
+  fistMaxDegreesPerSecond: 650
+  fistTrackingGracePeriod: 0.25
+  fistActivationTime: 0.16
   fistMaximumExtension: 1.08
   activeFistMaximumExtension: 1.16
   minimumIndexAngle: 125
