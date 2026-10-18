@@ -100,6 +100,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private string candidateGestureName = "NONE";
     private float gestureActivationTimer = 0f;
     private const float GESTURE_ACTIVATION_TIME = 0.2f;
+    private bool externalFistRotationActive;
 
     private CanvasGroup progressCardGroup;
     private TMP_Text progressPartText;
@@ -227,6 +228,16 @@ public class TaiwanLanternGestureController : MonoBehaviour
         if (handRunner == null || lanternRenderer == null)
         {
             SetGestureText("GESTURE: NONE");
+            return;
+        }
+
+        // Fist drag rotation is owned by the enhancement controller. While it
+        // is active, do not reinterpret the curled fingers as one of the
+        // existing thumb sculpting poses.
+        if (externalFistRotationActive)
+        {
+            ApplyWeights();
+            SetGestureText("GESTURE: FIST ROTATE");
             return;
         }
 
@@ -369,6 +380,49 @@ public class TaiwanLanternGestureController : MonoBehaviour
             : currentGestureName == "NONE"
                 ? "GESTURE: NONE"
                 : "HOLD STILL 2 SEC TO LOCK " + currentGestureName);
+    }
+
+    public void SetExternalFistRotationActive(bool active)
+    {
+        if (externalFistRotationActive == active)
+            return;
+
+        externalFistRotationActive = active;
+        if (!active)
+            return;
+
+        currentGestureName = "NONE";
+        candidateGestureName = "NONE";
+        gestureActivationTimer = 0f;
+        gestureLocked = false;
+        twoHandGestureActive = false;
+        ResetGestureHold();
+    }
+
+    public void SynchronizeWeightsFromRenderer()
+    {
+        if (lanternRenderer == null)
+            return;
+
+        for (int i = 0; i < shapeIndices.Length; i++)
+        {
+            if (shapeIndices[i] >= 0)
+                currentWeights[i] = lanternRenderer.GetBlendShapeWeight(
+                    shapeIndices[i]);
+        }
+
+        topperTargetWeight = currentWeights[TOPPER];
+        bottomTargetWeight = currentWeights[BOTTOM];
+        middleTargetWeight = currentWeights[MIDDLE];
+        topperVelocity = 0f;
+        bottomVelocity = 0f;
+        middleVelocity = 0f;
+        currentGestureName = "NONE";
+        candidateGestureName = "NONE";
+        gestureActivationTimer = 0f;
+        twoHandGestureActive = false;
+        gestureLocked = false;
+        ResetGestureHold();
     }
 
     private void LateUpdate()

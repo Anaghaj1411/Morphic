@@ -21,6 +21,17 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     [SerializeField, Range(0f, 0.03f)] private float movementDeadZone = 0.002f;
     [SerializeField, Min(1f)] private float smoothing = 24f;
 
+    [Header("Single-Fist Lantern-Vertical Rotation")]
+    [SerializeField] private Transform lanternRotationTarget;
+    [SerializeField] private TaiwanLanternGestureController originalGestureController;
+    [Tooltip("Degrees of lantern rotation produced by horizontal fist movement. Lower values make rotation less sensitive.")]
+    [SerializeField, Range(100f, 5000f)] private float fistRotationSensitivity = 1800f;
+    [SerializeField, Range(0f, 0.05f)] private float fistHorizontalDeadZone = 0.001f;
+    [SerializeField, Min(1f)] private float fistRotationSmoothing = 36f;
+    [SerializeField, Range(0.02f, 0.5f)] private float fistActivationTime = 0.12f;
+    [SerializeField, Range(0.7f, 1.4f)] private float fistMaximumExtension = 1.08f;
+    [SerializeField, Range(0.7f, 1.5f)] private float activeFistMaximumExtension = 1.16f;
+
     [Header("Easier Two-Index Recognition")]
     [SerializeField, Range(90f, 175f)] private float minimumIndexAngle = 125f;
     [SerializeField, Range(0.5f, 2f)] private float maximumOtherFingerExtension = 1.45f;
@@ -51,9 +62,27 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     private float trackingLostTimer;
     private bool gestureActive;
     private bool gesturePaused;
+    private bool fistRotationActive;
+    private float fistActivationTimer;
+    private float fistBaselineX;
+    private Transform lanternRotationPivot;
+    private Transform lanternOriginalParent;
+    private Quaternion fistStartingPivotRotation;
+    private Vector3 fistLanternVerticalAxis;
+    private float fistAppliedAngle;
+    private float fistTargetAngle;
 
     private void Awake()
     {
+        if (lanternRotationTarget == null && lanternRenderer != null)
+            lanternRotationTarget = lanternRenderer.transform.root;
+        if (originalGestureController == null)
+        {
+            originalGestureController =
+                FindFirstObjectByType<TaiwanLanternGestureController>(
+                    FindObjectsInactive.Include);
+        }
+
         FindBlendShapes();
         ReadCurrentWeights();
     }
@@ -64,18 +93,67 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         gesturePaused = false;
         activationTimer = 0f;
         trackingLostTimer = 0f;
+        fistRotationActive = false;
+        fistActivationTimer = 0f;
+        if (originalGestureController != null)
+            originalGestureController.SetExternalFistRotationActive(false);
         ReadCurrentWeights();
+    }
+
+    private void OnDisable()
+    {
+        EndFistRotation();
+    }
+
+    private void OnDestroy()
+    {
+        if (lanternRotationPivot == null)
+            return;
+
+        if (lanternRotationTarget != null &&
+            lanternRotationTarget.parent == lanternRotationPivot)
+        {
+            lanternRotationTarget.SetParent(lanternOriginalParent, true);
+        }
+
+        Destroy(lanternRotationPivot.gameObject);
     }
 
     private void Update()
     {
-        if (handRunner == null || lanternRenderer == null ||
-            widthIndex < 0 || heightIndex < 0)
+        if (handRunner == null || lanternRenderer == null)
             return;
 
-        if (!handRunner.TryGetLatestTwoHands(
-                out SculptHandFrame first,
-                out SculptHandFrame second))
+        bool hasTwoHands = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first,
+            out SculptHandFrame second);
+
+        if (!hasTwoHands)
+        {
+            if (handRunner.TryGetLatestHand(out SculptHandFrame singleHand))
+            {
+                if (HandleFistRotation(singleHand))
+                {
+                    EndGesture();
+                    return;
+                }
+            }
+            else
+            {
+                EndFistRotation();
+            }
+        }
+        else
+        {
+            // Rotation deliberately requires one fist. Two hands remain
+            // reserved for the existing Width/Height sculpting gesture.
+            EndFistRotation();
+        }
+
+        if (widthIndex < 0 || heightIndex < 0)
+            return;
+
+        if (!hasTwoHands)
         {
             activationTimer = 0f;
             if (gestureActive)
@@ -177,6 +255,12 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
             currentHeight = targetHeight = lanternRenderer.GetBlendShapeWeight(heightIndex);
     }
 
+    public void SynchronizeWeightsFromRenderer()
+    {
+        ReadCurrentWeights();
+        EndGesture();
+    }
+
     private void BeginGesture(SculptHandFrame first, SculptHandFrame second)
     {
         RebaseGesture(first, second);
@@ -235,6 +319,118 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
             lanternRenderer.SetBlendShapeWeight(widthIndex, currentWidth);
         if (heightIndex >= 0)
             lanternRenderer.SetBlendShapeWeight(heightIndex, currentHeight);
+    }
+
+    private bool HandleFistRotation(SculptHandFrame hand)
+    {
+        bool fistDetected = IsFist(
+            hand, fistRotationActive || fistActivationTimer > 0f);
+        if (!fistDetected)
+        {
+            EndFistRotation();
+            return false;
+        }
+
+        // Claim the curled-finger pose immediately so the original controller
+        // cannot treat it as a thumb sculpting command during activation.
+        if (originalGestureController != null)
+            originalGestureController.SetExternalFistRotationActive(true);
+
+        if (!fistRotationActive)
+        {
+            fistActivationTimer += Time.deltaTime;
+            if (fistActivationTimer < fistActivationTime)
+                return true;
+
+            BeginFistRotation(hand);
+        }
+
+        float horizontalMovement = hand.PalmCenter.x - fistBaselineX;
+        if (Mathf.Abs(horizontalMovement) <= fistHorizontalDeadZone)
+            horizontalMovement = 0f;
+        else
+        {
+            horizontalMovement = Mathf.Sign(horizontalMovement) *
+                (Mathf.Abs(horizontalMovement) - fistHorizontalDeadZone);
+        }
+
+        fistTargetAngle = horizontalMovement * fistRotationSensitivity;
+        float factor = 1f - Mathf.Exp(-fistRotationSmoothing * Time.deltaTime);
+        fistAppliedAngle = Mathf.LerpAngle(
+            fistAppliedAngle, fistTargetAngle, factor);
+
+        // Rotate from the pose captured at gesture start around the camera's
+        // on-screen vertical direction. Rebuilding from that fixed pose every
+        // frame prevents tracking noise or Euler conversion from introducing
+        // rotation around any other axis.
+        lanternRotationPivot.rotation =
+            Quaternion.AngleAxis(fistAppliedAngle, fistLanternVerticalAxis) *
+            fistStartingPivotRotation;
+        return true;
+    }
+
+    private void BeginFistRotation(SculptHandFrame hand)
+    {
+        if (lanternRotationTarget == null)
+            lanternRotationTarget = lanternRenderer.transform.root;
+        EnsureLanternRotationPivot();
+        if (lanternRotationPivot == null)
+            return;
+
+        fistStartingPivotRotation = lanternRotationPivot.rotation;
+        // This imported lantern is authored with local Z as its true height
+        // axis (the selfie surface shader uses the same convention). Rotate
+        // around that transformed axis through the rendered centre so the
+        // top and bottom stay aligned while the front turns toward the side.
+        fistLanternVerticalAxis = lanternRenderer.transform
+            .TransformDirection(Vector3.forward).normalized;
+        fistAppliedAngle = 0f;
+        fistTargetAngle = 0f;
+        fistBaselineX = hand.PalmCenter.x;
+        fistRotationActive = true;
+        fistActivationTimer = 0f;
+    }
+
+    private void EnsureLanternRotationPivot()
+    {
+        if (lanternRotationPivot != null || lanternRotationTarget == null ||
+            lanternRenderer == null)
+            return;
+
+        lanternOriginalParent = lanternRotationTarget.parent;
+        GameObject pivotObject = new GameObject(
+            "Lantern Screen-Vertical Rotation Pivot");
+        lanternRotationPivot = pivotObject.transform;
+        lanternRotationPivot.SetParent(lanternOriginalParent, false);
+
+        // Use the rendered lantern's actual centre instead of the imported FBX
+        // origin. This removes both the model-axis ambiguity and any orbiting
+        // caused by an off-centre authoring pivot.
+        lanternRotationPivot.position = lanternRenderer.transform.TransformPoint(
+            lanternRenderer.localBounds.center);
+        lanternRotationPivot.rotation = Quaternion.identity;
+        lanternRotationPivot.localScale = Vector3.one;
+        lanternRotationTarget.SetParent(lanternRotationPivot, true);
+    }
+
+    private void EndFistRotation()
+    {
+        fistRotationActive = false;
+        fistActivationTimer = 0f;
+        if (originalGestureController != null)
+            originalGestureController.SetExternalFistRotationActive(false);
+    }
+
+    private bool IsFist(SculptHandFrame hand, bool useActiveTolerance)
+    {
+        float maximumExtension = useActiveTolerance
+            ? activeFistMaximumExtension
+            : fistMaximumExtension;
+
+        return hand.FingerCurlRatio <= maximumExtension &&
+               hand.OtherFingersCurlRatio <= maximumExtension &&
+               hand.IndexTipPalmRatio <= maximumExtension + 0.12f &&
+               hand.IndexExtensionAngle < 130f;
     }
 
     private bool IsIndexPointing(SculptHandFrame hand, bool useActiveTolerance)
