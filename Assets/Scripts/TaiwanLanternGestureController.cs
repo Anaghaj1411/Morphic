@@ -79,12 +79,74 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private readonly float[] current = new float[ChannelCount];
     private readonly string[] lookupNames = new string[ChannelCount];
 
+
     private bool ownWidthHeight = true;
     private bool widthHeightArmed;
     private float widthHeightBaselineX;
     private float widthHeightBaselineY;
     private float widthHeightStartW;
     private float widthHeightStartH;
+
+    [Header("Middle: Two-Hand Pinch Distance")]
+    [SerializeField, Min(0.1f)] private float middleMinPinchSeparation = 1f;
+    [SerializeField, Min(0.2f)] private float middleMaxPinchSeparation = 4f;
+    [SerializeField, Range(0.01f, 0.3f)] private float middleHoldStillTolerance = 0.05f;
+    [SerializeField, Range(0f, 1f)] private float singleThumbModeGracePeriod = 0.4f;
+
+    [Header("Pop-Up: Single-Hand Pinch Height")]
+    [SerializeField, Range(0f, 1f)] private float popUpMinimumHandHeight = 0.10f;
+    [SerializeField, Range(0f, 1f)] private float popUpMaximumHandHeight = 0.42f;
+    [SerializeField, Min(0.01f)] private float popUpGestureActivationTime = 0.08f;
+
+    [Header("Pop-Up Bamboo: Two-Hand V Spacing")]
+    [SerializeField, Min(0.1f)] private float bambooMinimumVSeparation = 1.2f;
+    [SerializeField, Min(0.2f)] private float bambooMaximumVSeparation = 4f;
+
+    [Header("Gesture Lock")]
+    [SerializeField, Min(0.25f)] private float gestureLockHoldDuration = 1f;
+    [SerializeField, Min(0.25f)] private float thumbGestureLockHoldDuration = 2f;
+    [SerializeField, Range(0.003f, 0.04f)] private float indexHoldStillTolerance = 0.01f;
+    [SerializeField, Range(2f, 20f)] private float thumbHoldStillTolerance = 15f;
+    [SerializeField, Range(0f, 12f)] private float thumbOutputDeadZone = 6f;
+
+    private readonly string[] shapeNames = new string[8];
+
+    private int[] shapeIndices = new int[8];
+    private float[] shapeMaximumWeights = new float[8];
+    private float[] currentWeights = new float[8];
+    private float[] gestureStartWeights = new float[8];
+
+    private float baselineHorizontal;
+    private float baselineVertical;
+    private float gestureLostTimer;
+    private float singleThumbModeTimer;
+    private float topperTargetWeight;
+    private float topperVelocity;
+    private float middleTargetWeight;
+    private float middleVelocity;
+    private float topperMinimumWeight;
+    private float topperMaximumWeight = 100f;
+    private float bottomTargetWeight;
+    private float bottomVelocity;
+    private float bottomMinimumWeight;
+    private float bottomMaximumWeight = 100f;
+    private float gestureHoldTimer;
+    private float stabilityAnchorA;
+    private float stabilityAnchorB;
+
+    private Vector2 firstBaselineIndex;
+    private Vector2 secondBaselineIndex;
+
+    private bool twoHandGestureActive;
+    private bool gestureLocked;
+    private bool hasStabilityAnchor;
+
+    private string currentGestureName = "NONE";
+    private string candidateGestureName = "NONE";
+    private float gestureActivationTimer = 0f;
+    private const float GESTURE_ACTIVATION_TIME = 0.2f;
+    private bool externalFistRotationActive;
+
 
     private CanvasGroup progressCardGroup;
     private TMP_Text progressPartText;
@@ -210,9 +272,27 @@ public class TaiwanLanternGestureController : MonoBehaviour
             return;
         }
 
+
         bool hasTwo = handRunner.TryGetLatestTwoHands(
             out SculptHandFrame first, out SculptHandFrame second);
         if (!hasTwo && !handRunner.TryGetLatestHand(out first))
+
+        // Fist drag rotation is owned by the enhancement controller. While it
+        // is active, do not reinterpret the curled fingers as one of the
+        // existing thumb sculpting poses.
+        if (externalFistRotationActive)
+        {
+            ApplyWeights();
+            SetGestureText("GESTURE: FIST ROTATE");
+            return;
+        }
+
+        bool hasTwoHands = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first,
+            out SculptHandFrame second);
+
+        if (!hasTwoHands)
+
         {
             widthHeightArmed = false;
             bambooArmed = false;
@@ -296,6 +376,49 @@ public class TaiwanLanternGestureController : MonoBehaviour
             "  BOT " + current[PopBottom].ToString("0") +
             "  BAM " + current[PopBamboo].ToString("0") +
             "  TAS " + current[ActiveTasselChannel()].ToString("0"));
+    }
+
+    public void SetExternalFistRotationActive(bool active)
+    {
+        if (externalFistRotationActive == active)
+            return;
+
+        externalFistRotationActive = active;
+        if (!active)
+            return;
+
+        currentGestureName = "NONE";
+        candidateGestureName = "NONE";
+        gestureActivationTimer = 0f;
+        gestureLocked = false;
+        twoHandGestureActive = false;
+        ResetGestureHold();
+    }
+
+    public void SynchronizeWeightsFromRenderer()
+    {
+        if (lanternRenderer == null)
+            return;
+
+        for (int i = 0; i < shapeIndices.Length; i++)
+        {
+            if (shapeIndices[i] >= 0)
+                currentWeights[i] = lanternRenderer.GetBlendShapeWeight(
+                    shapeIndices[i]);
+        }
+
+        topperTargetWeight = currentWeights[TOPPER];
+        bottomTargetWeight = currentWeights[BOTTOM];
+        middleTargetWeight = currentWeights[MIDDLE];
+        topperVelocity = 0f;
+        bottomVelocity = 0f;
+        middleVelocity = 0f;
+        currentGestureName = "NONE";
+        candidateGestureName = "NONE";
+        gestureActivationTimer = 0f;
+        twoHandGestureActive = false;
+        gestureLocked = false;
+        ResetGestureHold();
     }
 
     private void LateUpdate()
