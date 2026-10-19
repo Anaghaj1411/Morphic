@@ -21,8 +21,35 @@ public static class MorphicLanternShelfBuilder
     public static void BindFromMenu()
     {
         BindOpenScenes();
+        CreateSlotsInOpenScenes();
         AssetDatabase.SaveAssets();
         Debug.Log("MORPHIC: Bound Cubee.0049-0059 as the lantern shelf.");
+    }
+
+    [MenuItem("Morphic/Create Lantern Shelf Slots")]
+    public static void CreateSlotsFromMenu()
+    {
+        CreateSlotsInOpenScenes();
+        AssetDatabase.SaveAssets();
+        Debug.Log("MORPHIC: Created LanternShelfSlot through LanternShelfSlot_9. Drag each empty in the Scene view.");
+    }
+
+    private static void CreateSlotsInOpenScenes()
+    {
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            Scene scene = SceneManager.GetSceneAt(i);
+            if (!scene.isLoaded || !IsTrackedScene(scene.path))
+                continue;
+
+            LanternShelfController controller = FindController(scene);
+            if (controller == null)
+                continue;
+
+            controller.CreateManualSlots();
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+        }
     }
 
     private static void BindOpenScenes()

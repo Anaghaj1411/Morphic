@@ -62,18 +62,18 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     [Header("Selfie Decals")]
     [Tooltip("Normalized fraction of lantern height occupied by each selfie; it scales with Height deformation.")]
-    [SerializeField, Range(0.2f, 0.7f)] private float selfieHeightFraction = 0.42f;
+    [SerializeField, Range(0.2f, 0.7f)] private float selfieHeightFraction = 0.32f;
     [Tooltip("Normalized circumference width; it scales with Width deformation while leaving gaps between copies.")]
-    [SerializeField, Range(0.45f, 1.2f)] private float selfieWidthToRadius = 0.9f;
+    [SerializeField, Range(0.45f, 1.2f)] private float selfieWidthToRadius = 0.58f;
     [Tooltip("Scales the complete attached selfie on the lantern in both width and height. 1.0 is the original size; 1.5 makes it 50% larger.")]
     [InspectorName("Selfie Attached Image Scale")]
-    [SerializeField, Range(0.5f, 3f)] private float selfieAttachedImageScale = 1.5f;
+    [SerializeField, Range(0.5f, 3f)] private float selfieAttachedImageScale = 1.15f;
     [SerializeField, Range(1.001f, 1.08f)] private float selfieSurfaceOffset = 1.018f;
     [Tooltip("Controls the strength and depth of the irregular brush-bristle edge. Increase this for a more jagged outline.")]
-    [SerializeField, Range(0f, 0.4f)] private float selfieBrushRoughness = 0.085f;
+    [SerializeField, Range(0f, 0.4f)] private float selfieBrushRoughness = 0.045f;
     [Tooltip("Cuts the four corners inward to form a broad horizontal paint stroke. Increase this for stronger corner removal.")]
     [InspectorName("Selfie Brush Corner Cut")]
-    [SerializeField, Range(0f, 0.8f)] private float selfieBrushCornerRoundness = 0.28f;
+    [SerializeField, Range(0f, 0.8f)] private float selfieBrushCornerRoundness = 0.16f;
 
     [Header("Body Designs")]
     [SerializeField] private Texture2D[] stampPatterns;
@@ -258,6 +258,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void Start()
     {
+        LanternCollectionStore.Clear();
+        EnsureLanternShelf();
+        if (lanternShelf != null)
+            lanternShelf.ClearCollectionDisplays();
+
         CaptureInitialColors();
         LoadStampPatterns();
         BuildInterface();
@@ -1053,14 +1058,29 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void FinishToShelf()
     {
         EnsureLanternShelf();
-        Transform lantern = ResolveLanternRoot();
-        if (lanternShelf == null || lantern == null || !lanternShelf.PlaceLantern(lantern))
+        if (lanternShelf == null || ResolveLanternRoot() == null)
         {
             if (instructionText != null)
                 instructionText.text = "The shelf is not ready yet.";
             return;
         }
 
+        if (LanternCollectionStore.IsFull)
+        {
+            if (instructionText != null)
+                instructionText.text = "The shelf is full.";
+            return;
+        }
+
+        if (!CommitShelfCopy())
+        {
+            if (instructionText != null)
+                instructionText.text = "Could not place this lantern on the shelf.";
+            return;
+        }
+
+        SetWorkingLanternVisible(false);
+        lanternShelf.PanToShelfView();
         ShowShelf();
     }
 
@@ -1108,17 +1128,32 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void TakeBackFromShelf()
     {
         EnsureLanternShelf();
+        LanternCollectionStore.RemoveLast();
         if (lanternShelf != null)
-            lanternShelf.TakeBack();
+        {
+            lanternShelf.RemoveLastDisplay();
+            lanternShelf.RestoreSculptView();
+        }
+
+        SetWorkingLanternVisible(true);
         ShowMainMenu();
     }
 
     private void LeaveShelfDone()
     {
-        SetSculptControllersEnabled(false);
-        ShowSculptMode();
-        if (panel != null)
-            panel.SetActive(false);
+        EnsureLanternShelf();
+        SetWorkingLanternVisible(true);
+        ResetWorkingLantern();
+        if (lanternShelf != null)
+            lanternShelf.RestoreSculptView();
+
+        if (paletteAvailable)
+            ShowMainMenu();
+        else
+        {
+            SetSculptControllersEnabled(true);
+            ShowSculptMode();
+        }
     }
 
     private void ShowConfirmDelete()
@@ -1140,13 +1175,21 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void ConfirmDeleteLantern()
     {
         EnsureLanternShelf();
+        LanternCollectionStore.RemoveLast();
         if (lanternShelf != null)
-            lanternShelf.DeleteLantern();
-        lanternSaved = false;
-        RefreshSavedStatus();
-        ShowSculptMode();
-        if (panel != null)
-            panel.SetActive(false);
+        {
+            lanternShelf.RemoveLastDisplay();
+            lanternShelf.RestoreSculptView();
+        }
+
+        SetWorkingLanternVisible(true);
+        if (paletteAvailable)
+            ShowMainMenu();
+        else
+        {
+            SetSculptControllersEnabled(true);
+            ShowSculptMode();
+        }
     }
 
     private void EnsureLanternShelf()
@@ -1183,6 +1226,345 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         return lanternRenderer.transform;
+    }
+
+    private bool CommitShelfCopy()
+    {
+        Transform source = ResolveLanternRoot();
+        if (source == null || lanternShelf == null)
+            return false;
+
+        LanternCollectionStore.Record record = CaptureCollectionRecord();
+        if (!LanternCollectionStore.Add(record))
+            return false;
+
+        int slotIndex = lanternShelf.CollectionCount;
+        GameObject clone = UnityEngine.Object.Instantiate(source.gameObject);
+        clone.name = "LanternCollection_" + record.Id;
+        UniqueCloneMaterials(clone);
+        StripGameplay(clone);
+        lanternShelf.SeatAtSlot(clone.transform, slotIndex);
+        ApplyRecordToClone(clone, record);
+        CopySelfieSurfaceOntoClone(clone);
+        return true;
+    }
+
+    private void SetWorkingLanternVisible(bool visible)
+    {
+        Transform root = ResolveLanternRoot();
+        if (root != null)
+            root.gameObject.SetActive(visible);
+
+        if (selfieSurfaceRoot != null &&
+            (root == null || !selfieSurfaceRoot.IsChildOf(root)))
+        {
+            bool showSelfie = visible && appliedSelfieTexture != null;
+            selfieSurfaceRoot.gameObject.SetActive(showSelfie);
+            if (selfieSurfaceRenderer != null)
+                selfieSurfaceRenderer.enabled = showSelfie;
+        }
+
+        if (designSurfaceRoot != null &&
+            (root == null || !designSurfaceRoot.IsChildOf(root)))
+            designSurfaceRoot.gameObject.SetActive(visible);
+    }
+
+    private void ResetWorkingLantern()
+    {
+        RestoreSelectedPreview();
+        ClearAttachedSelfie();
+        if (originalGestureController != null)
+            originalGestureController.RestoreRestState();
+        if (history.Count > 0)
+            ApplySnapshot(history[0]);
+        lanternSaved = false;
+        RefreshSavedStatus();
+        CaptureBaseline();
+    }
+
+    private void ClearAttachedSelfie()
+    {
+        if (selfieSurfaceRenderer != null)
+            selfieSurfaceRenderer.enabled = false;
+        if (selfieDecalRoot != null)
+            selfieDecalRoot.gameObject.SetActive(false);
+        appliedSelfieTexture = null;
+    }
+
+    private void CopySelfieSurfaceOntoClone(GameObject clone)
+    {
+        if (clone == null || appliedSelfieTexture == null)
+            return;
+
+        DestroyNamedChildren(clone.transform, "LanternSelfieSurfaceOverlay");
+
+        SkinnedMeshRenderer cloneSkin = FindCloneLanternRenderer(clone);
+        if (cloneSkin == null || cloneSkin.sharedMesh == null)
+            return;
+
+        Shader shader = Shader.Find("Morphic/Selfie Surface Overlay");
+        if (shader == null)
+            return;
+
+        Transform cloneSkinTransform = cloneSkin.transform;
+        GameObject overlayObject = new GameObject("LanternSelfieSurfaceOverlay");
+        Transform overlayRoot = overlayObject.transform;
+        Transform overlayParent;
+        if (cloneSkinTransform == clone.transform)
+        {
+            overlayParent = clone.transform;
+            overlayRoot.SetParent(overlayParent, false);
+            overlayRoot.localPosition = Vector3.zero;
+            overlayRoot.localRotation = Quaternion.identity;
+            overlayRoot.localScale = Vector3.one;
+        }
+        else
+        {
+            overlayParent = cloneSkinTransform.parent;
+            if (overlayParent == null ||
+                (overlayParent != clone.transform && !overlayParent.IsChildOf(clone.transform)))
+                overlayParent = clone.transform;
+            overlayRoot.SetParent(overlayParent, false);
+            overlayRoot.localPosition = cloneSkinTransform.localPosition;
+            overlayRoot.localRotation = cloneSkinTransform.localRotation;
+            overlayRoot.localScale = cloneSkinTransform.localScale;
+        }
+        overlayObject.layer = cloneSkin.gameObject.layer;
+
+        SkinnedMeshRenderer overlay = overlayObject.AddComponent<SkinnedMeshRenderer>();
+        overlay.sharedMesh = cloneSkin.sharedMesh;
+        overlay.rootBone = cloneSkin.rootBone;
+        overlay.bones = cloneSkin.bones;
+        overlay.localBounds = cloneSkin.localBounds;
+        overlay.quality = cloneSkin.quality;
+        overlay.updateWhenOffscreen = true;
+        overlay.skinnedMotionVectors = false;
+        overlay.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        overlay.receiveShadows = false;
+        overlay.forceRenderingOff = false;
+        overlay.allowOcclusionWhenDynamic = false;
+        overlay.renderingLayerMask = cloneSkin.renderingLayerMask;
+        overlay.sortingOrder = 20;
+
+        Material hidden = new Material(shader)
+        {
+            name = "Morphic Shelf Hidden Selfie Submesh Material",
+            renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20
+        };
+        hidden.SetFloat("_Opacity", 0f);
+
+        Material visible = new Material(shader)
+        {
+            name = "Morphic Shelf Selfie Surface Material",
+            renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20
+        };
+        Texture2D selfieCopy = CopyTextureForSelfieSurface(
+            appliedSelfieTexture, "Morphic Shelf Selfie");
+        ApplySelfieMaterial(visible, cloneSkin, selfieCopy);
+
+        int subMeshCount = Mathf.Max(1, cloneSkin.sharedMesh.subMeshCount);
+        Material[] overlayMaterials = new Material[subMeshCount];
+        for (int i = 0; i < overlayMaterials.Length; i++)
+            overlayMaterials[i] = hidden;
+        overlayMaterials[Mathf.Clamp(bodyMaterialIndex, 0, subMeshCount - 1)] = visible;
+        overlay.sharedMaterials = overlayMaterials;
+
+        if (cloneSkin.sharedMesh != null)
+        {
+            int count = cloneSkin.sharedMesh.blendShapeCount;
+            for (int i = 0; i < count; i++)
+                overlay.SetBlendShapeWeight(i, cloneSkin.GetBlendShapeWeight(i));
+        }
+
+        overlay.enabled = true;
+        overlayObject.SetActive(true);
+    }
+
+    private void ApplySelfieMaterial(
+        Material material,
+        SkinnedMeshRenderer skin,
+        Texture texture)
+    {
+        if (material == null || skin == null)
+            return;
+
+        Bounds localBounds = BakeSkinnedBounds(skin);
+        material.SetTexture("_SelfieTex", texture);
+        material.SetFloat("_Opacity", 1f);
+        material.SetFloat("_PatchHalfAngle", 0.785398f);
+        material.SetFloat("_VerticalHalfFraction", 0.92f);
+        material.SetFloat(BrushEdgeRoughnessId, 0f);
+        material.SetFloat(BrushCornerRoundnessId, 0f);
+        material.SetVector("_ObjectCenter", localBounds.center);
+        material.SetVector("_ObjectExtents", localBounds.extents);
+        float photoAspect = texture != null && texture.height > 0
+            ? texture.width / (float)texture.height
+            : 1f;
+        material.SetFloat("_PhotoAspect", photoAspect);
+        material.SetFloat(
+            "_UseYUp",
+            localBounds.extents.y >= localBounds.extents.z ? 1f : 0f);
+    }
+
+    private static Bounds BakeSkinnedBounds(SkinnedMeshRenderer skin)
+    {
+        if (skin == null || skin.sharedMesh == null)
+            return default;
+
+        Mesh mesh = new Mesh { name = "Morphic Clone Selfie Bounds" };
+        skin.BakeMesh(mesh);
+        mesh.RecalculateBounds();
+        Bounds bounds = mesh.bounds;
+        UnityEngine.Object.Destroy(mesh);
+        if (bounds.extents.sqrMagnitude <= 0.0000001f)
+            return skin.localBounds;
+        return bounds;
+    }
+
+    private static void DestroyNamedChildren(Transform root, string childName)
+    {
+        if (root == null || string.IsNullOrEmpty(childName))
+            return;
+
+        Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i] == null || transforms[i] == root)
+                continue;
+            if (transforms[i].name != childName)
+                continue;
+            UnityEngine.Object.DestroyImmediate(transforms[i].gameObject);
+        }
+    }
+
+    private static void UniqueCloneMaterials(GameObject clone)
+    {
+        if (clone == null)
+            return;
+
+        Renderer[] renderers = clone.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i] == null)
+                continue;
+            Material[] materials = renderers[i].materials;
+            renderers[i].materials = materials;
+        }
+    }
+
+    private static void StripGameplay(GameObject clone)
+    {
+        if (clone == null)
+            return;
+
+        DisableAndDestroy(clone.GetComponentsInChildren<TaiwanLanternGestureController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementIndexGestureController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementLanternColorController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<Canvas>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<Camera>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<AudioListener>(true));
+    }
+
+    private static void DisableAndDestroy(Component[] components)
+    {
+        if (components == null)
+            return;
+
+        for (int i = 0; i < components.Length; i++)
+        {
+            if (components[i] == null)
+                continue;
+            Behaviour behaviour = components[i] as Behaviour;
+            if (behaviour != null)
+                behaviour.enabled = false;
+            UnityEngine.Object.Destroy(components[i]);
+        }
+    }
+
+    private LanternCollectionStore.Record CaptureCollectionRecord()
+    {
+        LanternSnapshot snapshot = CaptureSnapshot();
+        Quaternion rotation = snapshot.LocalRotation;
+        return new LanternCollectionStore.Record
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            BlendWeights = snapshot.BlendWeights,
+            MaterialColors = snapshot.MaterialColors,
+            LocalRotation = new[] { rotation.x, rotation.y, rotation.z, rotation.w },
+            StampVisible = snapshot.StampVisible,
+            StampTint = snapshot.StampTint
+        };
+    }
+
+    private void ApplyRecordToClone(GameObject clone, LanternCollectionStore.Record record)
+    {
+        if (clone == null || record == null)
+            return;
+
+        SkinnedMeshRenderer skin = FindCloneLanternRenderer(clone);
+        if (skin == null)
+            return;
+
+        if (record.LocalRotation != null && record.LocalRotation.Length >= 4)
+        {
+            skin.transform.localRotation = new Quaternion(
+                record.LocalRotation[0],
+                record.LocalRotation[1],
+                record.LocalRotation[2],
+                record.LocalRotation[3]);
+        }
+
+        if (record.BlendWeights != null && skin.sharedMesh != null)
+        {
+            int count = Mathf.Min(record.BlendWeights.Length, skin.sharedMesh.blendShapeCount);
+            for (int i = 0; i < count; i++)
+                skin.SetBlendShapeWeight(i, record.BlendWeights[i]);
+        }
+
+        if (record.MaterialColors == null)
+            return;
+
+        Material[] materials = skin.materials;
+        int colorCount = Mathf.Min(record.MaterialColors.Length, materials.Length);
+        for (int i = 0; i < colorCount; i++)
+        {
+            if (materials[i] == null)
+                continue;
+            if (materials[i].HasProperty(BaseColorId))
+                materials[i].SetColor(BaseColorId, record.MaterialColors[i]);
+            if (materials[i].HasProperty(ColorId))
+                materials[i].SetColor(ColorId, record.MaterialColors[i]);
+        }
+
+        skin.materials = materials;
+    }
+
+    private SkinnedMeshRenderer FindCloneLanternRenderer(GameObject clone)
+    {
+        SkinnedMeshRenderer[] skins = clone.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        if (skins == null || skins.Length == 0)
+            return null;
+
+        if (lanternRenderer != null)
+        {
+            for (int i = 0; i < skins.Length; i++)
+            {
+                if (skins[i] != null && skins[i].name == lanternRenderer.name)
+                    return skins[i];
+            }
+        }
+
+        for (int i = 0; i < skins.Length; i++)
+        {
+            if (skins[i] == null)
+                continue;
+            if (skins[i].name == "LanternSelfieSurfaceOverlay" ||
+                skins[i].name == "LanternBodyDesignOverlay")
+                continue;
+            return skins[i];
+        }
+
+        return skins[0];
     }
 
     private void BuildSelfieInterface(Transform parent)
@@ -1531,7 +1913,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 originalGestureController.ArmTasselVariant(variantIndex == 1);
 
             instructionText.text =
-                "Make a V with your left hand and lift it up to ease the " +
+                "Make two fists and pull them down to bring the " +
                 selectedVariantLabel.ToLowerInvariant() + " out.";
             SetHoveredTarget(null);
             return;
@@ -2072,14 +2454,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         // in the Canvas preview. Surface orientation is now handled once by
         // the overlay shader instead of by rotating and flipping copies.
         Texture2D copy = new Texture2D(
-            source.width, source.height, TextureFormat.RGBA32, false)
+            source.width, source.height, TextureFormat.RGBA32, true)
         {
             name = textureName,
-            filterMode = FilterMode.Bilinear,
+            filterMode = FilterMode.Trilinear,
+            anisoLevel = 4,
             wrapMode = TextureWrapMode.Clamp
         };
         copy.SetPixels32(source.GetPixels32());
-        copy.Apply(false, false);
+        copy.Apply(true, false);
         return copy;
     }
 
@@ -2163,18 +2546,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
 
         Bounds localBounds = GetCurrentLanternObjectBounds();
-        float verticalHalfFraction = Mathf.Clamp(
-            selfieHeightFraction * selfieAttachedImageScale, 0.05f, 0.9f);
-
-        // Keep the selfie attached to a fixed normalized region of the
-        // lantern surface. The previous aspect-ratio calculation reduced the
-        // occupied angle whenever the lantern became wider, cancelling the
-        // visible size change. A fixed angular fraction makes the photograph
-        // stretch and shrink with the sculpted surface in both dimensions.
-        float patchHalfAngle = Mathf.Clamp(
-            selfieWidthToRadius * 0.5f * selfieAttachedImageScale,
-            0.05f,
-            0.78f);
+        float verticalHalfFraction = 0.92f;
+        float patchHalfAngle = 0.785398f;
 
         selfieSurfaceMaterial.SetTexture("_SelfieTex", texture);
         selfieSurfaceMaterial.SetFloat("_Opacity", 1f);
@@ -2182,15 +2555,20 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         selfieSurfaceMaterial.SetFloat(
             "_VerticalHalfFraction",
             verticalHalfFraction);
-        selfieSurfaceMaterial.SetFloat(
-            BrushEdgeRoughnessId, selfieBrushRoughness);
-        selfieSurfaceMaterial.SetFloat(
-            BrushCornerRoundnessId, selfieBrushCornerRoundness);
+        selfieSurfaceMaterial.SetFloat(BrushEdgeRoughnessId, 0f);
+        selfieSurfaceMaterial.SetFloat(BrushCornerRoundnessId, 0f);
         // The centre of the photograph is exactly the centre of the currently
         // deformed lantern. No saved attachment position or manual offset is
         // allowed here; Width and Height can move this point every frame.
         selfieSurfaceMaterial.SetVector("_ObjectCenter", localBounds.center);
         selfieSurfaceMaterial.SetVector("_ObjectExtents", localBounds.extents);
+        float photoAspect = texture != null && texture.height > 0
+            ? texture.width / (float)texture.height
+            : 1f;
+        selfieSurfaceMaterial.SetFloat("_PhotoAspect", photoAspect);
+        selfieSurfaceMaterial.SetFloat(
+            "_UseYUp",
+            localBounds.extents.y >= localBounds.extents.z ? 1f : 0f);
     }
 
     private Bounds GetCurrentLanternObjectBounds()

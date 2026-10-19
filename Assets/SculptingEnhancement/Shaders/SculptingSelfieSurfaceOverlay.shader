@@ -12,6 +12,8 @@ Shader "Morphic/Selfie Surface Overlay"
         _BrushEdgeRoughness ("Brush Edge Roughness", Range(0, 0.4)) = 0.085
         _BrushEdgeFeather ("Brush Edge Feather", Range(0.002, 0.05)) = 0.012
         _BrushCornerRoundness ("Brush Corner Roundness", Range(0, 0.8)) = 0.28
+        _PhotoAspect ("Photo Aspect", Float) = 1
+        _UseYUp ("Use Y Up", Float) = 0
     }
 
     SubShader
@@ -56,6 +58,8 @@ Shader "Morphic/Selfie Surface Overlay"
                 float _BrushEdgeRoughness;
                 float _BrushEdgeFeather;
                 float _BrushCornerRoundness;
+                float _PhotoAspect;
+                float _UseYUp;
             CBUFFER_END
 
             struct Attributes
@@ -101,8 +105,11 @@ Shader "Morphic/Selfie Surface Overlay"
             half4 Frag(Varyings input) : SV_Target
             {
                 const float HalfPi = 1.57079632679;
-                float2 radial = input.positionOS.xy - _ObjectCenter.xy;
-                float angle = atan2(radial.y, radial.x);
+                float3 local = input.positionOS - _ObjectCenter.xyz;
+                float2 radial = _UseYUp > 0.5 ? local.xz : local.xy;
+                float angle = _UseYUp > 0.5
+                    ? atan2(radial.x, radial.y)
+                    : atan2(radial.y, radial.x);
 
                 // Repeat the same image once in each 90-degree quadrant. The
                 // unused part of each quadrant is transparent, leaving a gap
@@ -110,58 +117,26 @@ Shader "Morphic/Selfie Surface Overlay"
                 float wrappedAngle = frac((angle + HalfPi * 0.5) / HalfPi) * HalfPi - HalfPi * 0.5;
                 clip(_PatchHalfAngle - abs(wrappedAngle));
 
-                // The imported lantern uses local Z as its vertical axis.
-                // Sampling directly from the captured texture keeps the same
-                // upright, non-mirrored orientation as the Canvas preview.
-                float vertical = (input.positionOS.z - _ObjectCenter.z) /
-                    max(_ObjectExtents.z, 0.00001);
+                float verticalExtent = _UseYUp > 0.5
+                    ? max(_ObjectExtents.y, 0.00001)
+                    : max(_ObjectExtents.z, 0.00001);
+                float vertical = _UseYUp > 0.5
+                    ? local.y / verticalExtent
+                    : local.z / verticalExtent;
                 clip(_VerticalHalfFraction - abs(vertical));
 
                 float2 uv = float2(
                     wrappedAngle / (2.0 * _PatchHalfAngle) + 0.5,
                     vertical / (2.0 * _VerticalHalfFraction) + 0.5);
 
-                // Shape the photograph as one broad horizontal paint stroke.
-                // The middle stays dense, while the stroke narrows strongly
-                // toward all four corners. Per-row noise makes the left/right
-                // ends look like separate brush hairs of uneven length.
-                float verticalFromCentre = abs(uv.y - 0.5) * 2.0;
-                float horizontalFromCentre = abs(uv.x - 0.5) * 2.0;
-                float horizontalCornerCut =
-                    pow(verticalFromCentre, 2.15) * _BrushCornerRoundness;
-                float verticalCornerCut =
-                    pow(horizontalFromCentre, 2.4) *
-                    _BrushCornerRoundness * 0.62;
-
-                float leftNoise = BrushEdgeNoise(uv.y, 1.0) - 0.42;
-                float rightNoise = BrushEdgeNoise(uv.y, 7.0) - 0.42;
-                float bottomNoise = BrushEdgeNoise(uv.x, 13.0) - 0.46;
-                float topNoise = BrushEdgeNoise(uv.x, 23.0) - 0.46;
-
-                float leftCut = max(
-                    0.002,
-                    _BrushEdgeWidth + horizontalCornerCut +
-                    leftNoise * _BrushEdgeRoughness * 1.35);
-                float rightCut = max(
-                    0.002,
-                    _BrushEdgeWidth + horizontalCornerCut +
-                    rightNoise * _BrushEdgeRoughness * 1.35);
-                float bottomCut = max(
-                    0.002,
-                    _BrushEdgeWidth + verticalCornerCut +
-                    bottomNoise * _BrushEdgeRoughness * 0.85);
-                float topCut = max(
-                    0.002,
-                    _BrushEdgeWidth + verticalCornerCut +
-                    topNoise * _BrushEdgeRoughness * 0.85);
-
-                float brushDistance = min(
-                    min(uv.x - leftCut, (1.0 - uv.x) - rightCut),
-                    min(uv.y - bottomCut, (1.0 - uv.y) - topCut));
-                float brushMask = smoothstep(
-                    -_BrushEdgeFeather, _BrushEdgeFeather, brushDistance);
+                float2 centered = uv * 2.0 - 1.0;
+                float edge = 1.0 - max(abs(centered.x), abs(centered.y));
+                float brushMask = smoothstep(0.0, 0.16, edge);
 
                 half4 color = SAMPLE_TEXTURE2D(_SelfieTex, sampler_SelfieTex, uv);
+                float3 shadeNormal = normalize(local);
+                float shade = saturate(dot(shadeNormal, normalize(float3(0.22, 0.62, 0.75))) * 0.38 + 0.68);
+                color.rgb *= shade;
                 color.a *= _Opacity * brushMask;
                 clip(color.a - 0.001);
                 return color;

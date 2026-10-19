@@ -128,6 +128,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private bool tasselArmed;
     private float tasselStartY;
     private float tasselStart;
+    private float tasselHoldTime;
     private bool madeDeformation;
     public bool suppressDriving;
     private float[] restBlendWeights;
@@ -136,7 +137,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private float restCommittedBottom;
     private bool topPopUsesRectangle;
     private bool bottomPopUsesRectangle;
-    private bool tasselUsesTriple;
+    private bool tasselUsesTriple = true;
     private int unusedPopTopShape = -1;
     private int unusedPopBottomShape = -1;
     private int unusedTasselShape = -1;
@@ -145,6 +146,12 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
     private void Awake()
     {
+        if (GetComponentInParent<LanternShelfController>(true) != null)
+        {
+            enabled = false;
+            return;
+        }
+
         lookupNames[Width] = widthShape;
         lookupNames[Height] = heightShape;
         lookupNames[Topper] = topperShape;
@@ -269,7 +276,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
         float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
         bool twoV = hasTwo && IsVSign(first) && IsVSign(second);
-        bool twoFists = !twoV && hasTwo && LooksLikeFist(first) && LooksLikeFist(second);
+        bool twoFists = !twoV && hasTwo && LooksLikeTasselFist(first) && LooksLikeTasselFist(second);
         bool foundLeftV = TryGetHandV(first, second, hasTwo, false, out SculptHandFrame leftV);
         bool foundRightV = TryGetHandV(first, second, hasTwo, true, out SculptHandFrame rightV);
         bool leftVBottom = !twoV && foundLeftV;
@@ -326,7 +333,10 @@ public class TaiwanLanternGestureController : MonoBehaviour
         if (twoFists)
             DriveTasselDown(first, second);
         else
+        {
             tasselArmed = false;
+            tasselHoldTime = 0f;
+        }
 
         if (rightVTopper)
             DriveVShape(rightV, Topper, blend, ref rightVArmed, ref rightVStartY,
@@ -437,7 +447,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
             second = default;
 
         bool twoV = hasTwo && IsVSign(first) && IsVSign(second);
-        bool twoFists = !twoV && hasTwo && LooksLikeFist(first) && LooksLikeFist(second);
+        bool twoFists = !twoV && hasTwo && LooksLikeTasselFist(first) && LooksLikeTasselFist(second);
         bool foundRightV = TryGetHandV(first, second, hasTwo, true, out _);
         bool foundLeftV = TryGetHandV(first, second, hasTwo, false, out _);
         bool twoIndex = !twoV && !foundLeftV && !foundRightV && hasTwo &&
@@ -577,21 +587,32 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private void DriveTasselDown(SculptHandFrame first, SculptHandFrame second)
     {
         int channel = ActiveTasselChannel();
+        if (shapeIndex[channel] < 0)
+            return;
+
         float fistY = (first.PalmCenter.y + second.PalmCenter.y) * 0.5f;
         if (!tasselArmed)
         {
             tasselArmed = true;
             tasselStartY = fistY;
             tasselStart = current[channel];
-            return;
+            tasselHoldTime = 0f;
         }
 
+        tasselHoldTime += Time.deltaTime;
         float drop = Mathf.Max(0f, tasselStartY - fistY);
-        float target = Mathf.Clamp(tasselStart + drop * popLiftSensitivity * 1.35f, 0f, 100f);
+        float dropTarget = tasselStart + drop * popLiftSensitivity * 1.8f;
+        float holdTarget = Mathf.Lerp(tasselStart, 100f, Mathf.Clamp01(tasselHoldTime / 0.5f));
+        float target = Mathf.Clamp(Mathf.Max(dropTarget, holdTarget), 0f, 100f);
         float ease = 1f - Mathf.Exp(-popEase * Time.deltaTime);
         current[channel] = Mathf.Lerp(current[channel], target, ease);
         if (target > tasselStart + 0.5f)
             madeDeformation = true;
+    }
+
+    private static bool LooksLikeTasselFist(SculptHandFrame hand)
+    {
+        return FingersClosed(hand, 1.32f, 1.22f);
     }
 
     private void DriveVShape(

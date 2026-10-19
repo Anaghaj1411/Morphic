@@ -85,6 +85,11 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
 
     private void Awake()
     {
+        if (GetComponentInParent<LanternShelfController>(true) != null)
+        {
+            enabled = false;
+            return;
+        }
 
         BindLantern();
 
