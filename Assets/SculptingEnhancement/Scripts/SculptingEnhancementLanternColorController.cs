@@ -20,7 +20,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SelectVariant,
         SelectColor,
         SelectDesign,
-        Selfie
+        Selfie,
+        Review,
+        Shelf,
+        ConfirmDelete
     }
 
     private sealed class HitTarget
@@ -125,6 +128,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private GameObject bodyActionGroup;
     private GameObject designGroup;
     private GameObject colorGroup;
+    private GameObject reviewGroup;
+    private GameObject shelfGroup;
+    private GameObject confirmDeleteGroup;
+    private TMP_Text savedStatusText;
+    private bool lanternSaved;
+    private LanternShelfController lanternShelf;
     private GameObject selfiePanel;
     private GameObject selfieGroup;
     private Button selfieEntryButton;
@@ -199,7 +208,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private const float CustomizePanelWidth = 420f;
     private const float PillWidth = 360f;
     private const float PillHeight = 60f;
-    private const float MainMenuPanelHeight = 320f;
+    private const float MainMenuPanelHeight = 400f;
+    private const float ReviewPanelHeight = 420f;
+    private const float ShelfPanelHeight = 430f;
     private const float PartSelectionPanelHeight = 700f;
     private const float VariantSelectionPanelHeight = 420f;
     private const float BodyActionsPanelHeight = 360f;
@@ -442,7 +453,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     {
         hitTargets.Clear();
         uiRoot = root.gameObject;
-        if (FindObject(root, "LanternColorPanel/MorphicHistoryV1") == null)
+        if (FindObject(root, "LanternColorPanel/MorphicShelfDoneV1") == null)
             return false;
 
         panel = FindObject(root, "LanternColorPanel");
@@ -468,6 +479,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         Button selectPartButton = FindComponent<Button>(root, "LanternColorPanel/MainActions/SelectPart");
         Button changeColorButton = FindComponent<Button>(root, "LanternColorPanel/MainActions/ChangeColor");
+        Button finishButton = FindComponent<Button>(root, "LanternColorPanel/MainActions/Finish");
         Button nextColorsButton = FindComponent<Button>(root, "LanternColorPanel/PartSelection/NextColors");
         Button partDoneButton = FindComponent<Button>(root, "LanternColorPanel/PartSelection/Done");
         Button freeColorPaletteButton = FindComponent<Button>(
@@ -488,7 +500,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             selfieHeaderText == null || selfieInstructionText == null ||
             freeColorSelectionCheck == null || cursorRect == null || cursorText == null ||
             selectPartButton == null ||
-            changeColorButton == null || nextColorsButton == null ||
+            changeColorButton == null || finishButton == null || nextColorsButton == null ||
             partDoneButton == null || freeColorPaletteButton == null ||
             backButton == null || colorDoneButton == null || selfiePreviewImage == null ||
             takeSelfieButton == null || selfieBackButton == null ||
@@ -507,6 +519,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         RegisterHitTarget(selectPartButton, false, false, default);
         changeColorButton.onClick.AddListener(ContinueToColorSelection);
         RegisterHitTarget(changeColorButton, false, false, default);
+        finishButton.onClick.AddListener(ShowReview);
+        RegisterHitTarget(finishButton, false, false, default);
         selfieEntryButton.onClick.AddListener(ShowSelfieCapture);
         RegisterHitTarget(selfieEntryButton, false, false, default);
 
@@ -554,6 +568,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         EnsureBodyActionGroup();
         EnsureDesignGroup();
         BindHistoryControls(root);
+        BindReviewAndShelfControls(root);
         return true;
     }
 
@@ -585,7 +600,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         StyleMorphicCard(panelRect);
 
         GameObject layoutMarker = new GameObject(
-            "MorphicHistoryV1", typeof(RectTransform));
+            "MorphicShelfDoneV1", typeof(RectTransform));
         layoutMarker.transform.SetParent(panelRect, false);
 
         headerText = CreateText(
@@ -611,7 +626,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         mainRect.anchorMax = new Vector2(1f, 1f);
         mainRect.pivot = new Vector2(0.5f, 1f);
         mainRect.anchoredPosition = new Vector2(0f, -124f);
-        mainRect.sizeDelta = new Vector2(-32f, 170f);
+        mainRect.sizeDelta = new Vector2(-32f, 250f);
 
         Button selectPartButton = CreateButton(
             "SelectPart", mainRect, Vector2.zero,
@@ -624,6 +639,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
         changeColorButton.onClick.AddListener(ContinueToColorSelection);
         RegisterHitTarget(changeColorButton, false, false, default);
+
+        Button finishButton = CreateButton(
+            "Finish", mainRect, new Vector2(0f, -144f),
+            new Vector2(PillWidth, PillHeight), "FINISH", DonePink);
+        finishButton.onClick.AddListener(ShowReview);
+        RegisterHitTarget(finishButton, false, false, default);
 
         partGroup = new GameObject("PartSelection", typeof(RectTransform));
         partGroup.transform.SetParent(panelRect, false);
@@ -709,6 +730,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         BuildHistoryBar(panelRect);
         BuildConfirmReset(panelRect);
+        BuildReviewAndShelf(panelRect);
     }
 
     private void BindHistoryControls(Transform root)
@@ -802,6 +824,365 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         confirm.onClick.AddListener(ConfirmReset);
         RegisterHitTarget(confirm, false, false, default);
         confirmResetGroup.SetActive(false);
+    }
+
+    private void BindReviewAndShelfControls(Transform root)
+    {
+        reviewGroup = FindObject(root, "LanternColorPanel/Review");
+        shelfGroup = FindObject(root, "LanternColorPanel/ShelfActions");
+        confirmDeleteGroup = FindObject(root, "LanternColorPanel/ConfirmDelete");
+        savedStatusText = FindComponent<TMP_Text>(root, "LanternColorPanel/Review/SavedStatus");
+
+        Button save = FindComponent<Button>(root, "LanternColorPanel/Review/Save");
+        Button retake = FindComponent<Button>(root, "LanternColorPanel/Review/Retake");
+        Button finish = FindComponent<Button>(root, "LanternColorPanel/Review/Finish");
+        Button takeBack = FindComponent<Button>(root, "LanternColorPanel/ShelfActions/TakeBack");
+        Button delete = FindComponent<Button>(root, "LanternColorPanel/ShelfActions/Delete");
+        Button done = FindComponent<Button>(root, "LanternColorPanel/ShelfActions/Done");
+        Button cancelDelete = FindComponent<Button>(root, "LanternColorPanel/ConfirmDelete/Cancel");
+        Button confirmDelete = FindComponent<Button>(root, "LanternColorPanel/ConfirmDelete/Delete");
+
+        if (save != null)
+        {
+            save.onClick.AddListener(SaveLanternReview);
+            RegisterHitTarget(save, false, false, default);
+        }
+
+        if (retake != null)
+        {
+            retake.onClick.AddListener(ShowMainMenu);
+            RegisterHitTarget(retake, false, false, default);
+        }
+
+        if (finish != null)
+        {
+            finish.onClick.AddListener(FinishToShelf);
+            RegisterHitTarget(finish, false, false, default);
+        }
+
+        if (takeBack != null)
+        {
+            takeBack.onClick.AddListener(TakeBackFromShelf);
+            RegisterHitTarget(takeBack, false, false, default);
+        }
+
+        if (delete != null)
+        {
+            delete.onClick.AddListener(ShowConfirmDelete);
+            RegisterHitTarget(delete, false, false, default);
+        }
+
+        if (done != null)
+        {
+            done.onClick.AddListener(LeaveShelfDone);
+            RegisterHitTarget(done, false, false, default);
+        }
+
+        if (cancelDelete != null)
+        {
+            cancelDelete.onClick.AddListener(ShowShelf);
+            RegisterHitTarget(cancelDelete, false, false, default);
+        }
+
+        if (confirmDelete != null)
+        {
+            confirmDelete.onClick.AddListener(ConfirmDeleteLantern);
+            RegisterHitTarget(confirmDelete, false, false, default);
+        }
+
+        HideReviewAndShelf();
+        RefreshSavedStatus();
+    }
+
+    private void BuildReviewAndShelf(RectTransform panelRect)
+    {
+        reviewGroup = new GameObject("Review", typeof(RectTransform));
+        reviewGroup.transform.SetParent(panelRect, false);
+        RectTransform reviewRect = reviewGroup.GetComponent<RectTransform>();
+        reviewRect.anchorMin = new Vector2(0f, 1f);
+        reviewRect.anchorMax = new Vector2(1f, 1f);
+        reviewRect.pivot = new Vector2(0.5f, 1f);
+        reviewRect.anchoredPosition = new Vector2(0f, -124f);
+        reviewRect.sizeDelta = new Vector2(-32f, 320f);
+
+        savedStatusText = CreateText(
+            "SavedStatus", reviewRect, new Vector2(0f, 8f),
+            new Vector2(PillWidth, 28f), "", 18f,
+            TextAlignmentOptions.Center, FontStyles.Bold);
+        savedStatusText.color = LanguagePageBuilder.Green;
+
+        Button save = CreateButton(
+            "Save", reviewRect, new Vector2(0f, -28f),
+            new Vector2(PillWidth, PillHeight), "SAVE", PillPink);
+        save.onClick.AddListener(SaveLanternReview);
+        RegisterHitTarget(save, false, false, default);
+
+        Button retake = CreateButton(
+            "Retake", reviewRect, new Vector2(0f, -100f),
+            new Vector2(PillWidth, PillHeight), "RETAKE", PillPink);
+        retake.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(retake, false, false, default);
+
+        Button finish = CreateButton(
+            "Finish", reviewRect, new Vector2(0f, -172f),
+            new Vector2(PillWidth, PillHeight), "FINISH", DonePink);
+        finish.onClick.AddListener(FinishToShelf);
+        RegisterHitTarget(finish, false, false, default);
+
+        shelfGroup = new GameObject("ShelfActions", typeof(RectTransform));
+        shelfGroup.transform.SetParent(panelRect, false);
+        RectTransform shelfRect = shelfGroup.GetComponent<RectTransform>();
+        shelfRect.anchorMin = new Vector2(0f, 1f);
+        shelfRect.anchorMax = new Vector2(1f, 1f);
+        shelfRect.pivot = new Vector2(0.5f, 1f);
+        shelfRect.anchoredPosition = new Vector2(0f, -124f);
+        shelfRect.sizeDelta = new Vector2(-32f, 250f);
+
+        Button takeBack = CreateButton(
+            "TakeBack", shelfRect, new Vector2(0f, 0f),
+            new Vector2(PillWidth, PillHeight), "TAKE BACK", PillPink);
+        takeBack.onClick.AddListener(TakeBackFromShelf);
+        RegisterHitTarget(takeBack, false, false, default);
+
+        Button delete = CreateButton(
+            "Delete", shelfRect, new Vector2(0f, -72f),
+            new Vector2(PillWidth, PillHeight), "DELETE", DonePink);
+        delete.onClick.AddListener(ShowConfirmDelete);
+        RegisterHitTarget(delete, false, false, default);
+
+        Button done = CreateButton(
+            "Done", shelfRect, new Vector2(0f, -144f),
+            new Vector2(PillWidth, PillHeight), "DONE", DonePink);
+        done.onClick.AddListener(LeaveShelfDone);
+        RegisterHitTarget(done, false, false, default);
+
+        confirmDeleteGroup = new GameObject("ConfirmDelete", typeof(RectTransform));
+        confirmDeleteGroup.transform.SetParent(panelRect, false);
+        RectTransform confirmRect = confirmDeleteGroup.GetComponent<RectTransform>();
+        confirmRect.anchorMin = new Vector2(0f, 1f);
+        confirmRect.anchorMax = new Vector2(1f, 1f);
+        confirmRect.pivot = new Vector2(0.5f, 1f);
+        confirmRect.anchoredPosition = new Vector2(0f, -124f);
+        confirmRect.sizeDelta = new Vector2(-32f, 170f);
+
+        Button cancelDelete = CreateButton(
+            "Cancel", confirmRect, new Vector2(0f, 0f),
+            new Vector2(PillWidth, PillHeight), "CANCEL", PillPink);
+        cancelDelete.onClick.AddListener(ShowShelf);
+        RegisterHitTarget(cancelDelete, false, false, default);
+
+        Button confirmDelete = CreateButton(
+            "Delete", confirmRect, new Vector2(0f, -72f),
+            new Vector2(PillWidth, PillHeight), "DELETE", DonePink);
+        confirmDelete.onClick.AddListener(ConfirmDeleteLantern);
+        RegisterHitTarget(confirmDelete, false, false, default);
+
+        HideReviewAndShelf();
+        RefreshSavedStatus();
+    }
+
+    private void HideReviewAndShelf()
+    {
+        if (reviewGroup != null)
+            reviewGroup.SetActive(false);
+        if (shelfGroup != null)
+            shelfGroup.SetActive(false);
+        if (confirmDeleteGroup != null)
+            confirmDeleteGroup.SetActive(false);
+    }
+
+    private void ShowReview()
+    {
+        if (!paletteAvailable || panel == null)
+            return;
+
+        RestoreSelectedPreview();
+        SetSculptControllersEnabled(false);
+        mode = ColorMode.Review;
+        SetPanelHeight(ReviewPanelHeight);
+        panel.SetActive(true);
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        if (mainActionGroup != null)
+            mainActionGroup.SetActive(false);
+        if (partGroup != null)
+            partGroup.SetActive(false);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
+        if (colorGroup != null)
+            colorGroup.SetActive(false);
+        if (confirmResetGroup != null)
+            confirmResetGroup.SetActive(false);
+        if (historyBar != null)
+            historyBar.SetActive(false);
+        HideReviewAndShelf();
+        if (reviewGroup != null)
+            reviewGroup.SetActive(true);
+        headerText.text = "REVIEW";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Save this lantern, go back, or put it on the shelf.";
+        SetTitleBurstsVisible(false);
+        SetHeaderBackVisible(true);
+        RefreshSavedStatus();
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void SaveLanternReview()
+    {
+        lanternSaved = true;
+        RefreshSavedStatus();
+        if (instructionText != null)
+            instructionText.text = "Lantern saved.";
+    }
+
+    private void RefreshSavedStatus()
+    {
+        if (savedStatusText == null)
+            return;
+
+        savedStatusText.text = lanternSaved ? "SAVED" : "";
+    }
+
+    private void FinishToShelf()
+    {
+        EnsureLanternShelf();
+        Transform lantern = ResolveLanternRoot();
+        if (lanternShelf == null || lantern == null || !lanternShelf.PlaceLantern(lantern))
+        {
+            if (instructionText != null)
+                instructionText.text = "The shelf is not ready yet.";
+            return;
+        }
+
+        ShowShelf();
+    }
+
+    private void ShowShelf()
+    {
+        if (!paletteAvailable || panel == null)
+            return;
+
+        SetSculptControllersEnabled(false);
+        mode = ColorMode.Shelf;
+        SetPanelHeight(ShelfPanelHeight);
+        panel.SetActive(true);
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        if (mainActionGroup != null)
+            mainActionGroup.SetActive(false);
+        if (partGroup != null)
+            partGroup.SetActive(false);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
+        if (colorGroup != null)
+            colorGroup.SetActive(false);
+        if (confirmResetGroup != null)
+            confirmResetGroup.SetActive(false);
+        if (historyBar != null)
+            historyBar.SetActive(false);
+        HideReviewAndShelf();
+        if (shelfGroup != null)
+            shelfGroup.SetActive(true);
+        headerText.text = "SHELF";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Take it back, delete it, or go back when you are done.";
+        SetTitleBurstsVisible(false);
+        SetHeaderBackVisible(true);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void TakeBackFromShelf()
+    {
+        EnsureLanternShelf();
+        if (lanternShelf != null)
+            lanternShelf.TakeBack();
+        ShowMainMenu();
+    }
+
+    private void LeaveShelfDone()
+    {
+        SetSculptControllersEnabled(false);
+        ShowSculptMode();
+        if (panel != null)
+            panel.SetActive(false);
+    }
+
+    private void ShowConfirmDelete()
+    {
+        mode = ColorMode.ConfirmDelete;
+        SetPanelHeight(ShelfPanelHeight);
+        if (shelfGroup != null)
+            shelfGroup.SetActive(false);
+        if (confirmDeleteGroup != null)
+            confirmDeleteGroup.SetActive(true);
+        headerText.text = "DELETE";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "This removes the lantern from the shelf.";
+        SetHeaderBackVisible(true);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void ConfirmDeleteLantern()
+    {
+        EnsureLanternShelf();
+        if (lanternShelf != null)
+            lanternShelf.DeleteLantern();
+        lanternSaved = false;
+        RefreshSavedStatus();
+        ShowSculptMode();
+        if (panel != null)
+            panel.SetActive(false);
+    }
+
+    private void EnsureLanternShelf()
+    {
+        if (lanternShelf != null)
+            return;
+
+        lanternShelf = FindFirstObjectByType<LanternShelfController>(FindObjectsInactive.Include);
+        if (lanternShelf != null)
+        {
+            lanternShelf.BindPieces();
+            return;
+        }
+
+        GameObject root = new GameObject(LanternShelfController.ShelfRootName);
+        lanternShelf = root.AddComponent<LanternShelfController>();
+        lanternShelf.BindPieces();
+    }
+
+    private Transform ResolveLanternRoot()
+    {
+        if (lanternRenderer == null)
+            return null;
+
+        Transform current = lanternRenderer.transform;
+        while (current != null)
+        {
+            string objectName = current.name;
+            if (objectName == "FinalLantern" ||
+                objectName == "TaiwanLantern_Test" ||
+                objectName == "Updatedlantern")
+                return current;
+            current = current.parent;
+        }
+
+        return lanternRenderer.transform;
     }
 
     private void BuildSelfieInterface(Transform parent)
@@ -948,6 +1329,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         colorGroup.SetActive(false);
         if (confirmResetGroup != null)
             confirmResetGroup.SetActive(false);
+        HideReviewAndShelf();
         if (historyBar != null)
             historyBar.SetActive(true);
         headerText.text = "COLOR PALETTE";
@@ -982,6 +1364,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             selfiePanel.SetActive(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
+        HideReviewAndShelf();
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -1009,6 +1392,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         colorGroup.SetActive(false);
         if (confirmResetGroup != null)
             confirmResetGroup.SetActive(false);
+        HideReviewAndShelf();
         if (historyBar != null)
             historyBar.SetActive(true);
         if (selfieEntryButton != null)
@@ -1063,6 +1447,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
 
         variantGroup.SetActive(true);
+        HideReviewAndShelf();
         SetTitleBurstsVisible(false);
         if (bodyActionGroup != null)
             bodyActionGroup.SetActive(false);
@@ -1403,6 +1788,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             bodyActionGroup.SetActive(false);
         if (designGroup != null)
             designGroup.SetActive(false);
+        HideReviewAndShelf();
         colorGroup.SetActive(true);
         SetTitleBurstsVisible(false);
         if (selfieEntryButton != null)
@@ -2170,6 +2556,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
         }
 
+        if (confirmDeleteGroup != null && confirmDeleteGroup.activeSelf)
+        {
+            ShowShelf();
+            return;
+        }
+
         if (mode == ColorMode.SelectColor)
         {
             if (colorBackToDesigns)
@@ -2192,6 +2584,18 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         else if (mode == ColorMode.SelectPart)
         {
             ShowMainMenu();
+        }
+        else if (mode == ColorMode.Review)
+        {
+            ShowMainMenu();
+        }
+        else if (mode == ColorMode.ConfirmDelete)
+        {
+            ShowShelf();
+        }
+        else if (mode == ColorMode.Shelf)
+        {
+            LeaveShelfDone();
         }
     }
 
@@ -2428,6 +2832,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     {
         if (mode == ColorMode.Sculpt)
             return;
+
+        if (mode == ColorMode.Review ||
+            mode == ColorMode.Shelf ||
+            mode == ColorMode.ConfirmDelete)
+        {
+            SetSculptControllersEnabled(false);
+            return;
+        }
 
         bool allowSculpt = !overUi &&
             (mode == ColorMode.MainMenu ||
@@ -3098,7 +3510,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         string label,
         Color color)
     {
-        bool isDone = objectName == "Done" || objectName == "Reset";
+        bool isDone = objectName == "Done" || objectName == "Reset" ||
+            objectName == "Finish" || objectName == "Delete";
         bool isChangeColor = objectName == "ChangeColor" || objectName == "NextColors";
         bool isSwatch = string.IsNullOrEmpty(label) || objectName.StartsWith("Color");
         Color fillColor = isSwatch
@@ -3422,6 +3835,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (designGroup != null)
             designGroup.SetActive(false);
         colorGroup.SetActive(false);
+        HideReviewAndShelf();
         if (bodyActionGroup != null)
             bodyActionGroup.SetActive(true);
         if (selfieEntryButton != null)
@@ -3453,6 +3867,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (bodyActionGroup != null)
             bodyActionGroup.SetActive(false);
         colorGroup.SetActive(false);
+        HideReviewAndShelf();
         if (designGroup != null)
             designGroup.SetActive(true);
         if (selfieEntryButton != null)
@@ -3957,6 +4372,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             designGroup.SetActive(false);
         if (colorGroup != null)
             colorGroup.SetActive(false);
+        HideReviewAndShelf();
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(true);
         headerText.text = "RESET";

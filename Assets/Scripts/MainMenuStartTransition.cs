@@ -10,6 +10,8 @@ public class MainMenuStartTransition : MonoBehaviour
     [Tooltip("Camera that moves. Falls back to Camera.main.")]
     [SerializeField] private Camera viewCamera;
 
+    public Camera ViewCamera => viewCamera;
+
     [Header("Gameplay UI")]
     [Tooltip("Gameplay UI that appears after the START camera transition finishes.")]
     [SerializeField] private GameObject gameplayUI;

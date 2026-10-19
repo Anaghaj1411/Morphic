@@ -88,13 +88,23 @@ public static class SculptingEnhancementColorUIBuilder
             ? canvas.transform.Find("SculptingEnhancementColorUI")
             : null;
         return uiRoot != null &&
-               uiRoot.Find("LanternColorPanel/MorphicHistoryV1") != null &&
+               uiRoot.Find("LanternColorPanel/MorphicShelfDoneV1") != null &&
                uiRoot.Find("LanternColorPanel/HistoryBar/Undo") != null &&
                uiRoot.Find("LanternColorPanel/HistoryBar/Reset") != null &&
                uiRoot.Find("LanternColorPanel/ConfirmReset/Cancel") != null &&
                uiRoot.Find("LanternColorPanel/ConfirmReset/Reset") != null &&
                uiRoot.Find("LanternColorPanel/MainActions/SelectPart") != null &&
                uiRoot.Find("LanternColorPanel/MainActions/ChangeColor") != null &&
+               uiRoot.Find("LanternColorPanel/MainActions/Finish") != null &&
+               uiRoot.Find("LanternColorPanel/Review/Save") != null &&
+               uiRoot.Find("LanternColorPanel/Review/Retake") != null &&
+               uiRoot.Find("LanternColorPanel/Review/Finish") != null &&
+               uiRoot.Find("LanternColorPanel/Review/SavedStatus") != null &&
+               uiRoot.Find("LanternColorPanel/ShelfActions/TakeBack") != null &&
+               uiRoot.Find("LanternColorPanel/ShelfActions/Delete") != null &&
+               uiRoot.Find("LanternColorPanel/ShelfActions/Done") != null &&
+               uiRoot.Find("LanternColorPanel/ConfirmDelete/Cancel") != null &&
+               uiRoot.Find("LanternColorPanel/ConfirmDelete/Delete") != null &&
                uiRoot.Find("SelfieEntry") != null &&
                uiRoot.Find("LanternColorPanel/PartSelection/Part4") != null &&
                uiRoot.Find("LanternColorPanel/PartSelection/Done") != null &&
