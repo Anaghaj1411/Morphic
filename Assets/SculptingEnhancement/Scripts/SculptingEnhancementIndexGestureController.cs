@@ -81,6 +81,7 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
     private float fistSmoothedX;
     private float fistAngleVelocity;
     private float fistLostTimer;
+    public bool suppressDriving;
 
     private void Awake()
     {
@@ -139,7 +140,7 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
 
     private void Update()
     {
-        if (handRunner == null || lanternRenderer == null)
+        if (suppressDriving || handRunner == null || lanternRenderer == null)
             return;
 
 
@@ -228,9 +229,21 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (suppressDriving)
+            return;
+
         // The student's original controller also writes BlendShapes in
         // LateUpdate. This component executes later and owns only Width/Height.
         ApplyWeights();
+    }
+
+    public void ResetAfterTutorial()
+    {
+        EndFistRotation();
+        fistAppliedAngle = 0f;
+        fistTargetAngle = 0f;
+        fistAngleVelocity = 0f;
+        ReadCurrentWeights();
     }
 
     private void FindBlendShapes()

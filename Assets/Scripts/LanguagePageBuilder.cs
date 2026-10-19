@@ -311,16 +311,6 @@ public static class LanguagePageBuilder
         else
             back.color = Pink;
 
-        // #region agent log
-        MorphicBackButton.AgentLog(
-            "D",
-            "LanguagePageBuilder.BuildBackButton",
-            "Language back placed",
-            "{\"parent\":\"" + parent.name +
-            "\",\"x\":" + rt.anchoredPosition.x +
-            ",\"y\":" + rt.anchoredPosition.y + "}");
-        // #endregion
-
         Button uiButton =
             back.gameObject.AddComponent<Button>();
 

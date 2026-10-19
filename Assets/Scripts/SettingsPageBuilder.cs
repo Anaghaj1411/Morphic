@@ -474,16 +474,6 @@ public static class SettingsPageBuilder
         else
             back.color = LanguagePageBuilder.Pink;
 
-        // #region agent log
-        MorphicBackButton.AgentLog(
-            "D",
-            "SettingsPageBuilder.BuildBackButton",
-            "Settings back placed",
-            "{\"parent\":\"" + parent.name +
-            "\",\"x\":" + rt.anchoredPosition.x +
-            ",\"y\":" + rt.anchoredPosition.y + "}");
-        // #endregion
-
         Button button = back.gameObject.AddComponent<Button>();
         button.targetGraphic = back;
         button.colors = LanguagePageBuilder.ButtonColors();

@@ -703,12 +703,10 @@ public class DialogueManager : MonoBehaviour
                     FindObjectsInactive.Include);
         }
 
-        if (lanternColorController != null)
-        {
-            bool supportsColorPalette =
-                culture == "Taiwan" || culture == "India";
+        bool supportsColorPalette =
+            culture == "Taiwan" || culture == "India";
+        if (lanternColorController != null && culture != "Taiwan")
             lanternColorController.SetPaletteAvailable(supportsColorPalette);
-        }
 
         if (dialoguePanel != null)
             dialoguePanel.SetActive(false);
@@ -836,6 +834,14 @@ public class DialogueManager : MonoBehaviour
                 {
                     StartCoroutine(CheckHandDetection(handRunner));
                 }
+
+                if (lanternColorController != null)
+                {
+                    lanternColorController.SetTutorialSculptLock(true);
+                    lanternColorController.SetPaletteAvailable(false);
+                }
+                SetLanternSculptDriving(false);
+                StartLanternGestureTutorial();
 
                 break;
 
@@ -986,5 +992,59 @@ public class DialogueManager : MonoBehaviour
         }
 
         Debug.Log("MORPHIC: Hand detection check complete.");
+    }
+
+    private void StartLanternGestureTutorial()
+    {
+        SculptingGestureTutorial tutorial =
+            GetComponent<SculptingGestureTutorial>();
+        if (tutorial == null)
+            tutorial = gameObject.AddComponent<SculptingGestureTutorial>();
+
+        TaiwanLanternGestureController lanternGestures =
+            taiwanGestureController != null
+                ? taiwanGestureController.GetComponentInChildren<TaiwanLanternGestureController>(true)
+                : FindFirstObjectByType<TaiwanLanternGestureController>(
+                    FindObjectsInactive.Include);
+
+        tutorial.Begin(lanternGestures, FinishLanternGestureTutorial);
+    }
+
+    private void FinishLanternGestureTutorial()
+    {
+        SculptingEnhancementIndexGestureController index =
+            FindFirstObjectByType<SculptingEnhancementIndexGestureController>(
+                FindObjectsInactive.Include);
+        if (index != null)
+            index.ResetAfterTutorial();
+
+        if (lanternColorController != null)
+            lanternColorController.SetTutorialSculptLock(false);
+        SetLanternSculptDriving(true);
+        if (lanternColorController != null)
+            lanternColorController.SetPaletteAvailable(true);
+    }
+
+    private void SetLanternSculptDriving(bool enabled)
+    {
+        TaiwanLanternGestureController original =
+            taiwanGestureController != null
+                ? taiwanGestureController.GetComponentInChildren<TaiwanLanternGestureController>(true)
+                : FindFirstObjectByType<TaiwanLanternGestureController>(
+                    FindObjectsInactive.Include);
+        if (original != null)
+        {
+            original.suppressDriving = !enabled;
+            original.enabled = true;
+        }
+
+        SculptingEnhancementIndexGestureController index =
+            FindFirstObjectByType<SculptingEnhancementIndexGestureController>(
+                FindObjectsInactive.Include);
+        if (index != null)
+        {
+            index.suppressDriving = !enabled;
+            index.enabled = true;
+        }
     }
 }

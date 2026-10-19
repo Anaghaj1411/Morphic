@@ -108,7 +108,11 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private Image progressAccentStripe;
     private bool showProgressCard;
     private bool deformationLocked;
+
+    public bool IsDeformationLocked => deformationLocked;
     private bool rightPinchHeld;
+    private bool practiceRightPinchHeld;
+    private bool practiceLeftPinchHeld;
     private bool leftPinchHeld;
     private float rightPinchTimer;
     private float leftPinchTimer;
@@ -125,6 +129,11 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private float tasselStartY;
     private float tasselStart;
     private bool madeDeformation;
+    public bool suppressDriving;
+    private float[] restBlendWeights;
+    private Quaternion restLocalRotation;
+    private float restCommittedTopper;
+    private float restCommittedBottom;
     private bool topPopUsesRectangle;
     private bool bottomPopUsesRectangle;
     private bool tasselUsesTriple;
@@ -209,6 +218,9 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
     private void Update()
     {
+        if (suppressDriving)
+            return;
+
         if (Input.GetKeyDown(KeyCode.T))
             current[PopTop] = current[PopTop] > 50f ? 0f : 100f;
         if (Input.GetKeyDown(KeyCode.B))
@@ -361,9 +373,118 @@ public class TaiwanLanternGestureController : MonoBehaviour
         SyncCurrentFromRenderer();
     }
 
+    public void CaptureRestState()
+    {
+        if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
+            return;
+
+        restLocalRotation = lanternRenderer.transform.localRotation;
+        restCommittedTopper = committedTopper;
+        restCommittedBottom = committedBottom;
+        Mesh mesh = lanternRenderer.sharedMesh;
+        restBlendWeights = new float[mesh.blendShapeCount];
+        for (int i = 0; i < restBlendWeights.Length; i++)
+            restBlendWeights[i] = lanternRenderer.GetBlendShapeWeight(i);
+    }
+
+    public void RestoreRestState()
+    {
+        if (lanternRenderer == null || restBlendWeights == null)
+            return;
+
+        lanternRenderer.transform.localRotation = restLocalRotation;
+        for (int i = 0; i < restBlendWeights.Length; i++)
+            lanternRenderer.SetBlendShapeWeight(i, restBlendWeights[i]);
+
+        committedTopper = restCommittedTopper;
+        committedBottom = restCommittedBottom;
+        SyncCurrentFromRenderer();
+        widthHeightArmed = false;
+        bambooArmed = false;
+        tasselArmed = false;
+        rightVArmed = false;
+        leftVArmed = false;
+        madeDeformation = false;
+        deformationLocked = false;
+        topperLiveThisFrame = false;
+        bottomLiveThisFrame = false;
+    }
+
+    public enum PracticeGesture
+    {
+        None,
+        TwoIndex,
+        TwoFists,
+        RightPinch,
+        LeftPinch,
+        RightV,
+        LeftV,
+        SingleFist,
+        TwoV,
+        OpenPalm
+    }
+
+    public PracticeGesture ReadPracticeGesture()
+    {
+        if (handRunner == null)
+            return PracticeGesture.None;
+
+        bool hasTwo = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first, out SculptHandFrame second);
+        if (!hasTwo && !handRunner.TryGetLatestHand(out first))
+            return PracticeGesture.None;
+        if (!hasTwo)
+            second = default;
+
+        bool twoV = hasTwo && IsVSign(first) && IsVSign(second);
+        bool twoFists = !twoV && hasTwo && LooksLikeFist(first) && LooksLikeFist(second);
+        bool foundRightV = TryGetHandV(first, second, hasTwo, true, out _);
+        bool foundLeftV = TryGetHandV(first, second, hasTwo, false, out _);
+        bool twoIndex = !twoV && !foundLeftV && !foundRightV && hasTwo &&
+                        IsIndexPointing(first) && IsIndexPointing(second);
+
+        bool rightPinch = false;
+        bool leftPinch = false;
+        bool firstRight = IsPhysicalRightHand(first, second, hasTwo);
+        if (firstRight)
+            rightPinch = IsPinching(first, true, ref practiceRightPinchHeld);
+        else
+            leftPinch = IsPinching(first, false, ref practiceLeftPinchHeld);
+        if (hasTwo)
+        {
+            bool secondRight = IsPhysicalRightHand(second, first, true);
+            if (secondRight)
+                rightPinch = rightPinch || IsPinching(second, true, ref practiceRightPinchHeld);
+            else
+                leftPinch = leftPinch || IsPinching(second, false, ref practiceLeftPinchHeld);
+        }
+
+        if (twoV)
+            return PracticeGesture.TwoV;
+        if (twoIndex)
+            return PracticeGesture.TwoIndex;
+        if (twoFists)
+            return PracticeGesture.TwoFists;
+        if (rightPinch)
+            return PracticeGesture.RightPinch;
+        if (leftPinch)
+            return PracticeGesture.LeftPinch;
+        if (foundRightV && !twoV)
+            return PracticeGesture.RightV;
+        if (foundLeftV && !twoV)
+            return PracticeGesture.LeftV;
+        if (LooksLikeFist(first) && (!hasTwo || !LooksLikeFist(second)))
+            return PracticeGesture.SingleFist;
+        if (hasTwo && LooksLikeFist(second) && !LooksLikeFist(first))
+            return PracticeGesture.SingleFist;
+        if (CountOpenPalms(first, second, hasTwo) >= 1)
+            return PracticeGesture.OpenPalm;
+        return PracticeGesture.None;
+    }
+
     private void LateUpdate()
     {
-        if (lanternRenderer == null)
+        if (suppressDriving || lanternRenderer == null)
             return;
 
         if (ownWidthHeight)

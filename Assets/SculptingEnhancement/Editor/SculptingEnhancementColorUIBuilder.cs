@@ -88,7 +88,11 @@ public static class SculptingEnhancementColorUIBuilder
             ? canvas.transform.Find("SculptingEnhancementColorUI")
             : null;
         return uiRoot != null &&
-               uiRoot.Find("LanternColorPanel/CenteredCompactLayoutV8") != null &&
+               uiRoot.Find("LanternColorPanel/MorphicHistoryV1") != null &&
+               uiRoot.Find("LanternColorPanel/HistoryBar/Undo") != null &&
+               uiRoot.Find("LanternColorPanel/HistoryBar/Reset") != null &&
+               uiRoot.Find("LanternColorPanel/ConfirmReset/Cancel") != null &&
+               uiRoot.Find("LanternColorPanel/ConfirmReset/Reset") != null &&
                uiRoot.Find("LanternColorPanel/MainActions/SelectPart") != null &&
                uiRoot.Find("LanternColorPanel/MainActions/ChangeColor") != null &&
                uiRoot.Find("SelfieEntry") != null &&

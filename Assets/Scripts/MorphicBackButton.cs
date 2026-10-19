@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -33,13 +32,6 @@ public static class MorphicBackButton
         }
 #endif
         cachedSprite = sprite;
-        // #region agent log
-        AgentLog(
-            "A",
-            "MorphicBackButton.LoadSprite",
-            "Loaded back sprite",
-            "{\"found\":" + (sprite != null ? "true" : "false") + "}");
-        // #endregion
         return sprite;
     }
 
@@ -69,31 +61,4 @@ public static class MorphicBackButton
         image.type = Image.Type.Simple;
         image.raycastTarget = true;
     }
-
-    // #region agent log
-    public static void AgentLog(
-        string hypothesisId,
-        string location,
-        string message,
-        string dataJson)
-    {
-        try
-        {
-            long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            string path = System.IO.Path.Combine(
-                System.IO.Directory.GetParent(Application.dataPath).FullName,
-                "debug-9395c5.log");
-            System.IO.File.AppendAllText(
-                path,
-                "{\"sessionId\":\"9395c5\",\"hypothesisId\":\"" + hypothesisId +
-                "\",\"location\":\"" + location +
-                "\",\"message\":\"" + message +
-                "\",\"data\":" + dataJson +
-                ",\"timestamp\":" + timestamp + "}\n");
-        }
-        catch
-        {
-        }
-    }
-    // #endregion
 }
