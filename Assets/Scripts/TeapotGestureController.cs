@@ -32,6 +32,7 @@ public sealed class TeapotGestureController : MonoBehaviour
     [SerializeField, Min(1f)] private float widthSensitivity = 360f;
     [SerializeField, Min(1f)] private float heightSensitivity = 550f;
     [SerializeField, Min(1f)] private float middleSensitivity = 360f;
+    [SerializeField, Range(0f, 100f)] private float middleMaximumWeight = 35.4f;
     [SerializeField, Min(1f)] private float smoothing = 24f;
     [SerializeField, Range(0f, 0.03f)] private float movementDeadZone = 0.002f;
     [SerializeField, Range(1f, 2.5f)] private float exclusiveAxisRatio = 1.2f;
@@ -39,6 +40,13 @@ public sealed class TeapotGestureController : MonoBehaviour
     [SerializeField, Range(0.8f, 1.8f)] private float minimumIndexTipExtension = 1.08f;
     [SerializeField, Range(0.5f, 2f)] private float maximumOtherFingerExtension = 1.45f;
     [SerializeField, Range(0.2f, 0.8f)] private float minimumThumbIndexSeparation = 0.42f;
+
+    [Header("Pinch Up Attachments")]
+    [SerializeField, Range(0.1f, 1.2f)] private float pinchThreshold = 0.72f;
+    [SerializeField, Range(0.2f, 1.5f)] private float pinchReleaseThreshold = 0.95f;
+    [SerializeField, Min(1f)] private float leftPinchBoost = 1.35f;
+    [SerializeField, Min(1f)] private float pinchLiftSensitivity = 920f;
+    [SerializeField, Min(1f)] private float pinchEase = 28f;
 
     private readonly Dictionary<string, int> blendShapeIndices =
         new Dictionary<string, int>();
@@ -54,6 +62,14 @@ public sealed class TeapotGestureController : MonoBehaviour
     private float widthHeightStart;
     private float middleBaseline;
     private float middleStart;
+    private bool rightPinchHeld;
+    private bool leftPinchHeld;
+    private bool rightPinchArmed;
+    private bool leftPinchArmed;
+    private float rightPinchStartY;
+    private float leftPinchStartY;
+    private float rightPinchStartWeight;
+    private float leftPinchStartWeight;
     private int lockedWidthHeightAxis;
     private GestureMode currentGesture;
 
@@ -61,7 +77,8 @@ public sealed class TeapotGestureController : MonoBehaviour
     {
         None,
         WidthHeight,
-        Middle
+        Middle,
+        PinchUp
     }
 
     public SculptHandLandmarkerRunner HandRunner => handRunner;
@@ -89,6 +106,8 @@ public sealed class TeapotGestureController : MonoBehaviour
 
         ResolveBlendShapes();
         ReadBodyWeights();
+        middle = targetMiddle = Mathf.Clamp(middle, 0f, middleMaximumWeight);
+        SetBlendShapeWeight("Middle", middle);
     }
 
     private void OnEnable()
@@ -102,6 +121,7 @@ public sealed class TeapotGestureController : MonoBehaviour
         if (gestureStatus != null)
             gestureStatus.gameObject.SetActive(false);
 
+        ResetPinchTracking();
         currentGesture = GestureMode.None;
         lockedWidthHeightAxis = 0;
     }
@@ -115,22 +135,26 @@ public sealed class TeapotGestureController : MonoBehaviour
             out SculptHandFrame first,
             out SculptHandFrame second);
 
-        if (!hasTwoHands)
+        bool hasAnyHand = hasTwoHands || handRunner.TryGetLatestHand(out first);
+        if (!hasAnyHand)
         {
+            ResetPinchTracking();
             EndGesture("TEAPOT: NO HANDS");
             return;
         }
 
-        if (IsIndexPointing(first) && IsIndexPointing(second))
+        if (hasTwoHands && IsIndexPointing(first) && IsIndexPointing(second))
         {
+            ResetPinchTracking();
             if (currentGesture != GestureMode.WidthHeight)
                 BeginWidthHeight(first, second);
 
             DriveWidthHeight(first, second);
             SetStatus("TEAPOT: WIDTH / HEIGHT");
         }
-        else if (IsVSign(first) && IsVSign(second))
+        else if (hasTwoHands && IsVSign(first) && IsVSign(second))
         {
+            ResetPinchTracking();
             if (currentGesture != GestureMode.Middle)
                 BeginMiddle(first, second);
 
@@ -139,7 +163,33 @@ public sealed class TeapotGestureController : MonoBehaviour
         }
         else
         {
-            EndGesture("TEAPOT: READY");
+            currentGesture = GestureMode.PinchUp;
+            bool lidPinching = false;
+            bool shaftPinching = false;
+
+            bool firstIsRight = IsPhysicalRightHand(first, second, hasTwoHands);
+            if (firstIsRight)
+                lidPinching |= DrivePinchUp(first, true);
+            else
+                shaftPinching |= DrivePinchUp(first, false);
+
+            if (hasTwoHands)
+            {
+                bool secondIsRight = IsPhysicalRightHand(second, first, true);
+                if (secondIsRight)
+                    lidPinching |= DrivePinchUp(second, true);
+                else
+                    shaftPinching |= DrivePinchUp(second, false);
+            }
+
+            if (lidPinching && shaftPinching)
+                SetStatus("TEAPOT: LID 1 + SHAFT 1");
+            else if (lidPinching)
+                SetStatus("TEAPOT: LID 1");
+            else if (shaftPinching)
+                SetStatus("TEAPOT: SHAFT 1");
+            else
+                EndGesture("TEAPOT: READY");
         }
 
         float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
@@ -173,7 +223,8 @@ public sealed class TeapotGestureController : MonoBehaviour
             return false;
         }
 
-        teapotRenderer.SetBlendShapeWeight(index, Mathf.Clamp(weight, 0f, 100f));
+        float maximum = exactName == "Middle" ? middleMaximumWeight : 100f;
+        teapotRenderer.SetBlendShapeWeight(index, Mathf.Clamp(weight, 0f, maximum));
         return true;
     }
 
@@ -301,7 +352,149 @@ public sealed class TeapotGestureController : MonoBehaviour
         targetMiddle = Mathf.Clamp(
             middleStart + ApplyDeadZone(spreadChange) * middleSensitivity,
             0f,
-            100f);
+            middleMaximumWeight);
+    }
+
+    private bool DrivePinchUp(SculptHandFrame hand, bool physicalRight)
+    {
+        ref bool held = ref (physicalRight ? ref rightPinchHeld : ref leftPinchHeld);
+        ref bool armed = ref (physicalRight ? ref rightPinchArmed : ref leftPinchArmed);
+        ref float startY = ref (physicalRight ? ref rightPinchStartY : ref leftPinchStartY);
+        ref float startWeight = ref (physicalRight ? ref rightPinchStartWeight : ref leftPinchStartWeight);
+        string shapeName = physicalRight ? "Lid 1" : "Shaft 1";
+
+        if (!IsPinching(hand, physicalRight, ref held) ||
+            !blendShapeIndices.TryGetValue(shapeName, out int index))
+        {
+            armed = false;
+            return false;
+        }
+
+        if (!armed)
+        {
+            armed = true;
+            startY = PinchHeight(hand);
+            startWeight = teapotRenderer.GetBlendShapeWeight(index);
+        }
+
+        float upwardLift = Mathf.Max(0f, PinchHeight(hand) - startY);
+        float target = Mathf.Clamp(startWeight + upwardLift * pinchLiftSensitivity, 0f, 100f);
+        float currentWeight = teapotRenderer.GetBlendShapeWeight(index);
+        target = Mathf.Max(target, currentWeight);
+        float blend = 1f - Mathf.Exp(-pinchEase * Time.deltaTime);
+        SetBlendShapeWeight(shapeName, Mathf.Lerp(currentWeight, target, blend));
+        return true;
+    }
+
+    private bool IsPinching(SculptHandFrame hand, bool physicalRight, ref bool held)
+    {
+        if (IsOpenPalm(hand) || IsIndexPointing(hand) || LooksLikeFist(hand) || IsVSign(hand))
+        {
+            held = false;
+            return false;
+        }
+
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        float thumbIndex = hand.PinchDistance / palm;
+        float thumbMiddle = Vector2.Distance(
+            new Vector2(hand.ThumbTip.x, hand.ThumbTip.y),
+            new Vector2(hand.MiddleTip.x, hand.MiddleTip.y)) / palm;
+        float start = pinchThreshold;
+        float release = Mathf.Max(pinchReleaseThreshold, pinchThreshold + 0.12f);
+        if (!physicalRight)
+        {
+            start *= leftPinchBoost;
+            release *= leftPinchBoost;
+        }
+
+        if (!held && thumbIndex > thumbMiddle + 0.04f)
+            return false;
+
+        held = held ? thumbIndex < release : thumbIndex < start;
+        return held;
+    }
+
+    private bool IsOpenPalm(SculptHandFrame hand)
+    {
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        return hand.PinchDistance >= palm * 0.55f &&
+               hand.FingerCurlRatio >= 1.45f &&
+               hand.OtherFingersCurlRatio >= 1.33f &&
+               hand.IndexTipPalmRatio >= 1.05f &&
+               !IsIndexPointing(hand);
+    }
+
+    private static bool LooksLikeFist(SculptHandFrame hand)
+    {
+        return FingersClosed(hand, 1.12f, 1.02f) && !HasExtendedThumb(hand);
+    }
+
+    private static bool FingersClosed(
+        SculptHandFrame hand,
+        float maximumCurl,
+        float maximumIndex)
+    {
+        return hand.FingerCurlRatio <= maximumCurl &&
+               hand.IndexTipPalmRatio <= maximumIndex &&
+               hand.OtherFingersCurlRatio <= maximumCurl;
+    }
+
+    private static bool HasExtendedThumb(SculptHandFrame hand)
+    {
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        Vector2 thumb = new Vector2(
+            hand.ThumbTip.x - hand.ThumbMcp.x,
+            hand.ThumbTip.y - hand.ThumbMcp.y);
+        float thumbToPalm = Vector2.Distance(
+            new Vector2(hand.ThumbTip.x, hand.ThumbTip.y),
+            new Vector2(hand.PalmCenter.x, hand.PalmCenter.y)) / palm;
+        return thumbToPalm >= 1.32f &&
+               thumb.magnitude >= palm * 0.32f &&
+               hand.PinchDistance >= palm * 0.52f &&
+               TipDistance(hand.ThumbTip, hand.IndexTip) / palm >= 0.55f &&
+               TipDistance(hand.ThumbTip, hand.MiddleTip) / palm >= 0.50f &&
+               !ThumbAgainstFingers(hand);
+    }
+
+    private static bool ThumbAgainstFingers(SculptHandFrame hand)
+    {
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        return TipDistance(hand.ThumbTip, hand.IndexTip) / palm < 0.52f ||
+               TipDistance(hand.ThumbTip, hand.MiddleTip) / palm < 0.50f;
+    }
+
+    private static float TipDistance(Vector3 first, Vector3 second)
+    {
+        return Vector2.Distance(
+            new Vector2(first.x, first.y),
+            new Vector2(second.x, second.y));
+    }
+
+    private bool IsPhysicalRightHand(
+        SculptHandFrame hand,
+        SculptHandFrame other,
+        bool hasTwoHands)
+    {
+        if (hand.HasHandedness)
+            return !hand.IsRightHand;
+
+        if (hasTwoHands)
+            return hand.PalmCenter.x >= other.PalmCenter.x;
+
+        return hand.PalmCenter.x >= 0.5f;
+    }
+
+    private static float PinchHeight(SculptHandFrame hand)
+    {
+        return (hand.ThumbTip.y + hand.IndexTip.y) * 0.5f;
+    }
+
+    private void ResetPinchTracking()
+    {
+        rightPinchHeld = false;
+        leftPinchHeld = false;
+        rightPinchArmed = false;
+        leftPinchArmed = false;
     }
 
     private void EndGesture(string status)
