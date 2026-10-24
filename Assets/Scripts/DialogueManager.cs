@@ -55,7 +55,7 @@ public class DialogueManager : MonoBehaviour
     [SerializeField] private Transform taiwanLanternSpawnPoint;
 
     [Header("India Teapot")]
-    [Tooltip("Teapot_test scene instance to show when India sculpting starts.")]
+    [Tooltip("Teapot_Updated scene instance to show when India sculpting starts.")]
     [SerializeField] private GameObject indiaTeapot;
 
     [Header("Taiwan Hand Tracking")]
@@ -78,10 +78,18 @@ public class DialogueManager : MonoBehaviour
     private Coroutine dialogueCoroutine;
     private bool dialogueStarted;
     private SculptingEnhancementLanternColorController lanternColorController;
+    private MorphicAIHelpUI aiHelpUi;
 
     private void Awake()
     {
         FindMissingReferences();
+        StyleDialogueUi();
+
+        // The Teapot gesture label is a scene UI element, so hide it on the
+        // main menu even if it is not parented under the inactive Teapot.
+        GameObject teapotGestureStatus = FindSceneObject("Teapot Gesture Status");
+        if (teapotGestureStatus != null)
+            teapotGestureStatus.SetActive(false);
 
         lanternColorController =
             FindFirstObjectByType<SculptingEnhancementLanternColorController>(
@@ -89,10 +97,21 @@ public class DialogueManager : MonoBehaviour
         if (lanternColorController != null)
             lanternColorController.SetPaletteAvailable(false);
 
+        aiHelpUi = FindFirstObjectByType<MorphicAIHelpUI>(FindObjectsInactive.Include);
+        if (aiHelpUi == null)
+            aiHelpUi = gameObject.AddComponent<MorphicAIHelpUI>();
+        aiHelpUi.SetVisible(false);
+
         // The teapot is placed in the scene like the lantern, but stays hidden
         // until the user chooses India and presses Start Sculpting.
         if (indiaTeapot == null)
-            indiaTeapot = FindSceneObject("Teapot_test");
+        {
+            indiaTeapot = FindSceneObject("Teapot_Updated");
+            // Keep compatibility with older scene copies that still use the
+            // temporary name from the initial Teapot setup.
+            if (indiaTeapot == null)
+                indiaTeapot = FindSceneObject("Teapot_test");
+        }
 
         if (indiaTeapot != null)
             indiaTeapot.SetActive(false);
@@ -381,6 +400,167 @@ public class DialogueManager : MonoBehaviour
 
         if (dialogueText != null)
             dialogueText.text = message;
+    }
+
+    private void StyleDialogueUi()
+    {
+        if (dialoguePanel == null)
+            return;
+
+        RectTransform panelRect = dialoguePanel.transform as RectTransform;
+        RectTransform canvasRect = dialoguePanel.transform.parent as RectTransform;
+        if (panelRect != null)
+        {
+            float availableWidth = canvasRect != null && canvasRect.rect.width > 0f
+                ? canvasRect.rect.width - 80f
+                : 1320f;
+
+            panelRect.anchorMin = new Vector2(0.5f, 0f);
+            panelRect.anchorMax = new Vector2(0.5f, 0f);
+            panelRect.pivot = new Vector2(0.5f, 0f);
+            panelRect.anchoredPosition = new Vector2(0f, 30f);
+            panelRect.sizeDelta = new Vector2(
+                Mathf.Min(1320f, Mathf.Max(320f, availableWidth)),
+                310f);
+        }
+
+        Image panelImage = dialoguePanel.GetComponent<Image>();
+        if (panelImage != null)
+            panelImage.color = new Color32(255, 246, 220, 250);
+
+        Outline panelOutline = dialoguePanel.GetComponent<Outline>();
+        if (panelOutline != null)
+        {
+            panelOutline.effectColor = new Color32(42, 83, 49, 235);
+            panelOutline.effectDistance = new Vector2(2f, -3f);
+        }
+
+        Shadow panelShadow = dialoguePanel.GetComponent<Shadow>();
+        if (panelShadow == null)
+            panelShadow = dialoguePanel.AddComponent<Shadow>();
+        panelShadow.effectColor = new Color(0.08f, 0.12f, 0.08f, 0.24f);
+        panelShadow.effectDistance = new Vector2(0f, -7f);
+        panelShadow.useGraphicAlpha = true;
+
+        StyleDialogueText(speakerName, 23f, 18f, 26f, false);
+        StyleDialogueText(dialogueText, 21f, 17f, 24f, true);
+
+        if (speakerName != null)
+        {
+            speakerName.color = new Color32(42, 83, 49, 255);
+            speakerName.fontStyle = FontStyles.Bold;
+            speakerName.alignment = TextAlignmentOptions.MidlineLeft;
+            SetTextRect(speakerName.rectTransform,
+                new Vector2(36f, -20f), new Vector2(280f, 40f),
+                new Vector2(0f, 1f), new Vector2(0f, 1f),
+                new Vector2(0f, 1f));
+        }
+
+        if (dialogueText != null)
+        {
+            dialogueText.color = new Color32(48, 48, 39, 255);
+            dialogueText.alignment = TextAlignmentOptions.TopLeft;
+            SetTextRect(dialogueText.rectTransform,
+                Vector2.zero, Vector2.zero,
+                Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
+            dialogueText.rectTransform.offsetMin = new Vector2(38f, 112f);
+            dialogueText.rectTransform.offsetMax = new Vector2(-38f, -72f);
+        }
+
+        Button[] choices = { choice1Button, choice2Button, choice3Button, choice4Button };
+        for (int i = 0; i < choices.Length; i++)
+        {
+            Button button = choices[i];
+            if (button == null)
+                continue;
+
+            TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
+            StyleDialogueText(label, 20f, 15f, 22f, true);
+            if (label != null)
+            {
+                label.color = new Color32(45, 67, 49, 255);
+                label.fontStyle = FontStyles.Bold;
+                label.alignment = TextAlignmentOptions.Center;
+                RectTransform labelRect = label.rectTransform;
+                labelRect.offsetMin = new Vector2(14f, 5f);
+                labelRect.offsetMax = new Vector2(-14f, -5f);
+            }
+
+            Image buttonImage = button.targetGraphic as Image;
+            if (buttonImage != null)
+                buttonImage.color = new Color32(235, 174, 197, 255);
+
+            Outline buttonOutline = button.GetComponent<Outline>();
+            if (buttonOutline != null)
+            {
+                buttonOutline.effectColor = new Color32(42, 83, 49, 255);
+                buttonOutline.effectDistance = new Vector2(2f, -2f);
+            }
+        }
+
+        if (choice1Button != null)
+        {
+            Transform row = choice1Button.transform.parent;
+            RectTransform rowRect = row as RectTransform;
+            if (rowRect != null)
+            {
+                rowRect.anchorMin = new Vector2(0.5f, 0f);
+                rowRect.anchorMax = new Vector2(0.5f, 0f);
+                rowRect.pivot = new Vector2(0.5f, 0f);
+                rowRect.anchoredPosition = new Vector2(0f, 18f);
+                rowRect.sizeDelta = new Vector2(
+                    panelRect != null ? panelRect.sizeDelta.x - 56f : 1264f,
+                    76f);
+            }
+
+            HorizontalLayoutGroup rowLayout = row.GetComponent<HorizontalLayoutGroup>();
+            if (rowLayout != null)
+            {
+                rowLayout.padding = new RectOffset(4, 4, 3, 3);
+                rowLayout.spacing = 16f;
+                rowLayout.childForceExpandWidth = true;
+                rowLayout.childForceExpandHeight = true;
+                rowLayout.childControlWidth = true;
+                rowLayout.childControlHeight = true;
+            }
+        }
+    }
+
+    private static void StyleDialogueText(
+        TMP_Text text,
+        float size,
+        float minimumSize,
+        float maximumSize,
+        bool wrap)
+    {
+        if (text == null)
+            return;
+
+        text.enableAutoSizing = true;
+        text.fontSize = size;
+        text.fontSizeMin = minimumSize;
+        text.fontSizeMax = maximumSize;
+        text.enableWordWrapping = wrap;
+        text.overflowMode = TextOverflowModes.Overflow;
+        text.raycastTarget = false;
+    }
+
+    private static void SetTextRect(
+        RectTransform rect,
+        Vector2 position,
+        Vector2 size,
+        Vector2 anchorMin,
+        Vector2 anchorMax,
+        Vector2 pivot)
+    {
+        if (rect == null)
+            return;
+
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = pivot;
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
     }
 
     private void SetChoice(
@@ -840,6 +1020,10 @@ public class DialogueManager : MonoBehaviour
                     lanternColorController.SetTutorialSculptLock(true);
                     lanternColorController.SetPaletteAvailable(false);
                 }
+                if (aiHelpUi == null)
+                    aiHelpUi = FindFirstObjectByType<MorphicAIHelpUI>(FindObjectsInactive.Include);
+                if (aiHelpUi != null)
+                    aiHelpUi.SetVisible(true);
                 SetLanternSculptDriving(false);
                 StartLanternGestureTutorial();
 
@@ -859,7 +1043,7 @@ public class DialogueManager : MonoBehaviour
                 {
                     Debug.LogWarning(
                         "MORPHIC: India Teapot reference is missing. " +
-                        "Add the Teapot_test scene object and assign it to " +
+                        "Add the Teapot_Updated scene object and assign it to " +
                         "DialogueManager > India Teapot."
                     );
                 }

@@ -17,6 +17,7 @@ public class MorphicAIClient : MonoBehaviour
 
     // Sends the human-readable AI message to the feedback UI.
     public event Action<string> OnFeedbackMessageReceived;
+    public event Action OnRequestFailed;
 
     [Serializable]
     private class AIResponse
@@ -78,6 +79,11 @@ public class MorphicAIClient : MonoBehaviour
 
     public void SendFeedback(string jsonData)
     {
+        SendFeedback(jsonData, false);
+    }
+
+    public void SendFeedback(string jsonData, bool live)
+    {
         if (IsRequestRunning)
         {
             if (showDebugLogs)
@@ -87,6 +93,7 @@ public class MorphicAIClient : MonoBehaviour
                 );
             }
 
+            OnRequestFailed?.Invoke();
             return;
         }
 
@@ -96,7 +103,7 @@ public class MorphicAIClient : MonoBehaviour
                 "MorphicAIClient: Cannot send request because " +
                 "MorphicAISettings is missing."
             );
-
+            OnRequestFailed?.Invoke();
             return;
         }
 
@@ -105,23 +112,25 @@ public class MorphicAIClient : MonoBehaviour
             Debug.LogError(
                 "MorphicAIClient: JSON data is empty."
             );
-
+            OnRequestFailed?.Invoke();
             return;
         }
 
         StartCoroutine(
-            SendFeedbackCoroutine(jsonData)
+            SendFeedbackCoroutine(jsonData, live)
         );
     }
 
     private IEnumerator SendFeedbackCoroutine(
-        string jsonData
+        string jsonData,
+        bool live
     )
     {
         IsRequestRunning = true;
 
-        string endpoint =
-            aiSettings.GetFeedbackEndpoint();
+        string endpoint = live
+            ? aiSettings.GetLiveFeedbackEndpoint()
+            : aiSettings.GetFeedbackEndpoint();
 
         if (showDebugLogs)
         {
@@ -185,6 +194,7 @@ public class MorphicAIClient : MonoBehaviour
                     "Error: " + request.error + "\n" +
                     "HTTP Status: " + request.responseCode
                 );
+                OnRequestFailed?.Invoke();
             }
         }
 
@@ -207,7 +217,7 @@ public class MorphicAIClient : MonoBehaviour
                 Debug.LogError(
                     "MorphicAIClient: Could not parse backend response."
                 );
-
+                OnRequestFailed?.Invoke();
                 return;
             }
 
@@ -217,7 +227,7 @@ public class MorphicAIClient : MonoBehaviour
                     "MorphicAIClient: Backend returned an error: " +
                     response.error
                 );
-
+                OnRequestFailed?.Invoke();
                 return;
             }
 
@@ -258,7 +268,7 @@ public class MorphicAIClient : MonoBehaviour
                     "MorphicAIClient: Successful AI response " +
                     "contained no feedback object."
                 );
-
+                OnRequestFailed?.Invoke();
                 return;
             }
 
@@ -344,6 +354,7 @@ public class MorphicAIClient : MonoBehaviour
                 "MorphicAIClient: Response parsing failed.\n" +
                 exception.Message
             );
+            OnRequestFailed?.Invoke();
         }
     }
 

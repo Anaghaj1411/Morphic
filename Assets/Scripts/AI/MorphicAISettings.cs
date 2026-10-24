@@ -12,12 +12,15 @@ public class MorphicAISettings : MonoBehaviour
 
     public bool LiveAIEnabled => liveAIEnabled;
 
+    public string GetLiveFeedbackEndpoint()
+    {
+        return backendBaseUrl + "/api/feedback";
+    }
+
     public string GetFeedbackEndpoint()
     {
         if (liveAIEnabled)
-        {
-            return backendBaseUrl + "/api/feedback";
-        }
+            return GetLiveFeedbackEndpoint();
 
         return backendBaseUrl + "/api/feedback-test";
     }

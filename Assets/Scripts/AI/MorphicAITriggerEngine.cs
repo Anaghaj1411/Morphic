@@ -24,12 +24,17 @@ public class MorphicAITriggerEngine : MonoBehaviour
         public string userQuestion;
         public string currentStage;
         public string currentTool;
-
-        public int strokeCount;
-        public int undoCount;
-        public int consecutiveFailures;
-
-        public float idleSeconds;
+        public int width;
+        public int height;
+        public int topper;
+        public int bottom;
+        public int lidTop;
+        public int lidBottom;
+        public int bamboo;
+        public int tassel;
+        public int hasStamp;
+        public int hasSelfie;
+        public int locked;
     }
 
     [Serializable]
@@ -84,11 +89,19 @@ public class MorphicAITriggerEngine : MonoBehaviour
         string currentStage
     )
     {
-        TriggerAI(
-            "user_question",
-            userQuestion,
-            currentStage
-        );
+        TriggerAI("user_question", new MorphicCraftHelpState
+        {
+            userQuestion = userQuestion,
+            currentStage = currentStage
+        }, false);
+    }
+
+    public bool RequestSculptHelp(MorphicCraftHelpState state)
+    {
+        if (state == null)
+            return false;
+
+        return TriggerAI("user_requested_help", state, true);
     }
 
     public void TriggerMeaningfulEvent(
@@ -96,61 +109,49 @@ public class MorphicAITriggerEngine : MonoBehaviour
         string currentStage
     )
     {
-        TriggerAI(
-            eventType,
-            "",
-            currentStage
-        );
     }
 
-    private void TriggerAI(
+    private bool TriggerAI(
         string eventType,
-        string userQuestion,
-        string currentStage
+        MorphicCraftHelpState state,
+        bool live
     )
     {
         if (aiClient == null)
-        {
-            Debug.LogError(
-                "MorphicAITriggerEngine: Cannot trigger AI because " +
-                "MorphicAIClient is missing."
-            );
-
-            return;
-        }
-
-        if (behaviorTracker == null)
-        {
-            Debug.LogError(
-                "MorphicAITriggerEngine: Cannot trigger AI because " +
-                "MorphicAIBehaviorTracker is missing."
-            );
-
-            return;
-        }
+            return false;
 
         if (Time.time < nextAllowedRequestTime)
-        {
-            if (showDebugLogs)
-            {
-                Debug.Log(
-                    "MorphicAITriggerEngine: AI request blocked by local cooldown."
-                );
-            }
-
-            return;
-        }
+            return false;
 
         if (aiClient.IsRequestRunning)
-        {
-            if (showDebugLogs)
-            {
-                Debug.Log(
-                    "MorphicAITriggerEngine: AI request already running."
-                );
-            }
+            return false;
 
-            return;
+        SculptContext context = new SculptContext
+        {
+            userQuestion = string.IsNullOrEmpty(state.userQuestion)
+                ? "Next sculpt step?"
+                : state.userQuestion,
+            currentStage = state.currentStage,
+            currentTool = state.currentTool,
+            width = state.width,
+            height = state.height,
+            topper = state.topper,
+            bottom = state.bottom,
+            lidTop = state.lidTop,
+            lidBottom = state.lidBottom,
+            bamboo = state.bamboo,
+            tassel = state.tassel,
+            hasStamp = state.hasStamp,
+            hasSelfie = state.hasSelfie,
+            locked = state.locked
+        };
+
+        if (behaviorTracker != null)
+        {
+            if (string.IsNullOrEmpty(context.currentStage))
+                context.currentStage = behaviorTracker.CurrentStage;
+            if (string.IsNullOrEmpty(context.currentTool))
+                context.currentTool = behaviorTracker.CurrentTool;
         }
 
         AIEventData eventData = new AIEventData
@@ -158,40 +159,12 @@ public class MorphicAITriggerEngine : MonoBehaviour
             projectType = "digital_sculpture",
             sessionId = sessionId,
             eventType = eventType,
-
-            context = new SculptContext
-            {
-                userQuestion = userQuestion,
-
-                currentStage = string.IsNullOrEmpty(currentStage)
-                    ? behaviorTracker.CurrentStage
-                    : currentStage,
-
-                currentTool = behaviorTracker.CurrentTool,
-
-                strokeCount = behaviorTracker.StrokeCount,
-                undoCount = behaviorTracker.UndoCount,
-                consecutiveFailures =
-                    behaviorTracker.ConsecutiveFailures,
-
-                idleSeconds = behaviorTracker.IdleSeconds
-            }
+            context = context
         };
 
-        string jsonData = JsonUtility.ToJson(eventData);
-
-        nextAllowedRequestTime =
-            Time.time + minimumRequestInterval;
-
-        if (showDebugLogs)
-        {
-            Debug.Log(
-                "MorphicAITriggerEngine: AI trigger created.\n" +
-                jsonData
-            );
-        }
-
-        aiClient.SendFeedback(jsonData);
+        nextAllowedRequestTime = Time.time + minimumRequestInterval;
+        aiClient.SendFeedback(JsonUtility.ToJson(eventData), live);
+        return true;
     }
 
     [ContextMenu("Test User Question Trigger")]

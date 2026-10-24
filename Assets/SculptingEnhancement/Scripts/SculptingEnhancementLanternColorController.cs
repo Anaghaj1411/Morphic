@@ -46,6 +46,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     [SerializeField] private TMP_Text gestureIndicator;
     [SerializeField] private TaiwanLanternGestureController originalGestureController;
     [SerializeField] private SculptingEnhancementIndexGestureController indexGestureController;
+    [SerializeField] private LanternFistRotationController lanternFistRotation;
 
     [Header("Lantern Material Slots")]
     [Tooltip("Adjust these four indices in the enhancement scene if the imported FBX material order differs.")]
@@ -235,6 +236,17 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private GameObject confirmResetGroup;
     private ColorMode modeBeforeConfirm;
     private bool lastDeformationLocked;
+
+    public void WriteHelpDecor(MorphicCraftHelpState state)
+    {
+        if (state == null)
+            return;
+
+        state.hasStamp = appliedDesignTexture != null ? 1 : 0;
+        state.hasSelfie = appliedSelfieTexture != null ? 1 : 0;
+        state.currentStage = mode == ColorMode.Sculpt ? "sculpt" : "customize";
+        state.currentTool = "lantern";
+    }
 
     public void SetPaletteAvailable(bool available)
     {
@@ -1459,6 +1471,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         DisableAndDestroy(clone.GetComponentsInChildren<TaiwanLanternGestureController>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementIndexGestureController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<LanternFistRotationController>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementLanternColorController>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<Canvas>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<Camera>(true));
@@ -3181,11 +3194,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (sculptLockedByTutorial && enabled)
             return;
 
+        LanternFistRotationController rotator = ResolveFistRotator();
         bool originalAlreadySet = originalGestureController == null ||
             originalGestureController.enabled == enabled;
         bool indexAlreadySet = indexGestureController == null ||
             indexGestureController.enabled == enabled;
-        if (originalAlreadySet && indexAlreadySet)
+        bool rotatorAlreadySet = rotator == null || rotator.enabled == enabled;
+        if (originalAlreadySet && indexAlreadySet && rotatorAlreadySet)
             return;
 
         if (enabled)
@@ -3204,6 +3219,17 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             originalGestureController.enabled = enabled;
         if (indexGestureController != null)
             indexGestureController.enabled = enabled;
+        if (rotator != null)
+            rotator.enabled = enabled;
+    }
+
+    private LanternFistRotationController ResolveFistRotator()
+    {
+        if (lanternFistRotation != null)
+            return lanternFistRotation;
+        if (indexGestureController != null)
+            lanternFistRotation = indexGestureController.GetComponent<LanternFistRotationController>();
+        return lanternFistRotation;
     }
 
     private void UpdateSculptLockFromUi(bool overUi)
@@ -3231,6 +3257,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                     originalGestureController.enabled = true;
                 if (indexGestureController != null)
                     indexGestureController.enabled = false;
+                LanternFistRotationController rotator = ResolveFistRotator();
+                if (rotator != null)
+                    rotator.enabled = false;
             }
             else
             {

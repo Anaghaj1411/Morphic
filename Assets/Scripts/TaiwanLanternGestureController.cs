@@ -110,6 +110,22 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private bool deformationLocked;
 
     public bool IsDeformationLocked => deformationLocked;
+
+    public void WriteHelpWeights(MorphicCraftHelpState state)
+    {
+        if (state == null)
+            return;
+
+        state.width = Mathf.RoundToInt(current[Width]);
+        state.height = Mathf.RoundToInt(current[Height]);
+        state.topper = Mathf.RoundToInt(current[Topper]);
+        state.bottom = Mathf.RoundToInt(current[Bottom]);
+        state.lidTop = Mathf.RoundToInt(current[PopTop]);
+        state.lidBottom = Mathf.RoundToInt(current[PopBottom]);
+        state.bamboo = Mathf.RoundToInt(current[PopBamboo]);
+        state.tassel = Mathf.RoundToInt(current[PopTassel]);
+        state.locked = deformationLocked ? 1 : 0;
+    }
     private bool rightPinchHeld;
     private bool practiceRightPinchHeld;
     private bool practiceLeftPinchHeld;
@@ -167,7 +183,6 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
         BindLantern();
         ResolveShapes();
-        CreateProgressCard();
         if (lanternRenderer != null)
             lanternRenderer.updateWhenOffscreen = true;
     }
