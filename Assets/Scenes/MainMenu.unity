@@ -1082,7 +1082,7 @@ MonoBehaviour:
   startDelay: 2.1
   taiwanLantern: {fileID: 687715965}
   taiwanLanternSpawnPoint: {fileID: 1665484388}
-  indiaTeapot: {fileID: 0}
+  indiaTeapot: {fileID: 1832330204}
   taiwanHandTracking: {fileID: 1278135595}
   taiwanGestureController: {fileID: 549754494}
   taiwanGestureIndicator: {fileID: 925373461}
@@ -2487,16 +2487,27 @@ MonoBehaviour:
   popUpBottomShape: CIRCLE BOTTOM POP UP NEW
   widthSensitivity: 220
   heightSensitivity: 220
-  pinchThreshold: 0.4
-  fistThreshold: 1.15
-  smoothing: 22
-  gestureGracePeriod: 0.5
   movementDeadZone: 0.003
-  maximumOtherFingerExtension: 1.15
   minimumPointingIndexAngle: 140
+  maximumOtherFingerExtension: 1.15
+  minimumIndexTipExtension: 1.08
+  minimumThumbIndexSeparation: 0.42
+  pinchThreshold: 0.4
+  pinchReleaseThreshold: 0.95
+  leftPinchBoost: 1.35
+  popConfirmTime: 0
+  popEase: 12
+  popLiftSensitivity: 420
+  popPinchSensitivity: 920
+  popPinchEase: 28
+  smoothing: 22
+  minimumThumbLength: 0.12
+  shapeEaseTime: 0.12
+  openPalmExtension: 1.32
+  fistThreshold: 1.15
+  gestureGracePeriod: 0.5
   topperEaseTime: 0.65
   middleEaseTime: 0.28
-  minimumThumbLength: 0.12
   middleMinPinchSeparation: 1
   middleMaxPinchSeparation: 4
   middleHoldStillTolerance: 0.05
@@ -2511,6 +2522,7 @@ MonoBehaviour:
   indexHoldStillTolerance: 0.01
   thumbHoldStillTolerance: 15
   thumbOutputDeadZone: 6
+  suppressDriving: 0
 --- !u!4 &549754496
 Transform:
   m_ObjectHideFlags: 0
@@ -7454,7 +7466,7 @@ RectTransform:
   m_GameObject: {fileID: 1744633921}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0, y: 0, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 665120968}
@@ -7469,6 +7481,7 @@ RectTransform:
   - {fileID: 218728270}
   - {fileID: 925373464}
   - {fileID: 473133049}
+  - {fileID: 1957428747}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -7987,6 +8000,141 @@ MonoBehaviour:
   bobAmount: 0.04
   bobSpeed: 0.52
   loopDistance: 27
+--- !u!1001 &1832330203
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.06
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.06
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.05
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -25.134186
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 2.219279
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -6.368907
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.011898787
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0.9980571
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0.06108524
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0.0030021581
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 181.34
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 359.573
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 7.0099945
+      objectReference: {fileID: 0}
+    - target: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_DirtyAABB
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_AABB.m_Center.x
+      value: -0.29318738
+      objectReference: {fileID: 0}
+    - target: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_AABB.m_Center.y
+      value: -3.5002322
+      objectReference: {fileID: 0}
+    - target: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_AABB.m_Center.z
+      value: -0.9295449
+      objectReference: {fileID: 0}
+    - target: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_AABB.m_Extent.x
+      value: 7.180167
+      objectReference: {fileID: 0}
+    - target: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_AABB.m_Extent.y
+      value: 6.7458463
+      objectReference: {fileID: 0}
+    - target: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_AABB.m_Extent.z
+      value: 4.9979634
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      propertyPath: m_Name
+      value: Teapot_Updated
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1832330206}
+  m_SourcePrefab: {fileID: 100100000, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+--- !u!1 &1832330204 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+  m_PrefabInstance: {fileID: 1832330203}
+  m_PrefabAsset: {fileID: 0}
+--- !u!137 &1832330205 stripped
+SkinnedMeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -3887185075125053422, guid: b11b0456d4e62af4c8d1f05ce16fe28f, type: 3}
+  m_PrefabInstance: {fileID: 1832330203}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1832330206
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1832330204}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1ec0ebd404844d7beb3ce7325755435, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TeapotGestureController
+  handRunner: {fileID: 955411010}
+  gestureStatus: {fileID: 1957428745}
+  teapotRenderer: {fileID: 1832330205}
+  widthSensitivity: 360
+  heightSensitivity: 550
+  middleSensitivity: 360
+  smoothing: 24
+  movementDeadZone: 0.002
+  exclusiveAxisRatio: 1.2
+  minimumIndexAngle: 125
+  minimumIndexTipExtension: 1.08
+  maximumOtherFingerExtension: 1.45
+  minimumThumbIndexSeparation: 0.42
 --- !u!1001 &1854847497
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -8118,6 +8266,143 @@ Transform:
   m_Children: []
   m_Father: {fileID: 812742279}
   m_LocalEulerAnglesHint: {x: 64.761, y: 89.208, z: 179.993}
+--- !u!1 &1957428744
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1957428747}
+  - component: {fileID: 1957428746}
+  - component: {fileID: 1957428745}
+  m_Layer: 5
+  m_Name: Teapot Gesture Status
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1957428745
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1957428744}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_text: 'TEAPOT: READY'
+  m_isRightToLeft: 0
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontSharedMaterials: []
+  m_fontMaterial: {fileID: 0}
+  m_fontMaterials: []
+  m_fontColor32:
+    serializedVersion: 2
+    rgba: 4294967295
+  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+  m_enableVertexGradient: 0
+  m_colorMode: 3
+  m_fontColorGradient:
+    topLeft: {r: 1, g: 1, b: 1, a: 1}
+    topRight: {r: 1, g: 1, b: 1, a: 1}
+    bottomLeft: {r: 1, g: 1, b: 1, a: 1}
+    bottomRight: {r: 1, g: 1, b: 1, a: 1}
+  m_fontColorGradientPreset: {fileID: 0}
+  m_spriteAsset: {fileID: 0}
+  m_tintAllSprites: 0
+  m_StyleSheet: {fileID: 0}
+  m_TextStyleHashCode: -1183493901
+  m_overrideHtmlColors: 0
+  m_faceColor:
+    serializedVersion: 2
+    rgba: 4294967295
+  m_fontSize: 36
+  m_fontSizeBase: 36
+  m_fontWeight: 400
+  m_enableAutoSizing: 0
+  m_fontSizeMin: 18
+  m_fontSizeMax: 72
+  m_fontStyle: 0
+  m_HorizontalAlignment: 1
+  m_VerticalAlignment: 256
+  m_textAlignment: 65535
+  m_characterSpacing: 0
+  m_characterHorizontalScale: 1
+  m_wordSpacing: 0
+  m_lineSpacing: 0
+  m_lineSpacingMax: 0
+  m_paragraphSpacing: 0
+  m_charWidthMaxAdj: 0
+  m_TextWrappingMode: 1
+  m_wordWrappingRatios: 0.4
+  m_overflowMode: 0
+  m_linkedTextComponent: {fileID: 0}
+  parentLinkedComponent: {fileID: 0}
+  m_enableKerning: 0
+  m_ActiveFontFeatures: 6e72656b
+  m_enableExtraPadding: 0
+  checkPaddingRequired: 0
+  m_isRichText: 1
+  m_EmojiFallbackSupport: 1
+  m_parseCtrlCharacters: 1
+  m_isOrthographic: 1
+  m_isCullingEnabled: 0
+  m_horizontalMapping: 0
+  m_verticalMapping: 0
+  m_uvLineOffset: 0
+  m_geometrySortingOrder: 0
+  m_IsTextObjectScaleStatic: 0
+  m_VertexBufferAutoSizeReduction: 0
+  m_useMaxVisibleDescender: 1
+  m_pageToDisplay: 1
+  m_margin: {x: 0, y: 0, z: 0, w: 0}
+  m_isUsingLegacyAnimationComponent: 0
+  m_isVolumetricText: 0
+  m_hasFontAssetChanged: 0
+  m_baseMaterial: {fileID: 0}
+  m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!222 &1957428746
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1957428744}
+  m_CullTransparentMesh: 1
+--- !u!224 &1957428747
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1957428744}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1744633925}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 200, y: 50}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &2019854594
 GameObject:
   m_ObjectHideFlags: 0
@@ -8426,3 +8711,4 @@ SceneRoots:
   - {fileID: 1278135596}
   - {fileID: 710061705}
   - {fileID: 683237218}
+  - {fileID: 1832330203}

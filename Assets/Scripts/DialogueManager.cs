@@ -1032,12 +1032,73 @@ public class DialogueManager : MonoBehaviour
             case "India":
                 Debug.Log("MORPHIC: India selected - Teapot");
 
+                // India and Taiwan share the configured hand-tracking source,
+                // but only the selected craft's gesture controller should be
+                // allowed to drive its own mesh.
+                if (taiwanGestureController != null)
+                    taiwanGestureController.SetActive(false);
+                if (taiwanGestureIndicator != null)
+                    taiwanGestureIndicator.SetActive(false);
+
                 if (indiaTeapot != null)
                 {
+                    SculptHandLandmarkerRunner teapotHandRunner =
+                        ResolveConfiguredHandRunner();
+
+                    TeapotGestureController teapotGestures =
+                        indiaTeapot.GetComponentInChildren<TeapotGestureController>(true);
+                    if (teapotGestures != null && teapotHandRunner != null)
+                        teapotGestures.SetHandRunner(teapotHandRunner);
+                    else if (teapotHandRunner == null)
+                        Debug.LogError("MORPHIC: India Teapot could not find the configured hand-tracking runner.");
+
+                    // Solution is a child of the inactive TaiwanHandTracking
+                    // root. Enabling Solution alone never runs Start/Play.
+                    ActivateSharedHandTrackingRoot();
+
+                    if (teapotHandRunner != null)
+                    {
+                        Debug.Log(
+                            "MORPHIC: India Teapot using shared hand-tracking runner on '" +
+                            teapotHandRunner.gameObject.name +
+                            "'; waiting for Bootstrap initialization.");
+                        teapotHandRunner.EnsureStartedForTeapot();
+                    }
+
+                    if (webcamDisplayController != null)
+                    {
+                        webcamDisplayController.SetActive(true);
+                        WebcamDisplayController displayController =
+                            webcamDisplayController.GetComponent<WebcamDisplayController>();
+                        if (displayController != null)
+                        {
+                            if (teapotHandRunner != null && teapotHandRunner.webcamScreen != null)
+                                displayController.UseScreen(teapotHandRunner.webcamScreen);
+                            else
+                                Debug.LogError("MORPHIC: Hand runner or its Annotatable Screen is missing.");
+
+                            displayController.Activate();
+                        }
+                        Debug.Log("MORPHIC: Webcam display activated.");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("MORPHIC: Webcam display controller reference is missing.");
+                    }
+
+                    if (handAnnotationController != null)
+                    {
+                        handAnnotationController.SetActive(true);
+                        Debug.Log("MORPHIC: Hand landmark annotation activated with the runner's Annotatable Screen.");
+                    }
+
                     // Keep the teapot's Inspector-configured position, rotation,
                     // and scale, just as the Taiwan lantern keeps its scene setup.
                     indiaTeapot.SetActive(true);
                     Debug.Log("MORPHIC: India Teapot activated.");
+
+                    if (teapotHandRunner != null)
+                        StartCoroutine(CheckHandDetection(teapotHandRunner));
                 }
                 else
                 {
@@ -1148,6 +1209,49 @@ public class DialogueManager : MonoBehaviour
 
         if (choice4Button != null)
             choice4Button.gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// Prefers the configured Solution runner and skips the disabled leftover
+    /// runner on the TaiwanHandTracking root.
+    /// </summary>
+    private SculptHandLandmarkerRunner ResolveConfiguredHandRunner()
+    {
+        if (handTrackingSolution != null)
+        {
+            SculptHandLandmarkerRunner solutionRunner =
+                handTrackingSolution.GetComponent<SculptHandLandmarkerRunner>();
+            if (solutionRunner != null)
+                return solutionRunner;
+        }
+
+        if (taiwanHandTracking == null)
+            return null;
+
+        SculptHandLandmarkerRunner[] runners =
+            taiwanHandTracking.GetComponentsInChildren<SculptHandLandmarkerRunner>(true);
+        for (int i = 0; i < runners.Length; i++)
+        {
+            SculptHandLandmarkerRunner runner = runners[i];
+            if (runner != null && runner.enabled)
+                return runner;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Activates the shared MediaPipe hierarchy used by both crafts. The
+    /// Solution GameObject cannot start while its TaiwanHandTracking parent
+    /// stays inactive.
+    /// </summary>
+    private void ActivateSharedHandTrackingRoot()
+    {
+        if (taiwanHandTracking != null)
+            taiwanHandTracking.SetActive(true);
+
+        if (handTrackingSolution != null)
+            handTrackingSolution.SetActive(true);
     }
 
     private IEnumerator CheckHandDetection(SculptHandLandmarkerRunner handRunner)

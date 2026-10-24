@@ -68,6 +68,15 @@ public sealed class TeapotGestureController : MonoBehaviour
     public TMP_Text GestureStatus => gestureStatus;
     public SkinnedMeshRenderer TeapotRenderer => teapotRenderer;
 
+    /// <summary>
+    /// Uses the scene's configured hand-tracking runner without adding a
+    /// second camera or changing the Lantern's own mesh/controller setup.
+    /// </summary>
+    public void SetHandRunner(SculptHandLandmarkerRunner runner)
+    {
+        handRunner = runner;
+    }
+
     private void Awake()
     {
         if (teapotRenderer == null)

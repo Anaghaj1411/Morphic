@@ -183,6 +183,8 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         private bool hasPendingResult;
         private volatile bool inferenceInFlight;
         private bool isStopping;
+        private bool hasStartedRun;
+        private Coroutine ensureTeapotRunCoroutine;
 
         private SculptHandFrame latestHand;
         private SculptHandFrame secondHand;
@@ -198,6 +200,53 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
         public readonly HandLandmarkDetectionConfig config =
             new HandLandmarkDetectionConfig();
+
+        public bool HasStartedRun => hasStartedRun;
+
+        protected override IEnumerator Start()
+        {
+            bootstrap = FindBootstrap();
+            yield return new WaitUntil(() => bootstrap != null && bootstrap.isFinished);
+
+            if (!hasStartedRun)
+                Play();
+        }
+
+        /// <summary>Starts tracking for the Teapot after MediaPipe initialization.</summary>
+        public void EnsureStartedForTeapot()
+        {
+            if (hasStartedRun || ensureTeapotRunCoroutine != null)
+                return;
+
+            if (!isActiveAndEnabled)
+            {
+                Debug.LogWarning(
+                    "MORPHIC: India Teapot hand runner is not active in the hierarchy, " +
+                    "so Start/Play cannot open the webcam. Enable TaiwanHandTracking " +
+                    "before Solution.",
+                    this);
+                return;
+            }
+
+            ensureTeapotRunCoroutine = StartCoroutine(EnsureTeapotRunAfterBootstrap());
+        }
+
+        private IEnumerator EnsureTeapotRunAfterBootstrap()
+        {
+            if (bootstrap == null)
+                bootstrap = FindBootstrap();
+
+            yield return new WaitUntil(() => bootstrap != null && bootstrap.isFinished);
+            yield return null;
+
+            if (!hasStartedRun && isActiveAndEnabled)
+            {
+                Debug.Log("MORPHIC: Explicitly starting the hand runner for the India Teapot.");
+                Play();
+            }
+
+            ensureTeapotRunCoroutine = null;
+        }
 
         private void Awake()
         {
@@ -250,6 +299,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
         public override void Stop()
         {
+            hasStartedRun = false;
             isStopping = true;
             inferenceInFlight = false;
             lock (resultLock)
@@ -275,6 +325,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
         protected override IEnumerator Run()
         {
+            hasStartedRun = true;
             isStopping = false;
             yield return AssetLoader.PrepareAssetAsync(
                 config.ModelPath
@@ -305,6 +356,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
 
             if (!imageSource.isPrepared)
             {
+                hasStartedRun = false;
                 Debug.LogError("Could not start the webcam.");
                 yield break;
             }
@@ -334,6 +386,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
 
             if (screen == null)
             {
+                hasStartedRun = false;
                 Debug.LogError(
                     "Could not find the webcam display."
                 );
@@ -342,6 +395,14 @@ Debug.Log("MORPHIC: Camera resolution = " +
             }
 
             screen.Initialize(imageSource);
+            Debug.Log(
+                "MORPHIC: Webcam screen initialized on '" +
+                screen.name +
+                "' with texture " +
+                (imageSource.GetCurrentTexture() != null
+                    ? imageSource.GetCurrentTexture().width + "x" + imageSource.GetCurrentTexture().height
+                    : "null") +
+                ".");
 
             if (annotationController != null)
             {
