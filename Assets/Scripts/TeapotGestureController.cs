@@ -15,6 +15,7 @@ public sealed class TeapotGestureController : MonoBehaviour
         "Width",
         "Height",
         "Middle",
+        "Bevel Top and Bottom",
         "Lid 1",
         "Lid 2",
         "Shaft 1",
@@ -47,6 +48,20 @@ public sealed class TeapotGestureController : MonoBehaviour
     [SerializeField, Min(1f)] private float leftPinchBoost = 1.35f;
     [SerializeField, Min(1f)] private float pinchLiftSensitivity = 920f;
     [SerializeField, Min(1f)] private float pinchEase = 28f;
+    [SerializeField, Min(1f)] private float shaftEase = 12f;
+
+    [Header("Two Fists Down - Handle")]
+    [SerializeField, Min(1f)] private float handleDownSensitivity = 756f;
+    [SerializeField, Min(1f)] private float handleEase = 12f;
+
+    [Header("Right V Up - Bevel")]
+    [SerializeField, Min(1f)] private float bevelLiftSensitivity = 920f;
+    [SerializeField, Min(1f)] private float bevelEase = 18f;
+
+    [Header("Band Appearance")]
+    [Tooltip("The two wrapping rings on Teapot_Updated. Inspected FBX slot 0 is Material.002.")]
+    [SerializeField] private Material bandGoldMaterial;
+    [SerializeField] private int[] bandMaterialSlotIndices = { 0 };
 
     private readonly Dictionary<string, int> blendShapeIndices =
         new Dictionary<string, int>();
@@ -70,6 +85,12 @@ public sealed class TeapotGestureController : MonoBehaviour
     private float leftPinchStartY;
     private float rightPinchStartWeight;
     private float leftPinchStartWeight;
+    private bool handleDownArmed;
+    private float handleDownStartY;
+    private float handleStartWeight;
+    private bool bevelArmed;
+    private float bevelStartY;
+    private float bevelStartWeight;
     private int lockedWidthHeightAxis;
     private GestureMode currentGesture;
 
@@ -78,8 +99,14 @@ public sealed class TeapotGestureController : MonoBehaviour
         None,
         WidthHeight,
         Middle,
-        PinchUp
+        PinchUp,
+        HandleDown,
+        BevelUp
     }
+
+    public bool suppressDriving;
+
+    private bool externalFistRotationActive;
 
     public SculptHandLandmarkerRunner HandRunner => handRunner;
     public TMP_Text GestureStatus => gestureStatus;
@@ -92,6 +119,25 @@ public sealed class TeapotGestureController : MonoBehaviour
     public void SetHandRunner(SculptHandLandmarkerRunner runner)
     {
         handRunner = runner;
+        EnsureTeapotFistRotator();
+    }
+
+    /// <summary>
+    /// Stops teapot sculpt gestures while the one-fist rotator is steering.
+    /// Two closed fists still fall through to the handle gesture.
+    /// </summary>
+    public void SetExternalFistRotationActive(bool active)
+    {
+        externalFistRotationActive = active;
+        if (!active)
+            return;
+
+        ResetPinchTracking();
+        ResetHandleDownTracking();
+        ResetBevelTracking();
+        currentGesture = GestureMode.None;
+        lockedWidthHeightAxis = 0;
+        SetStatus("TEAPOT: ROTATE");
     }
 
     private void Awake()
@@ -105,13 +151,102 @@ public sealed class TeapotGestureController : MonoBehaviour
                 this);
 
         ResolveBlendShapes();
+        ApplyBandGoldMaterial();
         ReadBodyWeights();
         middle = targetMiddle = Mathf.Clamp(middle, 0f, middleMaximumWeight);
         SetBlendShapeWeight("Middle", middle);
+        EnsureTeapotFistRotator();
+    }
+
+    /// <summary>
+    /// Teapot_Updated Cylinder.002 slot 0 is the two wrapping rings
+    /// (FBX Material.002). Slot 1 / Material.001 is the body.
+    /// </summary>
+    private void ApplyBandGoldMaterial()
+    {
+        if (teapotRenderer == null)
+            return;
+
+        Material[] slots = teapotRenderer.sharedMaterials;
+        if (slots == null || slots.Length == 0)
+        {
+            Debug.LogError("TeapotGestureController: Teapot_Updated renderer has no material slots.", this);
+            return;
+        }
+
+        var names = new string[slots.Length];
+        for (int i = 0; i < slots.Length; i++)
+            names[i] = slots[i] != null ? slots[i].name : "<empty>";
+        Debug.Log(
+            "TeapotGestureController: Teapot_Updated slots = " + string.Join(", ", names),
+            this);
+
+        if (bandGoldMaterial == null)
+        {
+            Debug.LogError(
+                "TeapotGestureController: assign TeapotBandGold to Band Gold Material.",
+                this);
+            return;
+        }
+
+        var bandSlots = new List<int>();
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i] == null)
+                continue;
+
+            string materialName = slots[i].name.Replace(" (Instance)", string.Empty);
+            if (materialName == "Material.002")
+                bandSlots.Add(i);
+        }
+
+        if (bandSlots.Count == 0 && bandMaterialSlotIndices != null)
+        {
+            foreach (int slot in bandMaterialSlotIndices)
+            {
+                if (slot >= 0 && slot < slots.Length && !bandSlots.Contains(slot))
+                    bandSlots.Add(slot);
+            }
+        }
+
+        if (bandSlots.Count == 0)
+        {
+            Debug.LogError(
+                "TeapotGestureController: the two-band slot 0 / Material.002 was not found.",
+                this);
+            return;
+        }
+
+        Material[] next = new Material[slots.Length];
+        for (int i = 0; i < slots.Length; i++)
+            next[i] = slots[i];
+
+        bool changed = false;
+        foreach (int slot in bandSlots)
+        {
+            if (next[slot] == bandGoldMaterial)
+            {
+                Debug.Log(
+                    $"TeapotGestureController: band slot {slot} already uses {bandGoldMaterial.name}.",
+                    this);
+                continue;
+            }
+
+            next[slot] = bandGoldMaterial;
+            changed = true;
+            Debug.Log(
+                $"TeapotGestureController: assigned {bandGoldMaterial.name} to Teapot_Updated slot {slot}.",
+                this);
+        }
+
+        if (changed)
+            teapotRenderer.sharedMaterials = next;
     }
 
     private void OnEnable()
     {
+        ApplyBandGoldMaterial();
+        EnsureTeapotFistRotator();
         if (gestureStatus != null)
             gestureStatus.gameObject.SetActive(true);
     }
@@ -122,13 +257,18 @@ public sealed class TeapotGestureController : MonoBehaviour
             gestureStatus.gameObject.SetActive(false);
 
         ResetPinchTracking();
+        ResetHandleDownTracking();
+        ResetBevelTracking();
         currentGesture = GestureMode.None;
         lockedWidthHeightAxis = 0;
     }
 
     private void Update()
     {
-        if (handRunner == null || teapotRenderer == null)
+        if (handRunner == null || teapotRenderer == null || suppressDriving)
+            return;
+
+        if (externalFistRotationActive)
             return;
 
         bool hasTwoHands = handRunner.TryGetLatestTwoHands(
@@ -139,6 +279,8 @@ public sealed class TeapotGestureController : MonoBehaviour
         if (!hasAnyHand)
         {
             ResetPinchTracking();
+            ResetHandleDownTracking();
+            ResetBevelTracking();
             EndGesture("TEAPOT: NO HANDS");
             return;
         }
@@ -146,6 +288,8 @@ public sealed class TeapotGestureController : MonoBehaviour
         if (hasTwoHands && IsIndexPointing(first) && IsIndexPointing(second))
         {
             ResetPinchTracking();
+            ResetHandleDownTracking();
+            ResetBevelTracking();
             if (currentGesture != GestureMode.WidthHeight)
                 BeginWidthHeight(first, second);
 
@@ -155,14 +299,34 @@ public sealed class TeapotGestureController : MonoBehaviour
         else if (hasTwoHands && IsVSign(first) && IsVSign(second))
         {
             ResetPinchTracking();
+            ResetHandleDownTracking();
+            ResetBevelTracking();
             if (currentGesture != GestureMode.Middle)
                 BeginMiddle(first, second);
 
             DriveMiddle(first, second);
             SetStatus("TEAPOT: MIDDLE");
         }
+        else if (hasTwoHands && LooksLikeHandleFist(first) && LooksLikeHandleFist(second))
+        {
+            ResetPinchTracking();
+            ResetBevelTracking();
+            currentGesture = GestureMode.HandleDown;
+            DriveHandleDown(first, second);
+            SetStatus("TEAPOT: HANDLE 1");
+        }
+        else if (TryGetRightVHand(first, second, hasTwoHands, out SculptHandFrame rightVHand))
+        {
+            ResetPinchTracking();
+            ResetHandleDownTracking();
+            currentGesture = GestureMode.BevelUp;
+            DriveBevelUp(rightVHand);
+            SetStatus("TEAPOT: BEVEL TOP / BOTTOM");
+        }
         else
         {
+            ResetHandleDownTracking();
+            ResetBevelTracking();
             currentGesture = GestureMode.PinchUp;
             bool lidPinching = false;
             bool shaftPinching = false;
@@ -377,11 +541,11 @@ public sealed class TeapotGestureController : MonoBehaviour
             startWeight = teapotRenderer.GetBlendShapeWeight(index);
         }
 
-        float upwardLift = Mathf.Max(0f, PinchHeight(hand) - startY);
-        float target = Mathf.Clamp(startWeight + upwardLift * pinchLiftSensitivity, 0f, 100f);
+        float verticalMotion = PinchHeight(hand) - startY;
+        float target = Mathf.Clamp(startWeight + verticalMotion * pinchLiftSensitivity, 0f, 100f);
         float currentWeight = teapotRenderer.GetBlendShapeWeight(index);
-        target = Mathf.Max(target, currentWeight);
-        float blend = 1f - Mathf.Exp(-pinchEase * Time.deltaTime);
+        float ease = physicalRight ? pinchEase : shaftEase;
+        float blend = 1f - Mathf.Exp(-ease * Time.deltaTime);
         SetBlendShapeWeight(shapeName, Mathf.Lerp(currentWeight, target, blend));
         return true;
     }
@@ -497,6 +661,99 @@ public sealed class TeapotGestureController : MonoBehaviour
         leftPinchArmed = false;
     }
 
+    private static bool LooksLikeHandleFist(SculptHandFrame hand)
+    {
+        return FingersClosed(hand, 1.32f, 1.22f);
+    }
+
+    private void DriveHandleDown(SculptHandFrame first, SculptHandFrame second)
+    {
+        if (!blendShapeIndices.TryGetValue("Handle 1", out int handleIndex))
+        {
+            return;
+        }
+
+        float fistY = (first.PalmCenter.y + second.PalmCenter.y) * 0.5f;
+        if (!handleDownArmed)
+        {
+            handleDownArmed = true;
+            handleDownStartY = fistY;
+            handleStartWeight = teapotRenderer.GetBlendShapeWeight(handleIndex);
+        }
+
+        // Lowering both fists extends the handle; raising them retracts it.
+        float target = Mathf.Clamp(
+            handleStartWeight + (handleDownStartY - fistY) * handleDownSensitivity,
+            0f,
+            100f);
+        float blend = 1f - Mathf.Exp(-handleEase * Time.deltaTime);
+        SetBlendShapeWeight(
+            "Handle 1",
+            Mathf.Lerp(teapotRenderer.GetBlendShapeWeight(handleIndex), target, blend));
+    }
+
+    private void ResetHandleDownTracking()
+    {
+        handleDownArmed = false;
+    }
+
+    private bool TryGetRightVHand(
+        SculptHandFrame first,
+        SculptHandFrame second,
+        bool hasTwoHands,
+        out SculptHandFrame rightVHand)
+    {
+        rightVHand = default;
+        if (IsVSign(first) && IsPhysicalRightHand(first, second, hasTwoHands))
+        {
+            rightVHand = first;
+            return true;
+        }
+
+        if (hasTwoHands && IsVSign(second) && IsPhysicalRightHand(second, first, true))
+        {
+            rightVHand = second;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void DriveBevelUp(SculptHandFrame hand)
+    {
+        if (!blendShapeIndices.TryGetValue("Bevel Top and Bottom", out int index))
+            return;
+
+        float handY = VSignHeight(hand);
+        if (!bevelArmed)
+        {
+            bevelArmed = true;
+            bevelStartY = handY;
+            bevelStartWeight = teapotRenderer.GetBlendShapeWeight(index);
+        }
+
+        float verticalMotion = handY - bevelStartY;
+        float target = Mathf.Clamp(
+            bevelStartWeight + verticalMotion * bevelLiftSensitivity,
+            0f,
+            100f);
+        float currentWeight = teapotRenderer.GetBlendShapeWeight(index);
+        float blend = 1f - Mathf.Exp(-bevelEase * Time.deltaTime);
+        SetBlendShapeWeight(
+            "Bevel Top and Bottom",
+            Mathf.Lerp(currentWeight, target, blend));
+    }
+
+    private void ResetBevelTracking()
+    {
+        bevelArmed = false;
+    }
+
+    private static float VSignHeight(SculptHandFrame hand)
+    {
+        return (hand.IndexTip.y + hand.MiddleTip.y) * 0.5f;
+    }
+
     private void EndGesture(string status)
     {
         currentGesture = GestureMode.None;
@@ -545,5 +802,13 @@ public sealed class TeapotGestureController : MonoBehaviour
     {
         if (gestureStatus != null)
             gestureStatus.text = message;
+    }
+
+    private void EnsureTeapotFistRotator()
+    {
+        TeapotFistRotationController rotator = GetComponent<TeapotFistRotationController>();
+        if (rotator == null)
+            rotator = gameObject.AddComponent<TeapotFistRotationController>();
+        rotator.BindFrom(handRunner, teapotRenderer, this);
     }
 }
