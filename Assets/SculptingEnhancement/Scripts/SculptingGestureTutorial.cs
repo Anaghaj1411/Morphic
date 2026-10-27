@@ -130,8 +130,8 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         else if (!stepRecognized)
         {
             recognizedHold = 0f;
-            statusText.text = "TRY IT";
-            statusText.color = new Color32(52, 101, 29, 255);
+            statusText.text = "";
+            statusText.gameObject.SetActive(false);
         }
     }
 
@@ -149,30 +149,58 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         rootRect.SetParent(canvas.transform, false);
         Stretch(rootRect);
 
-        Image dim = CreateImage(rootRect, "Dim", new Color(0f, 0f, 0f, 0.5f));
+        Image dim = CreateImage(rootRect, "Dim", new Color(0.08f, 0.06f, 0.04f, 0.52f));
         Stretch(dim.rectTransform);
 
-        GameObject card = new GameObject("Card", typeof(RectTransform), typeof(Image));
-        card.transform.SetParent(rootRect, false);
-        RectTransform cardRect = card.GetComponent<RectTransform>();
+        Image frame = LanguagePageBuilder.CreateRoundedImage(
+            "Card", rootRect, 36, LanguagePageBuilder.Green);
+        RectTransform cardRect = frame.rectTransform;
         cardRect.anchorMin = cardRect.anchorMax = new Vector2(0.5f, 0.5f);
         cardRect.pivot = new Vector2(0.5f, 0.5f);
-        cardRect.sizeDelta = new Vector2(740f, 560f);
-        card.GetComponent<Image>().color = new Color32(253, 242, 250, 255);
+        cardRect.sizeDelta = new Vector2(760f, 620f);
+        frame.raycastTarget = true;
 
-        stepText = CreateLabel(cardRect, "Step", new Vector2(0f, 242f), 280f, 28f, 18);
-        titleText = CreateLabel(cardRect, "Title", new Vector2(0f, 196f), 640f, 44f, 34);
-        gestureImage = CreateRawImage(cardRect, "GestureImage", new Vector2(0f, 58f), new Vector2(220f, 220f));
-        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -82f), 640f, 70f, 20);
-        statusText = CreateLabel(cardRect, "Status", new Vector2(0f, -148f), 400f, 40f, 26);
+        Image fill = LanguagePageBuilder.CreateRoundedImage(
+            "Fill", frame.transform, 32, new Color32(255, 239, 214, 255));
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(10f, 10f));
+        fill.raycastTarget = false;
 
-        CreateTextButton(cardRect, "Skip", new Vector2(276f, 242f), new Vector2(140f, 44f),
-            "SKIP", Skip);
-        CreateTextButton(cardRect, "Replay", new Vector2(-150f, -218f), new Vector2(180f, 52f),
-            "REPLAY", Replay);
-        nextButton = CreateTextButton(
-            cardRect, "Next", new Vector2(150f, -218f), new Vector2(180f, 52f),
-            "NEXT", Next);
+        stepText = CreateChip(cardRect, "Step", new Vector2(0f, 258f), new Vector2(280f, 40f), 18f);
+        titleText = CreateLabel(cardRect, "Title", new Vector2(0f, 204f), 640f, 48f, 36);
+        titleText.color = LanguagePageBuilder.Pink;
+        Outline titleOutline = titleText.gameObject.AddComponent<Outline>();
+        titleOutline.effectColor = LanguagePageBuilder.Green;
+        titleOutline.effectDistance = new Vector2(3f, -3f);
+
+        Image artFrame = LanguagePageBuilder.CreateRoundedImage(
+            "ArtFrame", cardRect, 28, LanguagePageBuilder.Green);
+        RectTransform artRect = artFrame.rectTransform;
+        artRect.anchorMin = artRect.anchorMax = new Vector2(0.5f, 0.5f);
+        artRect.pivot = new Vector2(0.5f, 0.5f);
+        artRect.anchoredPosition = new Vector2(0f, 48f);
+        artRect.sizeDelta = new Vector2(248f, 248f);
+        artFrame.raycastTarget = false;
+        Image artFill = LanguagePageBuilder.CreateRoundedImage(
+            "ArtFill", artFrame.transform, 24, new Color32(253, 242, 250, 255));
+        LanguagePageBuilder.Stretch(artFill.rectTransform, new Vector2(7f, 7f));
+        artFill.raycastTarget = false;
+        gestureImage = CreateRawImage(artFill.transform, "GestureImage", Vector2.zero, new Vector2(220f, 220f));
+        Stretch(gestureImage.rectTransform);
+        gestureImage.rectTransform.offsetMin = new Vector2(8f, 8f);
+        gestureImage.rectTransform.offsetMax = new Vector2(-8f, -8f);
+
+        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -112f), 640f, 72f, 20);
+        instructionText.enableWordWrapping = true;
+        statusText = CreateLabel(cardRect, "Status", new Vector2(0f, -178f), 400f, 40f, 24);
+        statusText.gameObject.SetActive(false);
+
+        CreateMorphicButton(cardRect, "Skip", new Vector2(278f, 258f), new Vector2(150f, 48f),
+            "SKIP", LanguagePageBuilder.Pink, Skip);
+        CreateMorphicButton(cardRect, "Replay", new Vector2(-150f, -246f), new Vector2(200f, 56f),
+            "REPLAY", LanguagePageBuilder.Pink, Replay);
+        nextButton = CreateMorphicButton(
+            cardRect, "Next", new Vector2(150f, -246f), new Vector2(200f, 56f),
+            "NEXT", new Color32(236, 64, 168, 255), Next);
     }
 
     private void ShowStep()
@@ -185,8 +213,11 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         instructionText.text = step.Instruction;
         if (gestureImage != null)
             gestureImage.texture = LoadTutorialTexture(step.ImagePath);
-        statusText.text = "TRY IT";
-        statusText.color = new Color32(52, 101, 29, 255);
+        if (statusText != null)
+        {
+            statusText.text = "";
+            statusText.gameObject.SetActive(false);
+        }
         nextButton.GetComponentInChildren<TMP_Text>().text =
             stepIndex == Steps.Length - 1 ? "START SCULPTING" : "NEXT";
     }
@@ -196,8 +227,9 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         if (stepRecognized)
             return;
         stepRecognized = true;
+        statusText.gameObject.SetActive(true);
         statusText.text = "RECOGNIZED";
-        statusText.color = new Color32(52, 101, 29, 255);
+        statusText.color = LanguagePageBuilder.Green;
     }
 
     private void Next()
@@ -232,6 +264,15 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         Action done = onFinished;
         onFinished = null;
         done?.Invoke();
+    }
+
+    public void Hide()
+    {
+        if (root != null && root.activeSelf && gestureController != null)
+            gestureController.RestoreRestState();
+        if (root != null)
+            root.SetActive(false);
+        onFinished = null;
     }
 
     private static void Stretch(RectTransform rect)
@@ -302,26 +343,51 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         return text;
     }
 
-    private static Button CreateTextButton(
+    private static TMP_Text CreateChip(
+        Transform parent,
+        string name,
+        Vector2 position,
+        Vector2 size,
+        float fontSize)
+    {
+        Image frame = LanguagePageBuilder.CreateRoundedImage(name, parent, 18, LanguagePageBuilder.Green);
+        RectTransform rect = frame.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+        frame.raycastTarget = false;
+        Image fill = LanguagePageBuilder.CreateRoundedImage("Fill", frame.transform, 14, LanguagePageBuilder.Pink);
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(4f, 4f));
+        fill.raycastTarget = false;
+        TMP_Text text = CreateLabel(fill.transform, "Label", Vector2.zero, size.x, size.y, fontSize);
+        Stretch(text.rectTransform);
+        return text;
+    }
+
+    private static Button CreateMorphicButton(
         Transform parent,
         string name,
         Vector2 position,
         Vector2 size,
         string label,
+        Color fillColor,
         Action onClick)
     {
-        GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
-        go.transform.SetParent(parent, false);
-        RectTransform rect = go.GetComponent<RectTransform>();
+        Image frame = LanguagePageBuilder.CreateRoundedImage(name, parent, 24, LanguagePageBuilder.Green);
+        RectTransform rect = frame.rectTransform;
         rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
         rect.pivot = new Vector2(0.5f, 0.5f);
         rect.anchoredPosition = position;
         rect.sizeDelta = size;
-        Image image = go.GetComponent<Image>();
-        image.color = new Color32(252, 184, 241, 255);
-        Button button = go.GetComponent<Button>();
+        frame.raycastTarget = true;
+        Image fill = LanguagePageBuilder.CreateRoundedImage("Fill", frame.transform, 20, fillColor);
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+        fill.raycastTarget = true;
+        Button button = frame.gameObject.AddComponent<Button>();
+        button.targetGraphic = fill;
         button.onClick.AddListener(() => onClick());
-        TMP_Text text = CreateLabel(go.transform, "Label", Vector2.zero, size.x - 12f, size.y, 20f);
+        TMP_Text text = CreateLabel(fill.transform, "Label", Vector2.zero, size.x - 12f, size.y, 20f);
         Stretch(text.rectTransform);
         text.text = label;
         return button;

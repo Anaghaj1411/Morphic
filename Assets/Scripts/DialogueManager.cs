@@ -78,12 +78,15 @@ public class DialogueManager : MonoBehaviour
     private Coroutine dialogueCoroutine;
     private bool dialogueStarted;
     private SculptingEnhancementLanternColorController lanternColorController;
+    private SculptingEnhancementTeapotColorController teapotColorController;
     private MorphicAIHelpUI aiHelpUi;
+    private GameObject sculptBackRoot;
 
     private void Awake()
     {
         FindMissingReferences();
         StyleDialogueUi();
+        StyleCultureChoices();
 
         // The Teapot gesture label is a scene UI element, so hide it on the
         // main menu even if it is not parented under the inactive Teapot.
@@ -234,12 +237,12 @@ public class DialogueManager : MonoBehaviour
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "Tell me about this place.", () => ShowNode(3)
+                    "About this place", () => ShowNode(3)
                 );
 
                 SetChoice(
                     choice2Button, choice2Text,
-                    "Why did you open a pottery shop?", () => ShowNode(4)
+                    "Why this shop?", () => ShowNode(4)
                 );
                 break;
 
@@ -256,7 +259,7 @@ public class DialogueManager : MonoBehaviour
 
                 SetChoice(
                     choice2Button, choice2Text,
-                    "Tell me about your journey.", () => ShowNode(5)
+                    "Your journey", () => ShowNode(5)
                 );
                 break;
 
@@ -268,7 +271,7 @@ public class DialogueManager : MonoBehaviour
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "That sounds lovely.", () => ShowNode(6)
+                    "That's lovely", () => ShowNode(6)
                 );
 
                 SetChoice(
@@ -307,7 +310,7 @@ public class DialogueManager : MonoBehaviour
 
                 SetChoice(
                     choice2Button, choice2Text,
-                    "That sounds amazing.", () => ShowNode(6)
+                    "Amazing!", () => ShowNode(6)
                 );
                 break;
 
@@ -333,17 +336,17 @@ public class DialogueManager : MonoBehaviour
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "Explore the Pottery Studio", EnterPotteryStudio
+                    "Pottery Studio", EnterPotteryStudio
                 );
 
                 SetChoice(
                     choice2Button, choice2Text,
-                    "Visit the Restaurant", EnterRestaurant
+                    "Restaurant", EnterRestaurant
                 );
 
                 SetChoice(
                     choice3Button, choice3Text,
-                    "Ask Lisa something", () => ShowNode(9)
+                    "Ask Lisa", () => ShowNode(9)
                 );
                 break;
 
@@ -358,7 +361,7 @@ public class DialogueManager : MonoBehaviour
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "Return to the shop entrance",
+                    "Back to shop",
                     ReturnToLocationChoices
                 );
                 break;
@@ -371,7 +374,7 @@ public class DialogueManager : MonoBehaviour
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "Explore the Pottery Studio", EnterPotteryStudio
+                    "Pottery Studio", EnterPotteryStudio
                 );
 
                 SetChoice(
@@ -418,15 +421,18 @@ public class DialogueManager : MonoBehaviour
             panelRect.anchorMin = new Vector2(0.5f, 0f);
             panelRect.anchorMax = new Vector2(0.5f, 0f);
             panelRect.pivot = new Vector2(0.5f, 0f);
-            panelRect.anchoredPosition = new Vector2(0f, 30f);
+            panelRect.anchoredPosition = new Vector2(0f, 24f);
             panelRect.sizeDelta = new Vector2(
-                Mathf.Min(1320f, Mathf.Max(320f, availableWidth)),
-                310f);
+                Mathf.Min(1180f, Mathf.Max(640f, availableWidth)),
+                340f);
         }
 
         Image panelImage = dialoguePanel.GetComponent<Image>();
         if (panelImage != null)
-            panelImage.color = new Color32(255, 246, 220, 250);
+        {
+            LanguagePageBuilder.ApplyRoundedSprite(panelImage, 32);
+            panelImage.color = new Color32(255, 239, 214, 255);
+        }
 
         Outline panelOutline = dialoguePanel.GetComponent<Outline>();
         if (panelOutline != null)
@@ -463,40 +469,13 @@ public class DialogueManager : MonoBehaviour
             SetTextRect(dialogueText.rectTransform,
                 Vector2.zero, Vector2.zero,
                 Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
-            dialogueText.rectTransform.offsetMin = new Vector2(38f, 112f);
-            dialogueText.rectTransform.offsetMax = new Vector2(-38f, -72f);
+            dialogueText.rectTransform.offsetMin = new Vector2(36f, 108f);
+            dialogueText.rectTransform.offsetMax = new Vector2(-36f, -72f);
         }
 
         Button[] choices = { choice1Button, choice2Button, choice3Button, choice4Button };
         for (int i = 0; i < choices.Length; i++)
-        {
-            Button button = choices[i];
-            if (button == null)
-                continue;
-
-            TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
-            StyleDialogueText(label, 20f, 15f, 22f, true);
-            if (label != null)
-            {
-                label.color = new Color32(45, 67, 49, 255);
-                label.fontStyle = FontStyles.Bold;
-                label.alignment = TextAlignmentOptions.Center;
-                RectTransform labelRect = label.rectTransform;
-                labelRect.offsetMin = new Vector2(14f, 5f);
-                labelRect.offsetMax = new Vector2(-14f, -5f);
-            }
-
-            Image buttonImage = button.targetGraphic as Image;
-            if (buttonImage != null)
-                buttonImage.color = new Color32(235, 174, 197, 255);
-
-            Outline buttonOutline = button.GetComponent<Outline>();
-            if (buttonOutline != null)
-            {
-                buttonOutline.effectColor = new Color32(42, 83, 49, 255);
-                buttonOutline.effectDistance = new Vector2(2f, -2f);
-            }
-        }
+            StyleChoiceButton(choices[i]);
 
         if (choice1Button != null)
         {
@@ -504,25 +483,219 @@ public class DialogueManager : MonoBehaviour
             RectTransform rowRect = row as RectTransform;
             if (rowRect != null)
             {
-                rowRect.anchorMin = new Vector2(0.5f, 0f);
-                rowRect.anchorMax = new Vector2(0.5f, 0f);
+                rowRect.anchorMin = new Vector2(0f, 0f);
+                rowRect.anchorMax = new Vector2(1f, 0f);
                 rowRect.pivot = new Vector2(0.5f, 0f);
-                rowRect.anchoredPosition = new Vector2(0f, 18f);
-                rowRect.sizeDelta = new Vector2(
-                    panelRect != null ? panelRect.sizeDelta.x - 56f : 1264f,
-                    76f);
+                rowRect.anchoredPosition = new Vector2(0f, 16f);
+                rowRect.sizeDelta = new Vector2(-40f, 84f);
             }
 
             HorizontalLayoutGroup rowLayout = row.GetComponent<HorizontalLayoutGroup>();
             if (rowLayout != null)
             {
-                rowLayout.padding = new RectOffset(4, 4, 3, 3);
-                rowLayout.spacing = 16f;
-                rowLayout.childForceExpandWidth = true;
-                rowLayout.childForceExpandHeight = true;
+                rowLayout.padding = new RectOffset(12, 12, 6, 6);
+                rowLayout.spacing = 18f;
+                rowLayout.childAlignment = TextAnchor.MiddleCenter;
+                rowLayout.childForceExpandWidth = false;
+                rowLayout.childForceExpandHeight = false;
                 rowLayout.childControlWidth = true;
                 rowLayout.childControlHeight = true;
             }
+        }
+    }
+
+    private void ApplyChoiceRowSize(bool compact)
+    {
+        if (choice1Button == null)
+            return;
+
+        Transform row = choice1Button.transform.parent;
+        RectTransform rowRect = row as RectTransform;
+        if (rowRect != null)
+        {
+            rowRect.sizeDelta = new Vector2(-40f, compact ? 56f : 84f);
+            rowRect.anchoredPosition = new Vector2(0f, compact ? 12f : 16f);
+        }
+
+        if (dialogueText != null)
+            dialogueText.rectTransform.offsetMin = new Vector2(36f, compact ? 68f : 108f);
+    }
+
+    private static void StyleChoiceButton(Button button, bool compact = false)
+    {
+        if (button == null)
+            return;
+
+        Image frame = button.GetComponent<Image>();
+        if (frame != null)
+        {
+            LanguagePageBuilder.ApplyRoundedSprite(frame, 24);
+            frame.color = LanguagePageBuilder.Green;
+            frame.raycastTarget = true;
+        }
+
+        Outline outline = button.GetComponent<Outline>();
+        if (outline != null)
+            outline.enabled = false;
+
+        Transform fillTransform = button.transform.Find("MorphicFill");
+        Image fill;
+        if (fillTransform == null)
+        {
+            fill = LanguagePageBuilder.CreateRoundedImage(
+                "MorphicFill", button.transform, 20, LanguagePageBuilder.Pink);
+            LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+        }
+        else
+        {
+            fill = fillTransform.GetComponent<Image>();
+            if (fill != null)
+            {
+                LanguagePageBuilder.ApplyRoundedSprite(fill, 20);
+                fill.color = LanguagePageBuilder.Pink;
+                LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+            }
+        }
+
+        if (fill != null)
+        {
+            fill.raycastTarget = true;
+            button.targetGraphic = fill;
+        }
+
+        LayoutElement layout = button.GetComponent<LayoutElement>();
+        if (layout == null)
+            layout = button.gameObject.AddComponent<LayoutElement>();
+        layout.minWidth = compact ? 176f : 260f;
+        layout.preferredWidth = compact ? 210f : 320f;
+        layout.flexibleWidth = 0f;
+        layout.minHeight = compact ? 44f : 70f;
+        layout.preferredHeight = compact ? 46f : 72f;
+        layout.flexibleHeight = 0f;
+
+        TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
+        if (label == null)
+            return;
+
+        if (fill != null)
+            label.transform.SetParent(fill.transform, false);
+        label.gameObject.SetActive(true);
+        label.enabled = true;
+        label.enableAutoSizing = false;
+        label.fontSize = compact ? 20f : 26f;
+        label.fontStyle = FontStyles.Bold;
+        label.characterSpacing = 1.5f;
+        label.color = LanguagePageBuilder.Green;
+        label.alignment = TextAlignmentOptions.Center;
+        label.enableWordWrapping = false;
+        label.overflowMode = TextOverflowModes.Overflow;
+        label.raycastTarget = false;
+        RectTransform labelRect = label.rectTransform;
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.pivot = new Vector2(0.5f, 0.5f);
+        labelRect.offsetMin = new Vector2(12f, 6f);
+        labelRect.offsetMax = new Vector2(-12f, -6f);
+
+        Outline textOutline = label.GetComponent<Outline>();
+        if (textOutline == null)
+            textOutline = label.gameObject.AddComponent<Outline>();
+        textOutline.effectColor = new Color32(255, 255, 255, 160);
+        textOutline.effectDistance = new Vector2(1.2f, -1.2f);
+        textOutline.useGraphicAlpha = true;
+        label.ForceMeshUpdate();
+    }
+
+    private void StyleCultureChoices()
+    {
+        if (cultureChoicesPanel == null)
+            return;
+
+        RectTransform panelRect = cultureChoicesPanel.transform as RectTransform;
+        if (panelRect != null)
+        {
+            panelRect.anchorMin = panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.anchoredPosition = new Vector2(0f, 36f);
+            panelRect.sizeDelta = new Vector2(1480f, 420f);
+        }
+
+        Image background = cultureChoicesPanel.GetComponent<Image>();
+        if (background != null)
+            background.enabled = false;
+
+        if (cultureChoicesPanel.transform.Find("MorphicFrame") == null)
+        {
+            Image frame = LanguagePageBuilder.CreateRoundedImage(
+                "MorphicFrame", cultureChoicesPanel.transform, 36, LanguagePageBuilder.Green);
+            frame.transform.SetAsFirstSibling();
+            LanguagePageBuilder.Stretch(frame.rectTransform);
+            frame.raycastTarget = false;
+            IgnoreLayout(frame.gameObject);
+
+            Image fill = LanguagePageBuilder.CreateRoundedImage(
+                "Fill", frame.transform, 32, new Color32(255, 239, 214, 245));
+            LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(10f, 10f));
+            fill.raycastTarget = false;
+        }
+
+        if (cultureChoicesPanel.transform.Find("Title") == null)
+        {
+            Image title = LanguagePageBuilder.CreateRoundedImage(
+                "Title", cultureChoicesPanel.transform, 22, LanguagePageBuilder.Green);
+            IgnoreLayout(title.gameObject);
+            RectTransform titleRect = title.rectTransform;
+            titleRect.anchorMin = titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 0.5f);
+            titleRect.anchoredPosition = new Vector2(0f, 18f);
+            titleRect.sizeDelta = new Vector2(420f, 56f);
+            title.raycastTarget = false;
+
+            Image titleFill = LanguagePageBuilder.CreateRoundedImage(
+                "Fill", title.transform, 18, LanguagePageBuilder.Pink);
+            LanguagePageBuilder.Stretch(titleFill.rectTransform, new Vector2(5f, 5f));
+            titleFill.raycastTarget = false;
+
+            GameObject labelObject = new GameObject("Label", typeof(RectTransform));
+            labelObject.transform.SetParent(titleFill.transform, false);
+            TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
+            label.text = "CHOOSE A CRAFT";
+            label.fontSize = 24f;
+            label.fontStyle = FontStyles.Bold;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = LanguagePageBuilder.Green;
+            label.raycastTarget = false;
+            LanguagePageBuilder.Stretch(label.rectTransform);
+        }
+
+        HorizontalLayoutGroup layout = cultureChoicesPanel.GetComponent<HorizontalLayoutGroup>();
+        if (layout != null)
+        {
+            layout.padding = new RectOffset(40, 40, 52, 32);
+            layout.spacing = 28f;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+        }
+
+        Button[] crafts = { taiwanButton, indiaButton, indonesiaButton, freestyleButton };
+        for (int i = 0; i < crafts.Length; i++)
+        {
+            Button button = crafts[i];
+            if (button == null)
+                continue;
+
+            RectTransform rect = button.transform as RectTransform;
+            if (rect != null)
+                rect.sizeDelta = new Vector2(300f, 300f);
+
+            Outline outline = button.GetComponent<Outline>();
+            if (outline == null)
+                outline = button.gameObject.AddComponent<Outline>();
+            outline.effectColor = LanguagePageBuilder.Green;
+            outline.effectDistance = new Vector2(4f, -4f);
         }
     }
 
@@ -563,6 +736,16 @@ public class DialogueManager : MonoBehaviour
         rect.sizeDelta = size;
     }
 
+    private static void IgnoreLayout(GameObject target)
+    {
+        if (target == null)
+            return;
+        LayoutElement element = target.GetComponent<LayoutElement>();
+        if (element == null)
+            element = target.AddComponent<LayoutElement>();
+        element.ignoreLayout = true;
+    }
+
     private void SetChoice(
         Button button,
         TMP_Text text,
@@ -574,8 +757,15 @@ public class DialogueManager : MonoBehaviour
 
         button.gameObject.SetActive(true);
 
-        if (text != null)
-            text.text = label;
+        TMP_Text labelText = text != null
+            ? text
+            : button.GetComponentInChildren<TMP_Text>(true);
+        if (labelText != null)
+            labelText.text = label;
+        bool compact = label == "Start Sculpting";
+        StyleChoiceButton(button, compact);
+        if (button == choice1Button)
+            ApplyChoiceRowSize(compact);
 
         button.onClick.RemoveAllListeners();
 
@@ -875,6 +1065,7 @@ public class DialogueManager : MonoBehaviour
     private void BeginSculpting(string culture)
     {
         HideAllChoices();
+        HideCultureChoices();
 
         if (lanternColorController == null)
         {
@@ -883,10 +1074,8 @@ public class DialogueManager : MonoBehaviour
                     FindObjectsInactive.Include);
         }
 
-        bool supportsColorPalette =
-            culture == "Taiwan" || culture == "India";
-        if (lanternColorController != null && culture != "Taiwan")
-            lanternColorController.SetPaletteAvailable(supportsColorPalette);
+        if (lanternColorController != null && culture != "Taiwan" && culture != "India")
+            lanternColorController.SetPaletteAvailable(false);
 
         if (dialoguePanel != null)
             dialoguePanel.SetActive(false);
@@ -961,7 +1150,7 @@ public class DialogueManager : MonoBehaviour
                     Debug.Log("MORPHIC: Gesture Mode Manager activated.");
                 }
 
-                // Activate webcam display with border in top-left
+                // Activate webcam display with a bubbly border in the bottom-left
                 if (webcamDisplayController != null)
                 {
                     webcamDisplayController.SetActive(true);
@@ -1020,10 +1209,9 @@ public class DialogueManager : MonoBehaviour
                     lanternColorController.SetTutorialSculptLock(true);
                     lanternColorController.SetPaletteAvailable(false);
                 }
-                if (aiHelpUi == null)
-                    aiHelpUi = FindFirstObjectByType<MorphicAIHelpUI>(FindObjectsInactive.Include);
-                if (aiHelpUi != null)
-                    aiHelpUi.SetVisible(true);
+                if (teapotColorController != null)
+                    teapotColorController.SetPaletteAvailable(false);
+                ShowAiHelp();
                 SetLanternSculptDriving(false);
                 StartLanternGestureTutorial();
 
@@ -1099,6 +1287,21 @@ public class DialogueManager : MonoBehaviour
 
                     if (teapotHandRunner != null)
                         StartCoroutine(CheckHandDetection(teapotHandRunner));
+
+                    if (lanternColorController != null)
+                        lanternColorController.SetPaletteAvailable(false);
+
+                    teapotColorController = indiaTeapot.GetComponentInChildren<SculptingEnhancementTeapotColorController>(true);
+                    if (teapotColorController == null)
+                        teapotColorController = indiaTeapot.AddComponent<SculptingEnhancementTeapotColorController>();
+                    if (teapotGestures != null)
+                        teapotColorController.BindFrom(teapotHandRunner, teapotGestures.TeapotRenderer, teapotGestures);
+                    teapotColorController.SetTutorialSculptLock(true);
+                    teapotColorController.SetPaletteAvailable(false);
+                    if (teapotGestures != null)
+                        teapotGestures.suppressDriving = true;
+                    ShowAiHelp();
+                    StartTeapotGestureTutorial();
                 }
                 else
                 {
@@ -1118,6 +1321,8 @@ public class DialogueManager : MonoBehaviour
                 Debug.Log("MORPHIC: Freestyle selected");
                 break;
         }
+
+        SetSculptBackVisible(true);
     }
 
     private IEnumerator LoadSculptingScene(string culture)
@@ -1280,6 +1485,159 @@ public class DialogueManager : MonoBehaviour
         }
 
         Debug.Log("MORPHIC: Hand detection check complete.");
+    }
+
+    private void StartTeapotGestureTutorial()
+    {
+        TeapotGestureTutorial tutorial = GetComponent<TeapotGestureTutorial>();
+        if (tutorial == null)
+            tutorial = gameObject.AddComponent<TeapotGestureTutorial>();
+
+        TeapotGestureController teapotGestures = indiaTeapot != null
+            ? indiaTeapot.GetComponentInChildren<TeapotGestureController>(true)
+            : FindFirstObjectByType<TeapotGestureController>(FindObjectsInactive.Include);
+
+        tutorial.Begin(teapotGestures, FinishTeapotGestureTutorial);
+    }
+
+    private void FinishTeapotGestureTutorial()
+    {
+        if (teapotColorController == null && indiaTeapot != null)
+            teapotColorController = indiaTeapot.GetComponentInChildren<SculptingEnhancementTeapotColorController>(true);
+
+        TeapotGestureController teapotGestures = indiaTeapot != null
+            ? indiaTeapot.GetComponentInChildren<TeapotGestureController>(true)
+            : null;
+        if (teapotGestures != null)
+            teapotGestures.suppressDriving = false;
+
+        if (teapotColorController != null)
+        {
+            teapotColorController.SetTutorialSculptLock(false);
+            teapotColorController.SetPaletteAvailable(true);
+        }
+
+        ShowAiHelp();
+    }
+
+    private void ShowAiHelp()
+    {
+        if (aiHelpUi == null)
+            aiHelpUi = FindFirstObjectByType<MorphicAIHelpUI>(FindObjectsInactive.Include);
+        if (aiHelpUi == null)
+            aiHelpUi = gameObject.AddComponent<MorphicAIHelpUI>();
+        aiHelpUi.SetVisible(true);
+    }
+
+    private void EnsureSculptBackButton()
+    {
+        if (sculptBackRoot != null)
+            return;
+
+        Canvas canvas = null;
+        if (dialoguePanel != null)
+            canvas = dialoguePanel.GetComponentInParent<Canvas>(true);
+        if (canvas == null)
+            canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+        if (canvas == null)
+            return;
+
+        Image frame = LanguagePageBuilder.CreateRoundedImage(
+            "SculptBackButton",
+            canvas.transform,
+            28,
+            LanguagePageBuilder.Green);
+        MorphicBackButton.PlaceOnPanelLeft(frame.rectTransform, 88f);
+        frame.raycastTarget = true;
+
+        Image fill = LanguagePageBuilder.CreateRoundedImage(
+            "Fill",
+            frame.transform,
+            24,
+            LanguagePageBuilder.Pink);
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+        fill.raycastTarget = true;
+
+        Sprite icon = MorphicBackButton.LoadSprite();
+        Image iconImage = LanguagePageBuilder.CreateImage(
+            "Icon",
+            fill.transform,
+            icon);
+        LanguagePageBuilder.Stretch(iconImage.rectTransform, new Vector2(10f, 10f));
+        if (icon != null)
+            MorphicBackButton.ApplyIcon(iconImage);
+        else
+            iconImage.color = Color.white;
+        iconImage.raycastTarget = false;
+
+        Button uiButton = frame.gameObject.AddComponent<Button>();
+        uiButton.targetGraphic = fill;
+        uiButton.onClick.AddListener(ReturnToCraftSelect);
+
+        sculptBackRoot = frame.gameObject;
+        sculptBackRoot.SetActive(false);
+    }
+
+    private void SetSculptBackVisible(bool visible)
+    {
+        EnsureSculptBackButton();
+        if (sculptBackRoot == null)
+            return;
+
+        sculptBackRoot.SetActive(visible);
+        if (visible)
+            sculptBackRoot.transform.SetAsLastSibling();
+    }
+
+    private void ReturnToCraftSelect()
+    {
+        SetSculptBackVisible(false);
+
+        if (aiHelpUi != null)
+            aiHelpUi.SetVisible(false);
+
+        SculptingGestureTutorial lanternTutorial =
+            GetComponent<SculptingGestureTutorial>();
+        if (lanternTutorial != null)
+            lanternTutorial.Hide();
+
+        TeapotGestureTutorial teapotTutorial =
+            GetComponent<TeapotGestureTutorial>();
+        if (teapotTutorial != null)
+            teapotTutorial.Hide();
+
+        if (lanternColorController != null)
+            lanternColorController.SetPaletteAvailable(false);
+
+        if (teapotColorController != null)
+            teapotColorController.SetPaletteAvailable(false);
+
+        SetLanternSculptDriving(false);
+        if (taiwanGestureIndicator != null)
+            taiwanGestureIndicator.SetActive(false);
+
+        TeapotGestureController teapotGestures = indiaTeapot != null
+            ? indiaTeapot.GetComponentInChildren<TeapotGestureController>(true)
+            : null;
+        if (teapotGestures != null)
+            teapotGestures.suppressDriving = true;
+
+        if (indiaTeapot != null)
+            indiaTeapot.SetActive(false);
+
+        GameObject teapotStatus = FindSceneObject("Teapot Gesture Status");
+        if (teapotStatus != null)
+            teapotStatus.SetActive(false);
+
+        if (webcamDisplayController != null)
+            webcamDisplayController.SetActive(false);
+        if (handAnnotationController != null)
+            handAnnotationController.SetActive(false);
+
+        if (dialoguePanel != null)
+            dialoguePanel.SetActive(true);
+
+        ShowNode(10);
     }
 
     private void StartLanternGestureTutorial()

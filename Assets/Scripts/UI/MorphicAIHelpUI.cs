@@ -15,8 +15,11 @@ public class MorphicAIHelpUI : MonoBehaviour
     public void SetVisible(bool visible)
     {
         EnsureUi();
-        if (root != null)
-            root.SetActive(visible);
+        if (root == null)
+            return;
+        root.SetActive(visible);
+        if (visible)
+            root.transform.SetAsLastSibling();
     }
 
     private void Awake()
@@ -232,6 +235,23 @@ public class MorphicAIHelpUI : MonoBehaviour
             currentTool = "lantern"
         };
 
+        SculptingEnhancementTeapotColorController teapotColors =
+            FindFirstObjectByType<SculptingEnhancementTeapotColorController>(
+                FindObjectsInactive.Include);
+        TeapotGestureController teapotGestures =
+            FindFirstObjectByType<TeapotGestureController>(FindObjectsInactive.Include);
+        bool teapotActive = teapotColors != null &&
+            teapotColors.isActiveAndEnabled &&
+            teapotColors.gameObject.activeInHierarchy;
+
+        if (teapotActive)
+        {
+            if (teapotGestures != null)
+                teapotGestures.WriteHelpWeights(state);
+            teapotColors.WriteHelpDecor(state);
+            return state;
+        }
+
         TaiwanLanternGestureController gestures =
             FindFirstObjectByType<TaiwanLanternGestureController>(FindObjectsInactive.Include);
         if (gestures != null)
@@ -250,6 +270,21 @@ public class MorphicAIHelpUI : MonoBehaviour
     {
         if (state == null)
             return "LISA: Try a gesture, then ask again.";
+        if (state.currentTool == "teapot")
+        {
+            if (state.tassel < 20)
+                return "LISA: Two fists, pull down to bring the handle out.";
+            if (state.height < 40)
+                return "LISA: Point both index fingers and lift to make it taller.";
+            if (state.bamboo < 20)
+                return "LISA: Two V shapes, spread them to shape the middle.";
+            if (state.hasStamp == 0 && state.hasSelfie == 0)
+                return "LISA: Add a stamp or a selfie on the teapot body.";
+            if (state.width < 20)
+                return "LISA: Spread both index fingers to give it more width.";
+            return "LISA: This looks ready. Open Finish when you are done.";
+        }
+
         if (state.tassel < 20)
             return "LISA: Two fists, pull down to bring the tassels out.";
         if (state.height < 40)

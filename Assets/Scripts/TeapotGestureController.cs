@@ -105,8 +105,32 @@ public sealed class TeapotGestureController : MonoBehaviour
     }
 
     public bool suppressDriving;
+    public bool IsDeformationLocked => deformationLocked;
+    public bool ownWidthHeight = true;
 
     private bool externalFistRotationActive;
+    private float[] restBlendWeights;
+    private Quaternion restLocalRotation = Quaternion.identity;
+    private bool practiceRightPinchHeld;
+    private bool practiceLeftPinchHeld;
+    private bool deformationLocked;
+    private bool madeDeformation;
+    private bool useLid2;
+    private bool useShaft2;
+    private bool useHandle2;
+
+    public enum PracticeGesture
+    {
+        None,
+        TwoIndex,
+        TwoFists,
+        RightPinch,
+        LeftPinch,
+        RightV,
+        TwoV,
+        SingleFist,
+        OpenPalm
+    }
 
     public SculptHandLandmarkerRunner HandRunner => handRunner;
     public TMP_Text GestureStatus => gestureStatus;
@@ -138,6 +162,148 @@ public sealed class TeapotGestureController : MonoBehaviour
         currentGesture = GestureMode.None;
         lockedWidthHeightAxis = 0;
         SetStatus("TEAPOT: ROTATE");
+    }
+
+    public void SynchronizeWeightsFromRenderer()
+    {
+        ReadBodyWeights();
+    }
+
+    public void CaptureRestState()
+    {
+        if (teapotRenderer == null || teapotRenderer.sharedMesh == null)
+            return;
+
+        restLocalRotation = teapotRenderer.transform.localRotation;
+        Mesh mesh = teapotRenderer.sharedMesh;
+        restBlendWeights = new float[mesh.blendShapeCount];
+        for (int i = 0; i < restBlendWeights.Length; i++)
+            restBlendWeights[i] = teapotRenderer.GetBlendShapeWeight(i);
+    }
+
+    public void RestoreRestState()
+    {
+        if (teapotRenderer == null || restBlendWeights == null)
+            return;
+
+        teapotRenderer.transform.localRotation = restLocalRotation;
+        for (int i = 0; i < restBlendWeights.Length; i++)
+            teapotRenderer.SetBlendShapeWeight(i, restBlendWeights[i]);
+
+        ReadBodyWeights();
+        ResetPinchTracking();
+        ResetHandleDownTracking();
+        ResetBevelTracking();
+        currentGesture = GestureMode.None;
+        lockedWidthHeightAxis = 0;
+        externalFistRotationActive = false;
+        deformationLocked = false;
+        madeDeformation = false;
+    }
+
+    public void ArmLidVariant(bool useSecond)
+    {
+        useLid2 = useSecond;
+        ZeroUnusedShape(useLid2 ? "Lid 1" : "Lid 2");
+    }
+
+    public void ArmShaftVariant(bool useSecond)
+    {
+        useShaft2 = useSecond;
+        ZeroUnusedShape(useShaft2 ? "Shaft 1" : "Shaft 2");
+    }
+
+    public void ArmHandleVariant(bool useSecond)
+    {
+        useHandle2 = useSecond;
+        ZeroUnusedShape(useHandle2 ? "Handle 1" : "Handle 2");
+    }
+
+    public void WriteHelpWeights(MorphicCraftHelpState state)
+    {
+        if (state == null || teapotRenderer == null)
+            return;
+
+        state.width = Mathf.RoundToInt(ReadShape("Width"));
+        state.height = Mathf.RoundToInt(ReadShape("Height"));
+        state.bamboo = Mathf.RoundToInt(ReadShape("Middle"));
+        state.topper = Mathf.RoundToInt(ReadShape("Bevel Top and Bottom"));
+        state.lidTop = Mathf.RoundToInt(ReadShape(ActiveLidName));
+        state.lidBottom = Mathf.RoundToInt(ReadShape(ActiveShaftName));
+        state.tassel = Mathf.RoundToInt(ReadShape(ActiveHandleName));
+        state.locked = deformationLocked ? 1 : 0;
+    }
+
+    private string ActiveLidName => useLid2 ? "Lid 2" : "Lid 1";
+    private string ActiveShaftName => useShaft2 ? "Shaft 2" : "Shaft 1";
+    private string ActiveHandleName => useHandle2 ? "Handle 2" : "Handle 1";
+
+    private float ReadShape(string exactName)
+    {
+        return blendShapeIndices.TryGetValue(exactName, out int index)
+            ? teapotRenderer.GetBlendShapeWeight(index)
+            : 0f;
+    }
+
+    private void ZeroUnusedShape(string exactName)
+    {
+        if (teapotRenderer != null && blendShapeIndices.TryGetValue(exactName, out int index))
+            teapotRenderer.SetBlendShapeWeight(index, 0f);
+    }
+
+    public PracticeGesture ReadPracticeGesture()
+    {
+        if (handRunner == null)
+            return PracticeGesture.None;
+
+        bool hasTwo = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first, out SculptHandFrame second);
+        if (!hasTwo && !handRunner.TryGetLatestHand(out first))
+            return PracticeGesture.None;
+        if (!hasTwo)
+            second = default;
+
+        bool twoV = hasTwo && IsVSign(first) && IsVSign(second);
+        bool twoFists = !twoV && hasTwo && LooksLikeHandleFist(first) && LooksLikeHandleFist(second);
+        bool rightV = TryGetRightVHand(first, second, hasTwo, out _);
+        bool twoIndex = !twoV && !rightV && hasTwo &&
+                        IsIndexPointing(first) && IsIndexPointing(second);
+
+        bool rightPinch = false;
+        bool leftPinch = false;
+        bool firstRight = IsPhysicalRightHand(first, second, hasTwo);
+        if (firstRight)
+            rightPinch = IsPinching(first, true, ref practiceRightPinchHeld);
+        else
+            leftPinch = IsPinching(first, false, ref practiceLeftPinchHeld);
+        if (hasTwo)
+        {
+            bool secondRight = IsPhysicalRightHand(second, first, true);
+            if (secondRight)
+                rightPinch = rightPinch || IsPinching(second, true, ref practiceRightPinchHeld);
+            else
+                leftPinch = leftPinch || IsPinching(second, false, ref practiceLeftPinchHeld);
+        }
+
+        if (twoV)
+            return PracticeGesture.TwoV;
+        if (twoIndex)
+            return PracticeGesture.TwoIndex;
+        if (twoFists)
+            return PracticeGesture.TwoFists;
+        if (rightPinch)
+            return PracticeGesture.RightPinch;
+        if (leftPinch)
+            return PracticeGesture.LeftPinch;
+        if (rightV)
+            return PracticeGesture.RightV;
+        if (LooksLikeFist(first) && (!hasTwo || !LooksLikeFist(second)))
+            return PracticeGesture.SingleFist;
+        if (hasTwo && LooksLikeFist(second) && !LooksLikeFist(first))
+            return PracticeGesture.SingleFist;
+        if (IsOpenPalm(first) || (hasTwo && IsOpenPalm(second)))
+            return PracticeGesture.OpenPalm;
+        return PracticeGesture.None;
     }
 
     private void Awake()
@@ -285,18 +451,58 @@ public sealed class TeapotGestureController : MonoBehaviour
             return;
         }
 
-        if (hasTwoHands && IsIndexPointing(first) && IsIndexPointing(second))
+        bool twoV = hasTwoHands && IsVSign(first) && IsVSign(second);
+        bool twoFists = !twoV && hasTwoHands &&
+                        LooksLikeHandleFist(first) && LooksLikeHandleFist(second);
+        SculptHandFrame rightVHand;
+        bool foundRightV = TryGetRightVHand(first, second, hasTwoHands, out rightVHand);
+        bool rightV = !twoV && foundRightV;
+        bool twoIndex = !twoV && !rightV && hasTwoHands &&
+                        IsIndexPointing(first) && IsIndexPointing(second);
+        bool firstRight = IsPhysicalRightHand(first, second, hasTwoHands);
+        ref bool firstHeld = ref (firstRight ? ref rightPinchHeld : ref leftPinchHeld);
+        bool pinchOrV = IsPinching(first, firstRight, ref firstHeld) || rightV;
+        if (hasTwoHands)
+        {
+            bool secondRight = IsPhysicalRightHand(second, first, true);
+            ref bool secondHeld = ref (secondRight ? ref rightPinchHeld : ref leftPinchHeld);
+            pinchOrV = pinchOrV || IsPinching(second, secondRight, ref secondHeld);
+        }
+
+        bool sculptGesture = twoIndex || twoV || twoFists || pinchOrV;
+        bool openPalm = IsOpenPalm(first) || (hasTwoHands && IsOpenPalm(second));
+        if (openPalm && madeDeformation && !sculptGesture)
+            deformationLocked = true;
+        if (sculptGesture)
+            deformationLocked = false;
+
+        if (deformationLocked)
         {
             ResetPinchTracking();
             ResetHandleDownTracking();
             ResetBevelTracking();
-            if (currentGesture != GestureMode.WidthHeight)
-                BeginWidthHeight(first, second);
+            currentGesture = GestureMode.None;
+            SetStatus("LOCKED  |  open palm");
+            return;
+        }
 
-            DriveWidthHeight(first, second);
+        if (twoIndex)
+        {
+            ResetPinchTracking();
+            ResetHandleDownTracking();
+            ResetBevelTracking();
+            if (ownWidthHeight)
+            {
+                if (currentGesture != GestureMode.WidthHeight)
+                    BeginWidthHeight(first, second);
+                DriveWidthHeight(first, second);
+            }
+
+            currentGesture = GestureMode.WidthHeight;
+            madeDeformation = true;
             SetStatus("TEAPOT: WIDTH / HEIGHT");
         }
-        else if (hasTwoHands && IsVSign(first) && IsVSign(second))
+        else if (twoV)
         {
             ResetPinchTracking();
             ResetHandleDownTracking();
@@ -305,22 +511,25 @@ public sealed class TeapotGestureController : MonoBehaviour
                 BeginMiddle(first, second);
 
             DriveMiddle(first, second);
+            madeDeformation = true;
             SetStatus("TEAPOT: MIDDLE");
         }
-        else if (hasTwoHands && LooksLikeHandleFist(first) && LooksLikeHandleFist(second))
+        else if (twoFists)
         {
             ResetPinchTracking();
             ResetBevelTracking();
             currentGesture = GestureMode.HandleDown;
             DriveHandleDown(first, second);
-            SetStatus("TEAPOT: HANDLE 1");
+            madeDeformation = true;
+            SetStatus("TEAPOT: " + ActiveHandleName.ToUpperInvariant());
         }
-        else if (TryGetRightVHand(first, second, hasTwoHands, out SculptHandFrame rightVHand))
+        else if (rightV)
         {
             ResetPinchTracking();
             ResetHandleDownTracking();
             currentGesture = GestureMode.BevelUp;
             DriveBevelUp(rightVHand);
+            madeDeformation = true;
             SetStatus("TEAPOT: BEVEL TOP / BOTTOM");
         }
         else
@@ -331,8 +540,7 @@ public sealed class TeapotGestureController : MonoBehaviour
             bool lidPinching = false;
             bool shaftPinching = false;
 
-            bool firstIsRight = IsPhysicalRightHand(first, second, hasTwoHands);
-            if (firstIsRight)
+            if (firstRight)
                 lidPinching |= DrivePinchUp(first, true);
             else
                 shaftPinching |= DrivePinchUp(first, false);
@@ -346,12 +554,16 @@ public sealed class TeapotGestureController : MonoBehaviour
                     shaftPinching |= DrivePinchUp(second, false);
             }
 
+            if (lidPinching || shaftPinching)
+                madeDeformation = true;
+
             if (lidPinching && shaftPinching)
-                SetStatus("TEAPOT: LID 1 + SHAFT 1");
+                SetStatus("TEAPOT: " + ActiveLidName.ToUpperInvariant() +
+                    " + " + ActiveShaftName.ToUpperInvariant());
             else if (lidPinching)
-                SetStatus("TEAPOT: LID 1");
+                SetStatus("TEAPOT: " + ActiveLidName.ToUpperInvariant());
             else if (shaftPinching)
-                SetStatus("TEAPOT: SHAFT 1");
+                SetStatus("TEAPOT: " + ActiveShaftName.ToUpperInvariant());
             else
                 EndGesture("TEAPOT: READY");
         }
@@ -525,7 +737,7 @@ public sealed class TeapotGestureController : MonoBehaviour
         ref bool armed = ref (physicalRight ? ref rightPinchArmed : ref leftPinchArmed);
         ref float startY = ref (physicalRight ? ref rightPinchStartY : ref leftPinchStartY);
         ref float startWeight = ref (physicalRight ? ref rightPinchStartWeight : ref leftPinchStartWeight);
-        string shapeName = physicalRight ? "Lid 1" : "Shaft 1";
+        string shapeName = physicalRight ? ActiveLidName : ActiveShaftName;
 
         if (!IsPinching(hand, physicalRight, ref held) ||
             !blendShapeIndices.TryGetValue(shapeName, out int index))
@@ -668,7 +880,7 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     private void DriveHandleDown(SculptHandFrame first, SculptHandFrame second)
     {
-        if (!blendShapeIndices.TryGetValue("Handle 1", out int handleIndex))
+        if (!blendShapeIndices.TryGetValue(ActiveHandleName, out int handleIndex))
         {
             return;
         }
@@ -688,7 +900,7 @@ public sealed class TeapotGestureController : MonoBehaviour
             100f);
         float blend = 1f - Mathf.Exp(-handleEase * Time.deltaTime);
         SetBlendShapeWeight(
-            "Handle 1",
+            ActiveHandleName,
             Mathf.Lerp(teapotRenderer.GetBlendShapeWeight(handleIndex), target, blend));
     }
 

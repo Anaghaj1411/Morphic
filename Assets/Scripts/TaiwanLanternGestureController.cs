@@ -269,7 +269,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
         if (externalFistRotationActive)
         {
             RestoreCommittedThumbShapes();
-            SetStatus("GESTURE: FIST ROTATE");
+            SetStatus("GESTURE: FIST REVOLVE");
             return;
         }
 

@@ -15,20 +15,23 @@ public sealed class TeapotFistRotationController : MonoBehaviour
     [SerializeField] private TeapotGestureController teapotGestures;
     [SerializeField] private Camera viewCamera;
 
+    [Header("Rotation Axis")]
+    [Tooltip("Horizontal world-space axis to roll around. Use (1, 0, 0) or (0, 0, 1), depending on the teapot orientation.")]
+    [SerializeField] private Vector3 rotationAxis = new Vector3(0f, 0f, 1f);
+
     [Header("Hold-to-steer")]
-    [SerializeField, Range(40f, 400f)] private float turnYawRate = 95f;
-    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 76f;
+    [SerializeField, Range(40f, 400f)] private float turnYawRate = 110f;
     [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.06f;
     [SerializeField, Range(0.12f, 0.4f)] private float fullSteerRange = 0.22f;
     [SerializeField, Min(4f)] private float smoothing = 16f;
 
     private Transform pivot;
     private Transform originalParent;
+    private Vector3 restPosition;
+    private Vector3 fixedAxis = Vector3.right;
     private Quaternion restRotation = Quaternion.identity;
     private float yaw;
-    private float pitch;
     private float yawSpeed;
-    private float pitchSpeed;
     private bool rotating;
 
     private void Awake()
@@ -43,11 +46,36 @@ public sealed class TeapotFistRotationController : MonoBehaviour
 
     private void OnDestroy()
     {
+        RestoreTargetParent();
+    }
+
+    public void AbandonCopiedPivot()
+    {
+        pivot = null;
+        originalParent = null;
+        teapotRotationTarget = null;
+    }
+
+    private void RestoreTargetParent()
+    {
         if (pivot == null)
             return;
-        if (teapotRotationTarget != null && teapotRotationTarget.parent == pivot)
-            teapotRotationTarget.SetParent(originalParent, true);
-        Destroy(pivot.gameObject);
+
+        Transform heldPivot = pivot;
+        Transform target = teapotRotationTarget;
+        Transform parent = originalParent;
+        pivot = null;
+        originalParent = null;
+
+        if (target != null &&
+            parent != null &&
+            target.parent == heldPivot)
+        {
+            target.SetParent(parent, true);
+        }
+
+        if (heldPivot != null)
+            Destroy(heldPivot.gameObject);
     }
 
     public void BindFrom(SculptHandLandmarkerRunner runner, SkinnedMeshRenderer renderer,
@@ -95,43 +123,16 @@ public sealed class TeapotFistRotationController : MonoBehaviour
             EnsurePivot();
             rotating = true;
             yawSpeed = 0f;
-            pitchSpeed = 0f;
         }
 
-        // Where the fist sits on screen, not how it is moving.
-        // Only one axis at a time: left/right turns, or up/down tilts.
+        // Fist left/right. Axis is locked when the fist first closes.
         float steerLeft = ApplyDeadZone(0.5f - fist.PalmCenter.x);
-        float steerUp = ApplyDeadZone(fist.PalmCenter.y - 0.5f);
-        float targetYaw = 0f;
-        float targetPitch = 0f;
-        bool steerHorizontal = Mathf.Abs(steerLeft) > Mathf.Abs(steerUp);
-        bool steerVertical = Mathf.Abs(steerUp) > Mathf.Abs(steerLeft);
-        if (steerHorizontal)
-            targetYaw = -steerLeft * turnYawRate;
-        else if (steerVertical)
-            targetPitch = -steerUp * turnPitchRate;
+        float targetYaw = steerLeft * turnYawRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         float blend = 1f - Mathf.Exp(-smoothing * dt);
-        if (steerVertical)
-        {
-            // Cut leftover yaw immediately so up/down cannot keep turning around world-up.
-            yawSpeed = 0f;
-            pitchSpeed = Mathf.Lerp(pitchSpeed, targetPitch, blend);
-        }
-        else if (steerHorizontal)
-        {
-            pitchSpeed = 0f;
-            yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
-        }
-        else
-        {
-            yawSpeed = Mathf.Lerp(yawSpeed, 0f, blend);
-            pitchSpeed = Mathf.Lerp(pitchSpeed, 0f, blend);
-        }
-
+        yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
         yaw += yawSpeed * dt;
-        pitch += pitchSpeed * dt;
         ApplyRotation();
     }
 
@@ -183,7 +184,6 @@ public sealed class TeapotFistRotationController : MonoBehaviour
             teapotGestures.SetExternalFistRotationActive(false);
         rotating = false;
         yawSpeed = 0f;
-        pitchSpeed = 0f;
     }
 
     private void ApplyRotation()
@@ -191,14 +191,11 @@ public sealed class TeapotFistRotationController : MonoBehaviour
         if (pivot == null)
             return;
 
-        ResolveAxes(out Vector3 yawAxis, out Vector3 pitchAxis);
-        pivot.rotation =
-            Quaternion.AngleAxis(yaw, yawAxis) *
-            Quaternion.AngleAxis(pitch, pitchAxis) *
-            restRotation;
+        pivot.position = restPosition;
+        pivot.rotation = Quaternion.AngleAxis(yaw, fixedAxis) * restRotation;
     }
 
-    private void ResolveAxes(out Vector3 yawAxis, out Vector3 pitchAxis)
+    private Vector3 ResolveViewRight()
     {
         Camera cam = ResolveViewCamera();
         Vector3 viewForward = cam != null ? cam.transform.forward : Vector3.forward;
@@ -208,11 +205,7 @@ public sealed class TeapotFistRotationController : MonoBehaviour
         Vector3 viewRight = Vector3.Cross(viewForward.normalized, Vector3.up);
         if (viewRight.sqrMagnitude < 0.01f)
             viewRight = Vector3.right;
-
-        // Same mapping as the lantern: left/right turns around view-right,
-        // up/down spins around world-up.
-        yawAxis = viewRight.normalized;
-        pitchAxis = Vector3.up;
+        return viewRight.normalized;
     }
 
     private void EnsurePivot()
@@ -222,13 +215,15 @@ public sealed class TeapotFistRotationController : MonoBehaviour
             return;
 
         originalParent = teapotRotationTarget.parent;
+        restPosition = teapotRenderer.bounds.center;
+        fixedAxis = rotationAxis.sqrMagnitude > 0.0001f ? rotationAxis.normalized : Vector3.right;
         pivot = new GameObject("Teapot Fist Rotation Pivot").transform;
         pivot.SetParent(originalParent, false);
-        pivot.position = teapotRenderer.transform.TransformPoint(teapotRenderer.localBounds.center);
+        pivot.position = restPosition;
         pivot.rotation = Quaternion.identity;
         pivot.localScale = Vector3.one;
         teapotRotationTarget.SetParent(pivot, true);
-        restRotation = pivot.rotation;
+        restRotation = Quaternion.identity;
     }
 
     private void Bind()
@@ -244,8 +239,22 @@ public sealed class TeapotFistRotationController : MonoBehaviour
         if (teapotRenderer == null)
             teapotRenderer = GetComponentInChildren<SkinnedMeshRenderer>(true);
         if (teapotRotationTarget == null && teapotRenderer != null)
-            teapotRotationTarget = teapotRenderer.transform.root;
+            teapotRotationTarget = ResolveTeapotRoot(teapotRenderer.transform);
         ResolveViewCamera();
+    }
+
+    private static Transform ResolveTeapotRoot(Transform start)
+    {
+        Transform current = start;
+        while (current != null)
+        {
+            string objectName = current.name;
+            if (objectName == "Teapot_Updated")
+                return current;
+            current = current.parent;
+        }
+
+        return start;
     }
 
     private Camera ResolveViewCamera()

@@ -335,6 +335,9 @@ public class PinchSculptBrush : MonoBehaviour
         }
 
         sculptMesh = newMesh;
+        MeshFilter filter = GetComponent<MeshFilter>();
+        if (filter != null)
+            filter.sharedMesh = newMesh;
 
         vertices = sculptMesh.vertices;
 
@@ -353,6 +356,7 @@ public class PinchSculptBrush : MonoBehaviour
             Vector3.zero;
 
         wasPinching = false;
+        RefreshMeshCollider();
 
         Debug.Log(
             "Sculpt brush refreshed for mesh: " +
@@ -421,6 +425,8 @@ public class PinchSculptBrush : MonoBehaviour
             clayCollider = GetComponent<Collider>();
         }
 
+        RefreshMeshCollider();
+
         if (pinchDetector == null)
         {
             pinchDetector =
@@ -446,6 +452,11 @@ public class PinchSculptBrush : MonoBehaviour
         }
 
         CreateBrushCursor();
+    }
+
+    private void OnDisable()
+    {
+        SetCursorVisible(false);
     }
 
     private void Update()
@@ -585,52 +596,20 @@ public class PinchSculptBrush : MonoBehaviour
 
     public void ToggleSculptMode()
     {
-        if (sculptMode ==
-            SculptToolMode.Inflate)
-        {
-            sculptMode =
-                SculptToolMode.Indent;
-        }
-        else if (
-            sculptMode ==
-            SculptToolMode.Indent)
-        {
-            sculptMode =
-                SculptToolMode.Smooth;
-        }
-        else if (
-            sculptMode ==
-            SculptToolMode.Smooth)
-        {
-            sculptMode =
-                SculptToolMode.Grab;
-        }
-        else if (
-            sculptMode ==
-            SculptToolMode.Grab)
-        {
-            sculptMode =
-                SculptToolMode.Flatten;
-        }
-        else if (
-            sculptMode ==
-            SculptToolMode.Flatten)
-        {
-            sculptMode =
-                SculptToolMode.Crease;
-        }
-        else if (
-            sculptMode ==
-            SculptToolMode.Crease)
-        {
-            sculptMode =
-                SculptToolMode.Stretch;
-        }
+        if (sculptMode == SculptToolMode.Inflate)
+            sculptMode = SculptToolMode.Indent;
+        else if (sculptMode == SculptToolMode.Indent)
+            sculptMode = SculptToolMode.Smooth;
+        else if (sculptMode == SculptToolMode.Smooth)
+            sculptMode = SculptToolMode.Grab;
+        else if (sculptMode == SculptToolMode.Grab)
+            sculptMode = SculptToolMode.Flatten;
+        else if (sculptMode == SculptToolMode.Flatten)
+            sculptMode = SculptToolMode.Crease;
+        else if (sculptMode == SculptToolMode.Crease)
+            sculptMode = SculptToolMode.Stretch;
         else
-        {
-            sculptMode =
-                SculptToolMode.Inflate;
-        }
+            sculptMode = SculptToolMode.Inflate;
 
         UpdateCursorColor();
     }
@@ -661,6 +640,7 @@ public class PinchSculptBrush : MonoBehaviour
         sculptMesh.RecalculateNormals();
 
         sculptMesh.RecalculateBounds();
+        RefreshMeshCollider();
     }
 
     private void CheckKeyboardModeSwitch()
@@ -1052,6 +1032,17 @@ public class PinchSculptBrush : MonoBehaviour
         sculptMesh.RecalculateNormals();
 
         sculptMesh.RecalculateBounds();
+        RefreshMeshCollider();
+    }
+
+    private void RefreshMeshCollider()
+    {
+        MeshCollider meshCollider = clayCollider as MeshCollider;
+        if (meshCollider == null || sculptMesh == null)
+            return;
+
+        meshCollider.sharedMesh = null;
+        meshCollider.sharedMesh = sculptMesh;
     }
 
     /// <summary>

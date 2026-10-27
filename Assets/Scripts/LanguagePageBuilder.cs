@@ -580,6 +580,15 @@ public static class LanguagePageBuilder
         return img;
     }
 
+    public static void ApplyRoundedSprite(Image image, int radius)
+    {
+        if (image == null)
+            return;
+        image.sprite = RoundedRect(96, radius);
+        image.type = Image.Type.Sliced;
+        image.pixelsPerUnitMultiplier = 1f;
+    }
+
     private static float RoundedCoverage(
         float x,
         float y,

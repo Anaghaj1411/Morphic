@@ -12,8 +12,8 @@ public sealed class LanternFistRotationController : MonoBehaviour
     [SerializeField] private Camera viewCamera;
 
     [Header("Hold-to-steer")]
-    [SerializeField, Range(40f, 400f)] private float turnYawRate = 150f;
-    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 120f;
+    [SerializeField, Range(40f, 400f)] private float turnYawRate = 110f;
+    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 110f;
     [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.06f;
     [SerializeField, Range(0.12f, 0.4f)] private float fullSteerRange = 0.22f;
     [SerializeField, Min(4f)] private float smoothing = 16f;
@@ -79,7 +79,9 @@ public sealed class LanternFistRotationController : MonoBehaviour
 
         bool hasTwo = handRunner.TryGetLatestTwoHands(out SculptHandFrame first, out SculptHandFrame second);
         bool hasOne = hasTwo || handRunner.TryGetLatestHand(out first);
-        if (hasTwo && LooksClosed(first) && LooksClosed(second))
+        // Two hands are tassel / width / bamboo. Never start a one-fist
+        // turn while the second hand is coming in.
+        if (hasTwo)
         {
             PauseRotation();
             return;
@@ -102,40 +104,17 @@ public sealed class LanternFistRotationController : MonoBehaviour
             pitchSpeed = 0f;
         }
 
-        // Where the fist sits on screen, not how it is moving.
-        // Only one axis at a time: left/right turns, or up/down tilts.
+        // Left/right only. Fist height does not steer.
         float steerLeft = ApplyDeadZone(0.5f - fist.PalmCenter.x);
-        float steerUp = ApplyDeadZone(fist.PalmCenter.y - 0.5f);
-        float targetYaw = 0f;
-        float targetPitch = 0f;
-        bool steerHorizontal = Mathf.Abs(steerLeft) > Mathf.Abs(steerUp);
-        bool steerVertical = Mathf.Abs(steerUp) > Mathf.Abs(steerLeft);
-        if (steerHorizontal)
-            targetYaw = -steerLeft * turnYawRate;
-        else if (steerVertical)
-            targetPitch = -steerUp * turnPitchRate;
+        float targetYaw = -steerLeft * turnYawRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         float blend = 1f - Mathf.Exp(-smoothing * dt);
-        if (steerVertical)
-        {
-            // Cut leftover yaw immediately so up/down cannot keep turning around world-up.
-            yawSpeed = 0f;
-            pitchSpeed = Mathf.Lerp(pitchSpeed, targetPitch, blend);
-        }
-        else if (steerHorizontal)
-        {
-            pitchSpeed = 0f;
-            yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
-        }
-        else
-        {
-            yawSpeed = Mathf.Lerp(yawSpeed, 0f, blend);
-            pitchSpeed = Mathf.Lerp(pitchSpeed, 0f, blend);
-        }
+        yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
+        pitch = 0f;
+        pitchSpeed = 0f;
 
         yaw += yawSpeed * dt;
-        pitch += pitchSpeed * dt;
         ApplyRotation();
     }
 
@@ -213,10 +192,9 @@ public sealed class LanternFistRotationController : MonoBehaviour
         if (viewRight.sqrMagnitude < 0.01f)
             viewRight = Vector3.right;
 
-        // These two were swapped from the user's view: world-up was tilting
-        // the flats, and the view-horizontal axis was turning the lantern.
-        yawAxis = viewRight.normalized;
-        pitchAxis = Vector3.up;
+        // Stay in place: tip left/right and nod up/down around the center.
+        yawAxis = viewForward.normalized;
+        pitchAxis = viewRight.normalized;
     }
 
     private void EnsurePivot()
@@ -228,7 +206,7 @@ public sealed class LanternFistRotationController : MonoBehaviour
         originalParent = lanternRotationTarget.parent;
         pivot = new GameObject("Lantern Fist Rotation Pivot").transform;
         pivot.SetParent(originalParent, false);
-        pivot.position = lanternRenderer.transform.TransformPoint(lanternRenderer.localBounds.center);
+        pivot.position = lanternRenderer.bounds.center;
         pivot.rotation = Quaternion.identity;
         pivot.localScale = Vector3.one;
         lanternRotationTarget.SetParent(pivot, true);
@@ -259,8 +237,24 @@ public sealed class LanternFistRotationController : MonoBehaviour
         }
 
         if (lanternRotationTarget == null && lanternRenderer != null)
-            lanternRotationTarget = lanternRenderer.transform.root;
+            lanternRotationTarget = ResolveLanternRoot(lanternRenderer.transform);
         ResolveViewCamera();
+    }
+
+    private static Transform ResolveLanternRoot(Transform start)
+    {
+        Transform current = start;
+        while (current != null)
+        {
+            string objectName = current.name;
+            if (objectName == "FinalLantern" ||
+                objectName == "TaiwanLantern_Test" ||
+                objectName == "Updatedlantern")
+                return current;
+            current = current.parent;
+        }
+
+        return start;
     }
 
     private Camera ResolveViewCamera()

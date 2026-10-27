@@ -46,6 +46,17 @@ public static class MorphicBackButton
         button.sizeDelta = new Vector2(size, size);
     }
 
+    public static void PlaceOnPanelLeft(RectTransform button, float size)
+    {
+        if (button == null)
+            return;
+
+        button.anchorMin = button.anchorMax = new Vector2(0f, 1f);
+        button.pivot = new Vector2(0f, 1f);
+        button.anchoredPosition = new Vector2(18f, -18f);
+        button.sizeDelta = new Vector2(size, size);
+    }
+
     public static void ApplyIcon(Image image)
     {
         if (image == null)
