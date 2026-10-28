@@ -23,10 +23,16 @@ public class VertexSculptController : MonoBehaviour
     [Header("Sculpting Settings")]
     [Tooltip("Brush radius in the target mesh's local units.")]
     [SerializeField, Min(0.001f)] private float brushRadius = 0.08f;
-    [SerializeField] private float sculptStrength = 0.5f;
-    [SerializeField, Min(0f)] private float sculptRate = 0.5f;
-    [SerializeField, Min(1f)] private float maxHoldSpeedMultiplier = 12f;
-    [SerializeField, Min(0.1f)] private float holdAccelerationTime = 0.12f;
+    [SerializeField, Range(0.02f, 0.5f)] private float brushSizeNormalized = 0.055f;
+    [SerializeField, Range(0.05f, 1f)] private float sculptStrength = 0.52f;
+    [SerializeField, Min(0f)] private float sculptRate = 0.52f;
+    [SerializeField, Min(1f)] private float maxHoldSpeedMultiplier = 1.28f;
+    [SerializeField, Min(0.1f)] private float holdAccelerationTime = 0.8f;
+    [Header("Stroke Stabilization")]
+    [SerializeField, Range(0f, 1f)] private float stabilization = 0.88f;
+    [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 0.7f;
+    [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.006f;
+    [SerializeField, Range(8f, 72f)] private float pullPixels = 44f;
     [SerializeField, Min(0f)] private float pinchStartDistance = 0.055f;
     [SerializeField, Min(0f)] private float pinchReleaseDistance = 0.08f;
     [SerializeField, Min(0f)] private float handTrackingGracePeriod = 0.2f;
@@ -66,7 +72,16 @@ public class VertexSculptController : MonoBehaviour
     private bool colliderNeedsRefresh;
     private bool strokeChanged;
     private bool undoBlockedUntilPinchRelease;
+    private bool uiBlocked;
     private string lastDebugStatus;
+
+    private bool pointerFilterReady;
+    private float filteredPointerX;
+    private float filteredPointerY;
+    private float filteredPointerDx;
+    private float filteredPointerDy;
+    private bool lazyPointerReady;
+    private Vector2 lazyScreen;
 
     public bool HasUndo => undoHistory.Count > 0 ||
         (strokeChanged && strokeStartPositions != null && strokeStartPositions.Count > 0);
@@ -89,6 +104,7 @@ public class VertexSculptController : MonoBehaviour
         {
             isSculptPinching = false;
             pinchHoldDuration = 0f;
+            ResetStabilizer();
             HideBrush();
             return;
         }
@@ -123,6 +139,7 @@ public class VertexSculptController : MonoBehaviour
                 FinishSculptStroke();
                 isSculptPinching = false;
                 pinchHoldDuration = 0f;
+                ResetStabilizer();
                 HideBrush();
             }
             SetDebugStatus("Vertex Sculpt: Waiting for a tracked hand frame.");
@@ -133,7 +150,8 @@ public class VertexSculptController : MonoBehaviour
 
         bool wasPinching = isSculptPinching;
         float pinchThreshold = wasPinching ? pinchReleaseDistance : pinchStartDistance;
-        isSculptPinching = hand.PinchDistance <= pinchThreshold;
+        bool pinchNow = !uiBlocked && hand.PinchDistance <= pinchThreshold;
+        isSculptPinching = pinchNow;
         if (isSculptPinching && !wasPinching && !undoBlockedUntilPinchRelease)
             BeginSculptStroke();
         if (!isSculptPinching)
@@ -144,9 +162,9 @@ public class VertexSculptController : MonoBehaviour
             undoBlockedUntilPinchRelease = false;
         }
 
-        // Hand landmarks use normalized image coordinates, matching ViewportPointToRay.
-        Ray ray = sculptingCamera.ViewportPointToRay(
+        Vector2 rawScreen = sculptingCamera.ViewportToScreenPoint(
             new Vector3(hand.IndexTip.x, hand.IndexTip.y, 0f));
+        Ray ray = StabilizedRay(sculptingCamera, rawScreen);
         Debug.DrawRay(ray.origin, ray.direction * 10f, Color.magenta);
 
         // Cast against the target directly. A general Physics.Raycast can hit
@@ -155,13 +173,14 @@ public class VertexSculptController : MonoBehaviour
         {
             lastSuccessfulRayTime = Time.unscaledTime;
             float indicatorSize = GetWorldBrushIndicatorDiameter();
-            UpdateBrushPosition(hit.point + hit.normal * (indicatorSize * 0.75f));
+            UpdateBrushPosition(hit.point + hit.normal * (indicatorSize * 0.45f));
             if (isSculptPinching && !undoBlockedUntilPinchRelease)
             {
                 pinchHoldDuration += Time.deltaTime;
                 float holdProgress = Mathf.Clamp01(pinchHoldDuration / holdAccelerationTime);
                 float speedMultiplier = Mathf.Lerp(1f, maxHoldSpeedMultiplier, holdProgress);
-                int movedVertexCount = Sculpt(hit.point, Time.deltaTime * sculptRate * speedMultiplier);
+                int movedVertexCount = Sculpt(
+                    hit.point, hit.normal, Time.deltaTime * sculptRate * speedMultiplier);
                 SetDebugStatus(movedVertexCount > 0
                     ? "Vertex Sculpt: Pinch is moving mesh vertices."
                     : "Vertex Sculpt: Pinch detected, but the brush found no vertices to move.");
@@ -240,8 +259,27 @@ public class VertexSculptController : MonoBehaviour
         BuildSculptableVertexMask();
 
         isInitialized = true;
+        RefreshBrushRadiusFromMesh();
         Bounds bounds = mesh.bounds;
         Debug.Log($"VertexSculptController: Initialized with {originalVertices.Length} vertices. Mesh bounds: {bounds}", this);
+    }
+
+    private float GetSmallestExtent()
+    {
+        if (originalMeshBounds.extents == Vector3.zero)
+            return 0.25f;
+        return Mathf.Max(
+            0.001f,
+            Mathf.Min(
+                originalMeshBounds.extents.x,
+                Mathf.Min(originalMeshBounds.extents.y, originalMeshBounds.extents.z)));
+    }
+
+    private void RefreshBrushRadiusFromMesh()
+    {
+        brushRadius = GetSmallestExtent() * brushSizeNormalized;
+        if (brushIndicator != null)
+            brushIndicator.transform.localScale = Vector3.one * GetWorldBrushIndicatorDiameter();
     }
 
     private void SyncColliderToBlendShapes()
@@ -365,7 +403,39 @@ public class VertexSculptController : MonoBehaviour
         isSculptPinching = false;
         pinchHoldDuration = 0f;
         lastDebugStatus = null;
+        if (!enabled)
+        {
+            uiBlocked = false;
+            ResetStabilizer();
+            HideBrush();
+        }
+        else
+        {
+            RefreshBrushRadiusFromMesh();
+        }
         Debug.Log($"VertexSculptController: Sculpting {(enabled ? "enabled" : "disabled")}");
+    }
+
+    public void SetUiBlocked(bool blocked)
+    {
+        uiBlocked = blocked;
+        if (blocked && isSculptPinching)
+        {
+            FinishSculptStroke();
+            isSculptPinching = false;
+            pinchHoldDuration = 0f;
+        }
+    }
+
+    public void SetBrushSizeNormalized(float fraction)
+    {
+        brushSizeNormalized = Mathf.Clamp(fraction, 0.02f, 0.14f);
+        RefreshBrushRadiusFromMesh();
+    }
+
+    public void SetSculptStrength(float strength)
+    {
+        sculptStrength = Mathf.Clamp01(strength);
     }
 
     public void CopySculptSettingsFrom(VertexSculptController source)
@@ -374,10 +444,15 @@ public class VertexSculptController : MonoBehaviour
             return;
 
         brushRadius = source.brushRadius;
+        brushSizeNormalized = source.brushSizeNormalized;
         sculptStrength = source.sculptStrength;
         sculptRate = source.sculptRate;
         maxHoldSpeedMultiplier = source.maxHoldSpeedMultiplier;
         holdAccelerationTime = source.holdAccelerationTime;
+        stabilization = source.stabilization;
+        oneEuroMinCutoff = source.oneEuroMinCutoff;
+        oneEuroBeta = source.oneEuroBeta;
+        pullPixels = source.pullPixels;
         pinchStartDistance = source.pinchStartDistance;
         pinchReleaseDistance = source.pinchReleaseDistance;
         handTrackingGracePeriod = source.handTrackingGracePeriod;
@@ -579,19 +654,8 @@ public class VertexSculptController : MonoBehaviour
 
     private float GetWorldBrushIndicatorDiameter()
     {
-        if (targetMesh == null || originalMeshBounds.extents == Vector3.zero)
-            return brushIndicatorDiameter;
-
-        float smallestExtent = Mathf.Min(
-            originalMeshBounds.extents.x,
-            Mathf.Min(originalMeshBounds.extents.y, originalMeshBounds.extents.z));
-        float localBrushRadius = Mathf.Min(brushRadius, smallestExtent * 0.04f);
-        Vector3 scale = targetMesh.transform.lossyScale;
-        float largestScale = Mathf.Max(
-            Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
-        float scaledMarkerDiameter = localBrushRadius * largestScale * 0.025f;
-        return Mathf.Clamp(
-            Mathf.Max(brushIndicatorDiameter, scaledMarkerDiameter), 0.035f, 0.08f);
+        float t = Mathf.InverseLerp(0.028f, 0.12f, brushSizeNormalized);
+        return Mathf.Lerp(0.007f, 0.014f, Mathf.Clamp01(t));
     }
 
     /// <summary>
@@ -604,128 +668,83 @@ public class VertexSculptController : MonoBehaviour
 
         brushIndicator.SetActive(sculptingEnabled);
         brushIndicator.transform.position = worldPosition;
+        brushIndicator.transform.localScale = Vector3.one * GetWorldBrushIndicatorDiameter();
     }
 
     /// <summary>
     /// Step 2: Sculpt vertices at the given position.
     /// </summary>
-    public int Sculpt(Vector3 worldPosition, float strength)
+    public int Sculpt(Vector3 worldPosition, Vector3 worldNormal, float strength)
     {
         if (!isInitialized || !sculptingEnabled || targetMesh == null)
             return 0;
 
-        // Keep legacy Inspector values from applying the brush to the whole mesh.
-        float boundsRadius = originalMeshBounds.extents.magnitude;
-        boundsRadius = Mathf.Max(boundsRadius, 0.001f);
-        float smallestExtent = Mathf.Min(
-            originalMeshBounds.extents.x,
-            Mathf.Min(originalMeshBounds.extents.y, originalMeshBounds.extents.z));
-        float effectiveBrushRadius = mesh != null
-            ? Mathf.Min(brushRadius, smallestExtent * 0.04f)
-            : brushRadius;
-        effectiveBrushRadius = Mathf.Max(effectiveBrushRadius, 0.001f);
-        float maximumDisplacement = Mathf.Min(effectiveBrushRadius * 6f, boundsRadius * 0.3f);
+        float smallestExtent = GetSmallestExtent();
+        float clayRadius = Mathf.Clamp(
+            brushRadius, smallestExtent * 0.02f, smallestExtent * 0.16f);
+        float maximumDisplacement = smallestExtent * Mathf.Lerp(0.16f, 0.7f, sculptStrength);
 
-        // Find vertices within brush radius
         Vector3 localPosition = targetMesh.transform.InverseTransformPoint(worldPosition);
+        Vector3 pressDirection = targetMesh.transform.InverseTransformDirection(worldNormal);
+        if (pressDirection.sqrMagnitude < 0.0001f)
+            pressDirection = Vector3.up;
+        else
+            pressDirection.Normalize();
+
+        Vector3[] posedVertices = bakedColliderMesh != null ? bakedColliderMesh.vertices : currentVertices;
         bool anyVertexModified = false;
         int movedVertexCount = 0;
-        Vector3[] posedVertices = bakedColliderMesh != null ? bakedColliderMesh.vertices : currentVertices;
-        Vector3[] posedNormals = bakedColliderMesh != null ? bakedColliderMesh.normals : mesh.normals;
-
-        // Lantern geometry is lower resolution than the teapot. Expand a
-        // small brush enough to include nearby mesh vertices, up to a safe cap.
-        float nearestVertexDistance = float.MaxValue;
-        foreach (int[] group in weldedVertexGroups)
-        {
-            Vector3 groupPosition = Vector3.zero;
-            int includedCount = 0;
-            foreach (int index in group)
-            {
-                if (sculptableVertices != null && !sculptableVertices[index])
-                    continue;
-                groupPosition += posedVertices[index];
-                includedCount++;
-            }
-            if (includedCount == 0)
-                continue;
-            groupPosition /= includedCount;
-            nearestVertexDistance = Mathf.Min(
-                nearestVertexDistance, Vector3.Distance(groupPosition, localPosition));
-        }
-
-        if (nearestVertexDistance > effectiveBrushRadius)
-        {
-            float safeMaximumRadius = smallestExtent * 0.1f;
-            effectiveBrushRadius = Mathf.Min(
-                safeMaximumRadius,
-                Mathf.Max(effectiveBrushRadius, nearestVertexDistance * 1.1f));
-        }
+        float speedPerSecond = smallestExtent * Mathf.Lerp(0.08f, 0.42f, sculptStrength);
+        float maximumFrameMove = smallestExtent *
+            Mathf.Lerp(0.08f, 0.3f, sculptStrength) * Time.deltaTime;
 
         foreach (int[] group in weldedVertexGroups)
         {
             Vector3 vertexLocalPos = Vector3.zero;
-            Vector3 normal = Vector3.zero;
             int includedCount = 0;
             foreach (int index in group)
             {
                 if (sculptableVertices != null && !sculptableVertices[index])
                     continue;
+                if (index < 0 || index >= posedVertices.Length)
+                    continue;
                 vertexLocalPos += posedVertices[index];
-                if (index < posedNormals.Length)
-                    normal += posedNormals[index];
                 includedCount++;
             }
+
             if (includedCount == 0)
                 continue;
+
             vertexLocalPos /= includedCount;
-
             float distance = Vector3.Distance(vertexLocalPos, localPosition);
+            if (distance > clayRadius)
+                continue;
 
-            if (distance <= effectiveBrushRadius)
+            float t = Mathf.Clamp01(distance / clayRadius);
+            float falloff = 0.5f + 0.5f * Mathf.Cos(t * Mathf.PI);
+            falloff *= falloff;
+            float moveAmount = (strength / Mathf.Max(sculptRate, 0.01f)) *
+                falloff * speedPerSecond;
+            moveAmount = Mathf.Min(moveAmount, maximumFrameMove * falloff);
+
+            int sampleIndex = group[0];
+            Vector3 currentOffset = currentVertices[sampleIndex] - originalVertices[sampleIndex];
+            Vector3 proposedOffset = currentOffset + pressDirection * moveAmount;
+            if (proposedOffset.magnitude > maximumDisplacement)
+                proposedOffset = proposedOffset.normalized * maximumDisplacement;
+            Vector3 appliedDelta = proposedOffset - currentOffset;
+
+            foreach (int index in group)
             {
-                // Smoothstep-shaped falloff spreads movement evenly across a
-                // rounded brush, like pressing soft clay instead of making a spike.
-                float normalizedDistance = distance / effectiveBrushRadius;
-                float falloff = 1f - normalizedDistance * normalizedDistance *
-                    (3f - 2f * normalizedDistance);
-
-                // Use the visible posed surface so blend-shape changes do not
-                // make the brush operate on the hidden base mesh. Coincident
-                // seam vertices share an averaged normal and displacement.
-                Vector3 direction = normal.sqrMagnitude > 0.0001f
-                    ? normal.normalized
-                    : (vertexLocalPos - localPosition).normalized;
-                // Scale movement to the mesh size, then boost narrow brushes
-                // so a smaller detail area still produces a visible bulge.
-                float referenceRadius = boundsRadius * 0.12f;
-                float narrowBrushBoost = Mathf.Clamp(
-                    referenceRadius / effectiveBrushRadius, 1f, 3f);
-                float moveAmount = strength * falloff * sculptStrength *
-                    boundsRadius * narrowBrushBoost;
-                // Limit each frame's movement so a strong setting still feels
-                // continuous and controllable while the pinch is held.
-                float maximumFrameMove = effectiveBrushRadius * 3f * Time.deltaTime;
-                moveAmount = Mathf.Min(moveAmount, maximumFrameMove);
-
-                Vector3 currentOffset = currentVertices[group[0]] - originalVertices[group[0]];
-                Vector3 proposedOffset = currentOffset + direction * moveAmount;
-                if (proposedOffset.magnitude > maximumDisplacement)
-                    proposedOffset = proposedOffset.normalized * maximumDisplacement;
-                Vector3 appliedDelta = proposedOffset - currentOffset;
-
-                foreach (int index in group)
-                {
-                    if (sculptableVertices != null && !sculptableVertices[index])
-                        continue;
-                    if (strokeStartPositions != null && !strokeStartPositions.ContainsKey(index))
-                        strokeStartPositions.Add(index, currentVertices[index]);
-                    currentVertices[index] += appliedDelta;
-                }
-
-                anyVertexModified = true;
-                movedVertexCount += includedCount;
+                if (sculptableVertices != null && !sculptableVertices[index])
+                    continue;
+                if (strokeStartPositions != null && !strokeStartPositions.ContainsKey(index))
+                    strokeStartPositions.Add(index, currentVertices[index]);
+                currentVertices[index] += appliedDelta;
             }
+
+            anyVertexModified = true;
+            movedVertexCount += includedCount;
         }
 
         if (anyVertexModified)
@@ -769,6 +788,9 @@ public class VertexSculptController : MonoBehaviour
         if (bakedColliderMesh != null)
             Destroy(bakedColliderMesh);
 
+        if (targetMesh != null)
+            targetMesh.forceRenderingOff = false;
+
         if (generatedBrushMaterial != null)
             Destroy(generatedBrushMaterial);
     }
@@ -777,5 +799,100 @@ public class VertexSculptController : MonoBehaviour
     {
         if (brushIndicator != null)
             brushIndicator.SetActive(false);
+    }
+
+    private Ray StabilizedRay(Camera viewCamera, Vector2 rawScreen)
+    {
+        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+        Vector2 filtered = FilterPointer(rawScreen, dt);
+        Vector2 brushScreen = ApplyLazyPull(filtered, dt);
+        return viewCamera.ScreenPointToRay(new Vector3(brushScreen.x, brushScreen.y, 0f));
+    }
+
+    private Vector2 FilterPointer(Vector2 raw, float dt)
+    {
+        float amount = Mathf.Clamp01(stabilization);
+        if (amount <= 0.001f)
+        {
+            pointerFilterReady = false;
+            return raw;
+        }
+
+        if (!pointerFilterReady)
+        {
+            filteredPointerX = raw.x;
+            filteredPointerY = raw.y;
+            filteredPointerDx = 0f;
+            filteredPointerDy = 0f;
+            pointerFilterReady = true;
+            return raw;
+        }
+
+        float minCutoff = Mathf.Lerp(2.4f, oneEuroMinCutoff, amount);
+        float beta = Mathf.Lerp(0.04f, oneEuroBeta, amount);
+        const float dCutoff = 1f;
+
+        float dx = (raw.x - filteredPointerX) / dt;
+        filteredPointerDx = LowPass(dx, filteredPointerDx, Alpha(dCutoff, dt));
+        float cutoffX = minCutoff + beta * Mathf.Abs(filteredPointerDx);
+        filteredPointerX = LowPass(raw.x, filteredPointerX, Alpha(cutoffX, dt));
+
+        float dy = (raw.y - filteredPointerY) / dt;
+        filteredPointerDy = LowPass(dy, filteredPointerDy, Alpha(dCutoff, dt));
+        float cutoffY = minCutoff + beta * Mathf.Abs(filteredPointerDy);
+        filteredPointerY = LowPass(raw.y, filteredPointerY, Alpha(cutoffY, dt));
+
+        return new Vector2(filteredPointerX, filteredPointerY);
+    }
+
+    private Vector2 ApplyLazyPull(Vector2 filtered, float dt)
+    {
+        float amount = Mathf.Clamp01(stabilization);
+        if (amount <= 0.001f)
+        {
+            lazyPointerReady = false;
+            lazyScreen = filtered;
+            return filtered;
+        }
+
+        float heightScale = Mathf.Max(UnityEngine.Screen.height, 1) / 1080f;
+        float drawPull = Mathf.Lerp(6f, pullPixels, amount) * heightScale;
+        float hoverPull = drawPull * 0.28f;
+        float pull = isSculptPinching ? drawPull : hoverPull;
+
+        if (!lazyPointerReady)
+        {
+            lazyScreen = filtered;
+            lazyPointerReady = true;
+            return lazyScreen;
+        }
+
+        Vector2 delta = filtered - lazyScreen;
+        float dist = delta.magnitude;
+        if (dist > pull)
+            lazyScreen = filtered - delta.normalized * pull;
+        else if (!isSculptPinching)
+            lazyScreen = Vector2.Lerp(lazyScreen, filtered, 1f - Mathf.Exp(-dt * 16f));
+
+        return lazyScreen;
+    }
+
+    private void ResetStabilizer()
+    {
+        pointerFilterReady = false;
+        lazyPointerReady = false;
+        filteredPointerDx = 0f;
+        filteredPointerDy = 0f;
+    }
+
+    private static float Alpha(float cutoff, float dt)
+    {
+        float tau = 1f / (2f * Mathf.PI * Mathf.Max(cutoff, 0.01f));
+        return 1f / (1f + tau / dt);
+    }
+
+    private static float LowPass(float value, float previous, float alpha)
+    {
+        return alpha * value + (1f - alpha) * previous;
     }
 }

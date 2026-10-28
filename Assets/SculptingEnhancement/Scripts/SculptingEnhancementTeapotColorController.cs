@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using Mediapipe.Unity.Sample;
 using Mediapipe.Unity.Sample.HandLandmarkDetection;
@@ -20,6 +21,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         SelectDesign,
         SelectDrawMotif,
         DrawBandTargeting,
+        VertexSculpt,
         Selfie,
         Review,
         Shelf,
@@ -107,6 +109,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private GameObject bodyActionGroup;
     private GameObject designGroup;
     private GameObject bandGroup;
+    private GameObject vertexSculptGroup;
     private GameObject colorGroup;
     private GameObject reviewGroup;
     private GameObject shelfGroup;
@@ -163,14 +166,31 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private readonly Button[] bandButtons = new Button[8];
     private readonly RawImage[] bandPreviews = new RawImage[8];
     private readonly Button[] bandSizeButtons = new Button[4];
-    private readonly float[] bandSizes = new float[] { 0.05f, 0.085f, 0.12f, 0.16f };
+    private readonly float[] bandSizes = new float[] { 0.028f, 0.048f, 0.068f, 0.092f };
     private readonly string[] bandSizeLabels = new string[] { "SLIM", "MEDIUM", "BOLD", "WIDE" };
     private int selectedBandSizeIndex = 1;
+    private readonly Button[] vertexSculptSizeButtons = new Button[4];
+    private readonly Button[] vertexSculptStrengthButtons = new Button[4];
+    private readonly float[] vertexSculptBrushSizes = { 0.006f, 0.012f, 0.018f, 0.028f };
+    private readonly string[] vertexSculptBrushSizeLabels = { "S", "M", "L", "XL" };
+    private readonly float[] vertexSculptStrengths = { 1f, 1.18f, 1.38f, 1.65f };
+    private readonly string[] vertexSculptStrengthLabels = { "SOFT", "MED", "STRONG", "MAX" };
+    private int selectedVertexSculptSizeIndex = 1;
+    private int selectedVertexSculptStrengthIndex = 1;
     private Color committedBandColor = Color.white;
+    private Color committedClayColor = new Color(0.74f, 0.42f, 0.30f, 1f);
     private bool bandTintActive;
+    private bool clayTintActive;
     private bool colorBackToBands;
     private bool returnToBandDrawing;
     private Image bandColorChip;
+    private Image clayColorChip;
+    private bool vertexSculptCameraZoomed;
+    private Vector3 storedSculptCamPos;
+    private Quaternion storedSculptCamRot;
+    private float storedSculptCamFov;
+    private float storedSculptCamNear;
+    private Coroutine sculptCameraMove;
     private GameObject bandTargetingBar;
     private Button targetingSizeBtn;
     private Button targetingColorBtn;
@@ -221,6 +241,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private const float BodyActionsPanelHeight = 470f;
     private const float DesignSelectionPanelHeight = 600f;
     private const float BandSelectionPanelHeight = 840f;
+    private const float VertexSculptPanelHeight = 600f;
     private const float HistoryBarHeight = 78f;
     private const int MaxHistory = 20;
 
@@ -358,6 +379,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             DestroyRuntime(isolatedSpoutMaterials[i]);
         for (int i = 0; i < isolatedHandleMaterials.Count; i++)
             DestroyRuntime(isolatedHandleMaterials[i]);
+        SnapRestoreVertexSculptCamera();
     }
 
     private void Update()
@@ -383,7 +405,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             SetCursorVisible(false);
             screenPosition = Input.mousePosition;
-            if (mode != ColorMode.SelectColor && mode != ColorMode.DrawBandTargeting && mode != ColorMode.SelectDrawMotif)
+            if (mode != ColorMode.SelectColor && mode != ColorMode.DrawBandTargeting &&
+                mode != ColorMode.SelectDrawMotif && mode != ColorMode.VertexSculpt)
             {
                 SetHoveredTarget(null);
                 ResetDwell();
@@ -394,6 +417,30 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         lastColorSampleScreen = screenPosition;
         HitTarget nextHovered = FindHitTarget(screenPosition);
 
+        if (mode == ColorMode.VertexSculpt && patternPainter != null)
+        {
+            bool cursorOverUi = IsCursorOverColorUi(screenPosition);
+            if (cursorOverUi)
+            {
+                patternPainter.SetPaintingEnabled(false);
+            }
+            else
+            {
+                patternPainter.SetClayCoilMode(true);
+                patternPainter.SetPaintingEnabled(true);
+                patternPainter.ProcessPointer(screenPosition, hasHand, Input.GetMouseButton(0));
+
+                if (patternPainter.IsLocked)
+                    instructionText.text = "CLAY LOCKED. Open palm again to unlock.";
+                else if (patternPainter.IsDrawing)
+                    instructionText.text = "LAYING CLAY... Trace your index finger.";
+                else if (patternPainter.IsOverSurface)
+                    instructionText.text = "Point index finger and draw clay on the teapot.";
+                else
+                    instructionText.text = "Aim at the teapot. Point index finger to draw clay.";
+            }
+        }
+
         if (mode == ColorMode.DrawBandTargeting && patternPainter != null)
         {
             bool cursorOverUi = IsCursorOverColorUi(screenPosition);
@@ -403,6 +450,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             }
             else
             {
+                patternPainter.SetClayCoilMode(false);
                 patternPainter.SetPaintingEnabled(true);
                 patternPainter.ProcessPointer(screenPosition, hasHand, Input.GetMouseButton(0));
 
@@ -529,7 +577,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             vText.fontStyle = FontStyles.Bold;
             vText.color = DarkTextGreen;
         }
-        vertexSculptButton.onClick.AddListener(ToggleVertexSculpt);
+        vertexSculptButton.onClick.AddListener(ShowVertexSculpt);
         RegisterHitTarget(vertexSculptButton, false, false, default);
 
         Button finish = CreateButton("Finish", mainRect, new Vector2(0f, -216f),
@@ -824,6 +872,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (!paletteAvailable || panel == null)
             return;
 
+        DisableVertexSculpt();
         RestoreSelectedPreview();
         CaptureInitialColors();
         SetSculptControllersEnabled(!uiPointerBlockingSculpt);
@@ -853,6 +902,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void ShowSculptMode()
     {
+        DisableVertexSculpt();
         mode = ColorMode.Sculpt;
         selectedPart = -1;
         RestoreSelectedPreview();
@@ -1657,19 +1707,33 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private Camera ResolveViewCamera()
     {
-        GameObject named = GameObject.Find("MainMenuViewCamera");
-        if (named != null)
-        {
-            Camera namedCamera = named.GetComponent<Camera>();
-            if (namedCamera != null)
-                return namedCamera;
-        }
+        MainMenuStartTransition transition =
+            FindFirstObjectByType<MainMenuStartTransition>(FindObjectsInactive.Include);
+        if (transition != null && transition.ViewCamera != null)
+            return transition.ViewCamera;
 
         if (Camera.main != null)
             return Camera.main;
 
+        GameObject mainCam = GameObject.Find("Main Camera");
+        if (mainCam != null)
+        {
+            Camera namedMain = mainCam.GetComponent<Camera>();
+            if (namedMain != null)
+                return namedMain;
+        }
+
         Camera[] cameras = FindObjectsByType<Camera>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        return cameras != null && cameras.Length > 0 ? cameras[0] : null;
+        if (cameras == null)
+            return null;
+
+        for (int i = 0; i < cameras.Length; i++)
+        {
+            if (cameras[i] != null && cameras[i].enabled && cameras[i].gameObject.name != "MainMenuViewCamera")
+                return cameras[i];
+        }
+
+        return cameras.Length > 0 ? cameras[0] : null;
     }
 
     private Bounds GetTeapotBodyWorldBounds()
@@ -1868,6 +1932,14 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         RestoreSelectedPreview();
 
+        if (patternPainter != null && patternPainter.ClayStrokeCount > 0)
+        {
+            patternPainter.UndoLastClayStroke();
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Last clay coil undone.";
+            return;
+        }
+
         if (vertexSculptController != null && vertexSculptController.HasUndo &&
             vertexSculptController.UndoLastStroke())
         {
@@ -1897,30 +1969,389 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         instructionText.text = "Last change undone.";
     }
 
-    private void ToggleVertexSculpt()
+    private void ShowVertexSculpt()
     {
-        vertexSculptEnabled = !vertexSculptEnabled;
-
+        EnsureVertexSculptGroup();
+        EnsurePatternPainter();
+        vertexSculptEnabled = true;
         if (vertexSculptController != null)
+            vertexSculptController.SetEnabled(false);
+
+        SetSculptControllersEnabled(false);
+        if (patternPainter != null)
         {
-            vertexSculptController.SetEnabled(vertexSculptEnabled);
+            patternPainter.SetClayCoilMode(true);
+            patternPainter.SetDrawingLocked(false);
+            ApplyVertexSculptSettings();
+            patternPainter.SetPaintingEnabled(true);
         }
 
-        // Vertex sculpt owns the teapot hand input while active. The regular
-        // deformation, rotate, and pattern-paint tools resume when it is off.
-        SetSculptControllersEnabled(!vertexSculptEnabled);
-        if (patternPainter != null && vertexSculptEnabled)
-            patternPainter.SetPaintingEnabled(false);
+        mode = ColorMode.VertexSculpt;
+        SetPanelHeight(VertexSculptPanelHeight);
+        panel.SetActive(true);
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        if (mainActionGroup != null)
+            mainActionGroup.SetActive(false);
+        partGroup.SetActive(false);
+        HideExtraCustomizeGroups();
+        colorGroup.SetActive(false);
+        if (confirmResetGroup != null)
+            confirmResetGroup.SetActive(false);
+        HideReviewAndShelf();
+        if (vertexSculptGroup != null)
+            vertexSculptGroup.SetActive(true);
+        if (historyBar != null)
+            historyBar.SetActive(true);
 
-        // Update button text
-        TMP_Text buttonText = vertexSculptButton.GetComponentInChildren<TMP_Text>();
-        if (buttonText != null)
-        {
-            buttonText.text = vertexSculptEnabled ? "VERTEX SCULPT: ON" : "VERTEX SCULPT";
-        }
-
+        headerText.text = "VERTEX SCULPT";
+        SetHeaderBackLabel("← BACK");
+        SetHeaderBackVisible(true);
+        SetTitleBurstsVisible(true);
         instructionText.gameObject.SetActive(true);
-        instructionText.text = vertexSculptEnabled ? "Vertex sculpting enabled." : "Vertex sculpting disabled.";
+        instructionText.text = "Pick coil size and height, then point your index finger and draw clay.";
+        RefreshVertexSculptButtons();
+        ResetDwell();
+        SetHoveredTarget(null);
+        BeginVertexSculptCameraZoom();
+    }
+
+    private void DisableVertexSculpt()
+    {
+        vertexSculptEnabled = false;
+        if (vertexSculptController != null)
+            vertexSculptController.SetEnabled(false);
+        if (patternPainter != null)
+        {
+            patternPainter.SetPaintingEnabled(false);
+            patternPainter.SetClayCoilMode(false);
+        }
+        if (vertexSculptGroup != null)
+            vertexSculptGroup.SetActive(false);
+        RestoreVertexSculptCamera();
+    }
+
+    private void BeginVertexSculptCameraZoom()
+    {
+        if (vertexSculptCameraZoomed)
+            return;
+
+        Camera cam = ResolveViewCamera();
+        Renderer focusRenderer = teapotRenderer;
+        if (cam == null || focusRenderer == null)
+            return;
+
+        storedSculptCamPos = cam.transform.position;
+        storedSculptCamRot = cam.transform.rotation;
+        storedSculptCamFov = cam.fieldOfView;
+        storedSculptCamNear = cam.nearClipPlane;
+        vertexSculptCameraZoomed = true;
+
+        Bounds bounds = focusRenderer.bounds;
+        Vector3 focus = bounds.center;
+        Vector3 offset = storedSculptCamPos - focus;
+        float dist = offset.magnitude;
+        if (dist < 0.05f)
+        {
+            offset = -cam.transform.forward;
+            dist = 2f;
+        }
+
+        float targetDist = dist * 0.50f;
+        float minDist = Mathf.Max(0.22f, bounds.extents.magnitude * 0.28f);
+        if (minDist > dist * 0.7f)
+            minDist = dist * 0.40f;
+        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.62f);
+
+        Vector3 targetPos = focus + offset.normalized * targetDist;
+        Quaternion targetRot = Quaternion.LookRotation(focus - targetPos, cam.transform.up);
+        float targetFov = Mathf.Max(28f, storedSculptCamFov * 0.76f);
+        float targetNear = Mathf.Min(storedSculptCamNear, 0.05f);
+        StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.45f);
+    }
+
+    private void RestoreVertexSculptCamera()
+    {
+        if (!vertexSculptCameraZoomed)
+            return;
+
+        if (!isActiveAndEnabled)
+        {
+            SnapRestoreVertexSculptCamera();
+            return;
+        }
+
+        Camera cam = ResolveViewCamera();
+        vertexSculptCameraZoomed = false;
+        if (cam == null)
+            return;
+
+        StartSculptCameraMove(
+            cam,
+            storedSculptCamPos,
+            storedSculptCamRot,
+            storedSculptCamFov,
+            storedSculptCamNear,
+            0.5f);
+    }
+
+    private void SnapRestoreVertexSculptCamera()
+    {
+        if (!vertexSculptCameraZoomed)
+            return;
+
+        vertexSculptCameraZoomed = false;
+        if (sculptCameraMove != null)
+        {
+            StopCoroutine(sculptCameraMove);
+            sculptCameraMove = null;
+        }
+
+        Camera cam = ResolveViewCamera();
+        if (cam == null)
+            return;
+
+        cam.transform.position = storedSculptCamPos;
+        cam.transform.rotation = storedSculptCamRot;
+        cam.fieldOfView = storedSculptCamFov;
+        cam.nearClipPlane = storedSculptCamNear;
+    }
+
+    private void StartSculptCameraMove(
+        Camera cam,
+        Vector3 targetPos,
+        Quaternion targetRot,
+        float targetFov,
+        float targetNear,
+        float duration)
+    {
+        if (sculptCameraMove != null)
+            StopCoroutine(sculptCameraMove);
+        sculptCameraMove = StartCoroutine(
+            MoveSculptCamera(cam, targetPos, targetRot, targetFov, targetNear, duration));
+    }
+
+    private IEnumerator MoveSculptCamera(
+        Camera cam,
+        Vector3 targetPos,
+        Quaternion targetRot,
+        float targetFov,
+        float targetNear,
+        float duration)
+    {
+        Transform camTf = cam.transform;
+        Vector3 startPos = camTf.position;
+        Quaternion startRot = camTf.rotation;
+        float startFov = cam.fieldOfView;
+        float startNear = cam.nearClipPlane;
+        float elapsed = 0f;
+        duration = Mathf.Max(0.05f, duration);
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = t * t * (3f - 2f * t);
+            camTf.position = Vector3.Lerp(startPos, targetPos, eased);
+            camTf.rotation = Quaternion.Slerp(startRot, targetRot, eased);
+            cam.fieldOfView = Mathf.Lerp(startFov, targetFov, eased);
+            cam.nearClipPlane = Mathf.Lerp(startNear, targetNear, eased);
+            yield return null;
+        }
+
+        camTf.position = targetPos;
+        camTf.rotation = targetRot;
+        cam.fieldOfView = targetFov;
+        cam.nearClipPlane = targetNear;
+        sculptCameraMove = null;
+    }
+
+    private void EnsureVertexSculptController()
+    {
+        if (handRunner == null)
+            handRunner = FindFirstObjectByType<SculptHandLandmarkerRunner>(FindObjectsInactive.Include);
+
+        if (teapotRenderer == null)
+            return;
+
+        GameObject teapotObject = teapotRenderer.gameObject;
+        if (teapotObject.GetComponent<MeshCollider>() == null)
+            teapotObject.AddComponent<MeshCollider>();
+
+        VertexSculptController onTeapot = teapotObject.GetComponent<VertexSculptController>();
+        if (onTeapot == null)
+            onTeapot = teapotObject.AddComponent<VertexSculptController>();
+
+        vertexSculptController = onTeapot;
+        vertexSculptController.BindHandRunner(handRunner);
+    }
+
+    private void EnsureVertexSculptGroup()
+    {
+        if (vertexSculptGroup != null || panel == null)
+            return;
+
+        vertexSculptGroup = new GameObject("VertexSculptOptions", typeof(RectTransform));
+        vertexSculptGroup.transform.SetParent(panel.transform, false);
+        RectTransform sculptRect = vertexSculptGroup.GetComponent<RectTransform>();
+        DockTop(sculptRect, -124f, 440f);
+
+        TMP_Text sizeTitle = CreateText(
+            "BrushSizeTitle", sculptRect, new Vector2(0f, 0f),
+            new Vector2(PillWidth, 24f), "BRUSH SIZE", 19f,
+            TextAlignmentOptions.Center, FontStyles.Bold);
+        sizeTitle.color = DarkTextGreen;
+
+        for (int s = 0; s < vertexSculptSizeButtons.Length; s++)
+        {
+            int sizeIdx = s;
+            float posX = -174f + s * 116f;
+            vertexSculptSizeButtons[s] = CreateButton(
+                "SculptSize" + s,
+                sculptRect,
+                new Vector2(posX, -40f),
+                new Vector2(114f, 48f),
+                vertexSculptBrushSizeLabels[s],
+                s == selectedVertexSculptSizeIndex ? ActionPink : PillPink);
+            TMP_Text sizeText = vertexSculptSizeButtons[s].GetComponentInChildren<TMP_Text>();
+            if (sizeText != null)
+            {
+                sizeText.fontSize = 18f;
+                sizeText.fontStyle = FontStyles.Bold;
+                sizeText.color = DarkTextGreen;
+            }
+            vertexSculptSizeButtons[s].onClick.AddListener(() => SelectVertexSculptSize(sizeIdx));
+            RegisterHitTarget(vertexSculptSizeButtons[s], false, false, default);
+        }
+
+        TMP_Text strengthTitle = CreateText(
+            "BrushStrengthTitle", sculptRect, new Vector2(0f, -108f),
+            new Vector2(PillWidth, 24f), "STRENGTH", 19f,
+            TextAlignmentOptions.Center, FontStyles.Bold);
+        strengthTitle.color = DarkTextGreen;
+
+        for (int s = 0; s < vertexSculptStrengthButtons.Length; s++)
+        {
+            int strengthIdx = s;
+            float posX = -174f + s * 116f;
+            vertexSculptStrengthButtons[s] = CreateButton(
+                "SculptStrength" + s,
+                sculptRect,
+                new Vector2(posX, -148f),
+                new Vector2(114f, 48f),
+                vertexSculptStrengthLabels[s],
+                s == selectedVertexSculptStrengthIndex ? ActionPink : PillPink);
+            TMP_Text strengthText = vertexSculptStrengthButtons[s].GetComponentInChildren<TMP_Text>();
+            if (strengthText != null)
+            {
+                strengthText.fontSize = 16f;
+                strengthText.fontStyle = FontStyles.Bold;
+                strengthText.color = DarkTextGreen;
+            }
+            vertexSculptStrengthButtons[s].onClick.AddListener(() => SelectVertexSculptStrength(strengthIdx));
+            RegisterHitTarget(vertexSculptStrengthButtons[s], false, false, default);
+        }
+
+        Button clayColorBtn = CreateButton(
+            "ClayColor", sculptRect, new Vector2(0f, -216f),
+            new Vector2(PillWidth, 56f), "CLAY COLOR", ActionPink);
+        clayColorBtn.onClick.AddListener(OpenClayColorSelection);
+        TMP_Text clayColText = clayColorBtn.GetComponentInChildren<TMP_Text>();
+        if (clayColText != null)
+        {
+            clayColText.fontSize = 24f;
+            clayColText.fontStyle = FontStyles.Bold;
+            clayColText.color = DarkTextGreen;
+        }
+        RegisterHitTarget(clayColorBtn, false, false, default);
+
+        Image claySwatchFrame = LanguagePageBuilder.CreateRoundedImage("SwatchFrame", clayColorBtn.transform, 10, LanguagePageBuilder.Green);
+        RectTransform claySfRect = claySwatchFrame.rectTransform;
+        claySfRect.anchorMin = claySfRect.anchorMax = new Vector2(0.88f, 0.5f);
+        claySfRect.pivot = new Vector2(0.5f, 0.5f);
+        claySfRect.anchoredPosition = Vector2.zero;
+        claySfRect.sizeDelta = new Vector2(52f, 34f);
+        claySwatchFrame.raycastTarget = false;
+
+        Image claySwatchFill = LanguagePageBuilder.CreateRoundedImage("SwatchFill", claySwatchFrame.transform, 8, committedClayColor);
+        LanguagePageBuilder.Stretch(claySwatchFill.rectTransform, new Vector2(3f, 3f));
+        claySwatchFill.raycastTarget = false;
+        clayColorChip = claySwatchFill;
+
+        Button done = CreateButton(
+            "Done", sculptRect, new Vector2(0f, -292f),
+            new Vector2(PillWidth, 60f), "DONE", DonePink);
+        TMP_Text doneText = done.GetComponentInChildren<TMP_Text>();
+        if (doneText != null)
+        {
+            doneText.fontSize = 26f;
+            doneText.fontStyle = FontStyles.Bold;
+            doneText.color = DarkTextGreen;
+        }
+        done.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(done, false, false, default);
+
+        vertexSculptGroup.SetActive(false);
+    }
+
+    private void SelectVertexSculptSize(int sizeIdx)
+    {
+        selectedVertexSculptSizeIndex = Mathf.Clamp(sizeIdx, 0, vertexSculptBrushSizes.Length - 1);
+        ApplyVertexSculptSettings();
+        RefreshVertexSculptButtons();
+        if (instructionText != null)
+            instructionText.text = "Coil size: " + vertexSculptBrushSizeLabels[selectedVertexSculptSizeIndex] +
+                ". Point index finger and draw.";
+    }
+
+    private void SelectVertexSculptStrength(int strengthIdx)
+    {
+        selectedVertexSculptStrengthIndex = Mathf.Clamp(strengthIdx, 0, vertexSculptStrengths.Length - 1);
+        ApplyVertexSculptSettings();
+        RefreshVertexSculptButtons();
+        if (instructionText != null)
+        {
+            instructionText.text = selectedVertexSculptStrengthIndex == vertexSculptStrengths.Length - 1
+                ? "MAX height: puffy clay coil. Point index finger and draw."
+                : "Coil height: " + vertexSculptStrengthLabels[selectedVertexSculptStrengthIndex] +
+                    ". Point index finger and draw.";
+        }
+    }
+
+    private void ApplyVertexSculptSettings()
+    {
+        if (patternPainter == null)
+            return;
+        patternPainter.SetStrokeWidth(
+            vertexSculptBrushSizes[selectedVertexSculptSizeIndex], false);
+        patternPainter.SetClayLift(
+            vertexSculptStrengths[selectedVertexSculptStrengthIndex]);
+        patternPainter.SetClayColor(committedClayColor, false);
+        if (clayColorChip != null)
+            clayColorChip.color = committedClayColor;
+    }
+
+    private void RefreshVertexSculptButtons()
+    {
+        for (int s = 0; s < vertexSculptSizeButtons.Length; s++)
+        {
+            if (vertexSculptSizeButtons[s] == null)
+                continue;
+            Image fill = GetButtonFill(vertexSculptSizeButtons[s]);
+            if (fill != null)
+                fill.color = s == selectedVertexSculptSizeIndex ? ActionPink : PillPink;
+        }
+
+        for (int s = 0; s < vertexSculptStrengthButtons.Length; s++)
+        {
+            if (vertexSculptStrengthButtons[s] == null)
+                continue;
+            Image fill = GetButtonFill(vertexSculptStrengthButtons[s]);
+            if (fill != null)
+                fill.color = s == selectedVertexSculptStrengthIndex ? ActionPink : PillPink;
+        }
     }
 
     private void NavigateBack()
@@ -1933,6 +2364,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         if (mode == ColorMode.SelectColor)
         {
+            if (clayTintActive)
+            {
+                clayTintActive = false;
+                ShowVertexSculpt();
+                return;
+            }
+
             if (bandTintActive)
             {
                 bandTintActive = false;
@@ -1975,7 +2413,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             ShowShelf();
         else if (mode == ColorMode.Shelf)
             LeaveShelfDone();
-        else if (mode == ColorMode.SelectPart || mode == ColorMode.Review || mode == ColorMode.Selfie)
+        else if (mode == ColorMode.SelectPart || mode == ColorMode.Review ||
+                 mode == ColorMode.Selfie || mode == ColorMode.VertexSculpt)
             ShowMainMenu();
     }
 
@@ -2240,10 +2679,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         appliedBandTexture = null;
         isBandActive = false;
         bandTintActive = false;
+        clayTintActive = false;
         if (patternPainter != null)
         {
             patternPainter.SetPaintingEnabled(false);
             patternPainter.ClearAllStrokes();
+            patternPainter.ClearClayCoils();
         }
     }
 
@@ -2595,6 +3036,17 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (selectedPart < 0)
             selectedPart = 0;
         ApplyColor(selectedPart, color);
+        if (clayTintActive)
+        {
+            committedClayColor = color;
+            if (patternPainter != null)
+                patternPainter.SetClayColor(color, true);
+            if (clayColorChip != null)
+                clayColorChip.color = color;
+            PushHistory();
+            instructionText.text = "Clay color selected. Pick another color or press DONE.";
+            return;
+        }
         if (bandTintActive)
         {
             committedBandColor = color;
@@ -2802,6 +3254,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             bandGroup.SetActive(false);
         if (bandTargetingBar != null)
             bandTargetingBar.SetActive(false);
+        if (vertexSculptGroup != null)
+            vertexSculptGroup.SetActive(false);
         if (patternPainter != null && mode != ColorMode.DrawBandTargeting)
             patternPainter.SetPaintingEnabled(false);
     }
@@ -3371,6 +3825,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         colorBackToDesigns = false;
         colorBackToBands = true;
         bandTintActive = true;
+        clayTintActive = false;
         designTintActive = false;
         selectedPart = 1;
         ContinueToColorSelection();
@@ -3379,8 +3834,29 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         instructionText.text = "Point and hold on a color to tint the band designs.";
     }
 
+    private void OpenClayColorSelection()
+    {
+        colorBackToDesigns = false;
+        colorBackToBands = false;
+        bandTintActive = false;
+        clayTintActive = true;
+        designTintActive = false;
+        selectedPart = 1;
+        ContinueToColorSelection();
+        headerText.text = "CLAY COLOR";
+        SetHeaderBackLabel("← SCULPT");
+        instructionText.text = "Point and hold on a color to tint the clay.";
+    }
+
     private void OnColorDoneClicked()
     {
+        if (clayTintActive)
+        {
+            clayTintActive = false;
+            ShowVertexSculpt();
+            return;
+        }
+
         if (bandTintActive)
         {
             bandTintActive = false;
@@ -3533,10 +4009,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         instructionText.gameObject.SetActive(true);
         ResetDwell();
         SetHoveredTarget(null);
+        BeginVertexSculptCameraZoom();
     }
 
     private void ShowBandSelection()
     {
+        RestoreVertexSculptCamera();
         LoadBandPatterns();
         EnsureBandGroup();
         RefreshBandButtons();
@@ -3648,6 +4126,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         instructionText.gameObject.SetActive(true);
         ResetDwell();
         SetHoveredTarget(null);
+        BeginVertexSculptCameraZoom();
     }
 
     private void EnsurePatternPainter()
@@ -3899,6 +4378,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void ApplyColor(int partIndex, Color color)
     {
+        if (clayTintActive)
+        {
+            if (patternPainter != null)
+                patternPainter.SetClayColor(color, true);
+            if (clayColorChip != null)
+                clayColorChip.color = color;
+            return;
+        }
+
         if (bandTintActive)
         {
             if (patternPainter != null)
@@ -4013,6 +4501,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void RestoreSelectedPreview()
     {
+        if (clayTintActive)
+        {
+            if (patternPainter != null)
+                patternPainter.SetClayColor(committedClayColor, true);
+            if (clayColorChip != null)
+                clayColorChip.color = committedClayColor;
+            return;
+        }
+
         if (designTintActive && appliedDesignTexture != null)
         {
             ApplyDesignTint(committedDesignTint);
@@ -4173,8 +4670,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (vertexSculptEnabled)
         {
             SetSculptControllersEnabled(false);
-            if (patternPainter != null)
+            if (patternPainter != null && overUi)
                 patternPainter.SetPaintingEnabled(false);
+            if (vertexSculptController != null)
+                vertexSculptController.SetEnabled(false);
             return;
         }
 

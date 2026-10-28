@@ -7,9 +7,11 @@ using UnityEngine;
 /// Handles real-time interactive 3D pattern drawing directly onto the surface of the teapot.
 /// Features:
 /// 1. Bold, prominent ribbon stroke sizing scaled properly to the teapot's world dimensions.
-/// 2. Only draws when an isolated index finger pointing gesture is detected.
-/// 3. Open palm gesture locks/unlocks drawing to prevent accidental marks.
-/// 4. Mathematically anchors all stroke points to teapot mesh surface triangles via barycentric coordinates,
+/// 2. Stabilizes noisy hand tracking with a One Euro filter plus a lazy-pull
+///    brush so strokes stay controlled instead of following every jitter.
+/// 3. Only draws when an isolated index finger pointing gesture is detected.
+/// 4. Open palm gesture locks/unlocks drawing to prevent accidental marks.
+/// 5. Mathematically anchors all stroke points to teapot mesh surface triangles via barycentric coordinates,
 ///    so when blend shapes (Width, Height, Middle, etc.) or scales change, the drawings deform and stay
 ///    glued to the outer surface without ever sinking inside!
 /// </summary>
@@ -22,11 +24,24 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     [Header("Brush Settings")]
     [SerializeField, Range(0.04f, 0.20f)] private float strokeWidth = 0.085f;
-    [SerializeField, Range(0.003f, 0.03f)] private float minPointSpacing = 0.008f;
+    [SerializeField, Range(0.003f, 0.03f)] private float minPointSpacing = 0.011f;
     [SerializeField] private Color strokeColor = Color.white;
 
+    [Header("Stroke Stabilization")]
+    [SerializeField, Range(0f, 1f)] private float stabilization = 0.78f;
+    [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 0.85f;
+    [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.008f;
+    [SerializeField, Range(8f, 72f)] private float pullPixels = 34f;
+
     private readonly List<StrokeRecord> completedStrokes = new List<StrokeRecord>();
+    private readonly List<StrokeRecord> clayStrokes = new List<StrokeRecord>();
     private StrokeRecord currentStroke;
+    private bool clayCoilMode;
+    private float clayLift = 1.15f;
+    private Color clayColor = ClayColor;
+    private GameObject clayContainer;
+    private Material clayMaterial;
+    private static readonly Color ClayColor = new Color(0.74f, 0.42f, 0.30f, 1f);
 
     private MeshCollider surfaceCollider;
     private Mesh bakedColliderMesh;
@@ -38,6 +53,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private GameObject strokeContainer;
     private GameObject cursorObject;
+    private Transform cursorCenterDot;
     private LineRenderer cursorRing;
     private Material cursorMaterial;
     private Material strokeMaterial;
@@ -56,8 +72,18 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     private bool paintingEnabled;
     private int lastProcessedFrame = -1;
 
+    private bool pointerFilterReady;
+    private float filteredPointerX;
+    private float filteredPointerY;
+    private float filteredPointerDx;
+    private float filteredPointerDy;
+    private bool lazyPointerReady;
+    private Vector2 lazyScreen;
+
     public int StrokeCount => completedStrokes.Count;
+    public int ClayStrokeCount => clayStrokes.Count;
     public bool IsDrawing => isDrawingActive;
+    public bool ClayCoilMode => clayCoilMode;
     public bool IsOverSurface => isPointerOnSurface;
     public bool IsLocked => isDrawingLocked;
     public float StrokeWidth => strokeWidth;
@@ -71,6 +97,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         public Mesh strokeMesh;
         public Material material;
         public float strokeWidth;
+        public float clayLift;
+        public bool isClayCoil;
         public readonly List<AnchorPoint> anchors = new List<AnchorPoint>();
     }
 
@@ -100,19 +128,86 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public void SetStrokeWidth(float width, bool updateExisting = true)
     {
-        strokeWidth = Mathf.Clamp(width, 0.035f, 0.22f);
+        strokeWidth = Mathf.Clamp(width, 0.005f, 0.22f);
         UpdateCursorRingGeometry();
 
-        if (updateExisting && completedStrokes.Count > 0 && cachedBakedVertices != null)
+        if (updateExisting && cachedBakedVertices != null)
         {
-            for (int i = 0; i < completedStrokes.Count; i++)
+            List<StrokeRecord> list = clayCoilMode ? clayStrokes : completedStrokes;
+            for (int i = 0; i < list.Count; i++)
             {
-                if (completedStrokes[i] != null)
+                if (list[i] != null)
                 {
-                    completedStrokes[i].strokeWidth = strokeWidth;
-                    RebuildStrokeMeshFromAnchors(completedStrokes[i], cachedBakedVertices, cachedBakedNormals);
+                    list[i].strokeWidth = strokeWidth;
+                    RebuildStrokeMeshFromAnchors(list[i], cachedBakedVertices, cachedBakedNormals);
                 }
             }
+        }
+    }
+
+    public void SetClayCoilMode(bool enabled)
+    {
+        if (clayCoilMode == enabled)
+            return;
+
+        if (isDrawingActive)
+            FinishCurrentStroke();
+
+        clayCoilMode = enabled;
+        if (enabled)
+        {
+            EnsureClayContainer();
+            EnsureClayMaterial();
+            SetPatternTexture(null);
+            ApplyClayColorToMaterials(clayColor, false);
+            RefreshCollider();
+        }
+
+        UpdateCursorRingGeometry();
+    }
+
+    public void SetClayLift(float lift)
+    {
+        clayLift = Mathf.Clamp(lift, 0.85f, 1.8f);
+    }
+
+    public void SetClayColor(Color color, bool updateExisting = true)
+    {
+        clayColor = color;
+        ApplyClayColorToMaterials(color, updateExisting);
+    }
+
+    private void ApplyClayColorToMaterials(Color color, bool updateExisting)
+    {
+        EnsureClayMaterial();
+        if (clayMaterial != null)
+        {
+            clayMaterial.color = color;
+            if (clayMaterial.HasProperty("_Color"))
+                clayMaterial.SetColor("_Color", color);
+            if (clayMaterial.HasProperty("_BaseColor"))
+                clayMaterial.SetColor("_BaseColor", color);
+        }
+
+        if (!updateExisting)
+            return;
+
+        for (int i = 0; i < clayStrokes.Count; i++)
+        {
+            if (clayStrokes[i] == null || clayStrokes[i].material == null)
+                continue;
+            if (clayStrokes[i].material.HasProperty("_Color"))
+                clayStrokes[i].material.SetColor("_Color", color);
+            if (clayStrokes[i].material.HasProperty("_BaseColor"))
+                clayStrokes[i].material.SetColor("_BaseColor", color);
+        }
+
+        if (currentStroke != null && currentStroke.isClayCoil && currentStroke.material != null)
+        {
+            if (currentStroke.material.HasProperty("_Color"))
+                currentStroke.material.SetColor("_Color", color);
+            if (currentStroke.material.HasProperty("_BaseColor"))
+                currentStroke.material.SetColor("_BaseColor", color);
         }
     }
 
@@ -129,6 +224,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             if (isDrawingActive)
                 FinishCurrentStroke();
             isPointerOnSurface = false;
+            ResetStabilizer();
         }
 
         if (cursorObject != null)
@@ -227,6 +323,31 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         completedStrokes.Clear();
     }
 
+    public void UndoLastClayStroke()
+    {
+        if (clayStrokes.Count == 0)
+            return;
+
+        int lastIndex = clayStrokes.Count - 1;
+        StrokeRecord last = clayStrokes[lastIndex];
+        clayStrokes.RemoveAt(lastIndex);
+        if (last != null && last.strokeObject != null)
+            Destroy(last.strokeObject);
+    }
+
+    public void ClearClayCoils()
+    {
+        if (isDrawingActive && currentStroke != null && currentStroke.isClayCoil)
+            FinishCurrentStroke();
+
+        for (int i = 0; i < clayStrokes.Count; i++)
+        {
+            if (clayStrokes[i] != null && clayStrokes[i].strokeObject != null)
+                Destroy(clayStrokes[i].strokeObject);
+        }
+        clayStrokes.Clear();
+    }
+
     public void SetStrokesVisible(bool visible)
     {
         if (strokeContainer != null)
@@ -279,62 +400,24 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             return;
         }
 
-        Ray ray = viewCamera.ScreenPointToRay(screenPosition);
-        PerformRaycast(ray);
-
-        // Check Open Palm gesture for Lock / Unlock
         SculptHandFrame hand = default;
         bool hasHandData = isHandTracked && handRunner != null && handRunner.TryGetLatestHand(out hand);
+        UpdateOpenPalmLock(hasHandData, hand);
 
-        if (hasHandData)
+        bool pointingNow = hasHandData && IsIndexPointing(hand, isDrawingActive, clayCoilMode);
+        Ray ray = StabilizedRay(viewCamera, screenPosition);
+        PerformRaycast(ray);
+        if (!isPointerOnSurface && pointingNow)
         {
-            if (IsOpenPalm(hand))
-            {
-                openPalmTimer += Time.deltaTime;
-                if (!isDrawingLocked && openPalmTimer >= 0.35f)
-                {
-                    SetDrawingLocked(true);
-                }
-                else if (isDrawingLocked && openPalmTimer >= 0.6f)
-                {
-                    SetDrawingLocked(false);
-                }
-            }
-            else
-            {
-                openPalmTimer = Mathf.Max(0f, openPalmTimer - Time.deltaTime * 2f);
-            }
+            PerformRaycast(viewCamera.ScreenPointToRay(new Vector3(screenPosition.x, screenPosition.y, 0f)));
+            if (isPointerOnSurface)
+                ResetStabilizer();
         }
+        if (!isPointerOnSurface && !isDrawingActive)
+            lazyPointerReady = false;
 
         UpdateCursorVisual();
-
-        bool shouldDraw = false;
-        if (isPointerOnSurface && !isDrawingLocked)
-        {
-            if (hasHandData)
-            {
-                // ONLY DRAW WHEN AN ISOLATED INDEX FINGER POINTING GESTURE IS DETECTED
-                shouldDraw = IsIndexPointing(hand);
-            }
-            else
-            {
-                // In mouse mode (editor debugging): left mouse drag or click
-                shouldDraw = isMouseClick || Input.GetMouseButton(0);
-            }
-        }
-
-        if (shouldDraw)
-        {
-            if (!isDrawingActive)
-                BeginNewStroke();
-
-            AppendPointToStroke(currentSurfacePoint, currentSurfaceNormal, lastHitTriangleIndex, lastHitBarycentric);
-        }
-        else
-        {
-            if (isDrawingActive)
-                FinishCurrentStroke();
-        }
+        ApplyDrawIntent(hasHandData, hand, isMouseClick || Input.GetMouseButton(0));
     }
 
     private void Update()
@@ -355,57 +438,32 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         if (viewCamera == null)
             return;
 
-        Ray ray;
         bool hasHand = false;
         SculptHandFrame hand = default;
+        Vector2 rawScreen = Input.mousePosition;
         if (handRunner != null && handRunner.TryGetLatestHand(out hand))
         {
             hasHand = true;
-            Vector3 viewportPoint = new Vector3(hand.IndexTip.x, hand.IndexTip.y, 0f);
-            ray = viewCamera.ViewportPointToRay(viewportPoint);
-
-            if (IsOpenPalm(hand))
-            {
-                openPalmTimer += Time.deltaTime;
-                if (!isDrawingLocked && openPalmTimer >= 0.35f)
-                    SetDrawingLocked(true);
-                else if (isDrawingLocked && openPalmTimer >= 0.6f)
-                    SetDrawingLocked(false);
-            }
-            else
-            {
-                openPalmTimer = Mathf.Max(0f, openPalmTimer - Time.deltaTime * 2f);
-            }
-        }
-        else
-        {
-            ray = viewCamera.ScreenPointToRay(Input.mousePosition);
+            rawScreen = viewCamera.ViewportToScreenPoint(
+                new Vector3(hand.IndexTip.x, hand.IndexTip.y, 0f));
         }
 
+        UpdateOpenPalmLock(hasHand, hand);
+
+        bool pointingNow = hasHand && IsIndexPointing(hand, isDrawingActive, clayCoilMode);
+        Ray ray = StabilizedRay(viewCamera, rawScreen);
         PerformRaycast(ray);
+        if (!isPointerOnSurface && pointingNow)
+        {
+            PerformRaycast(viewCamera.ScreenPointToRay(new Vector3(rawScreen.x, rawScreen.y, 0f)));
+            if (isPointerOnSurface)
+                ResetStabilizer();
+        }
+        if (!isPointerOnSurface && !isDrawingActive)
+            lazyPointerReady = false;
+
         UpdateCursorVisual();
-
-        bool shouldDraw = false;
-        if (isPointerOnSurface && !isDrawingLocked)
-        {
-            if (hasHand)
-                shouldDraw = IsIndexPointing(hand);
-            else
-                shouldDraw = Input.GetMouseButton(0);
-        }
-
-        if (shouldDraw)
-        {
-            if (!isDrawingActive)
-                BeginNewStroke();
-
-            AppendPointToStroke(currentSurfacePoint, currentSurfaceNormal, lastHitTriangleIndex, lastHitBarycentric);
-        }
-        else
-        {
-            if (isDrawingActive)
-                FinishCurrentStroke();
-        }
+        ApplyDrawIntent(hasHand, hand, Input.GetMouseButton(0));
     }
 
     private void LateUpdate()
@@ -472,6 +530,12 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
                 RebuildStrokeMeshFromAnchors(completedStrokes[i], cachedBakedVertices, cachedBakedNormals);
         }
 
+        for (int i = 0; i < clayStrokes.Count; i++)
+        {
+            if (clayStrokes[i] != null)
+                RebuildStrokeMeshFromAnchors(clayStrokes[i], cachedBakedVertices, cachedBakedNormals);
+        }
+
         if (isDrawingActive && currentStroke != null)
         {
             RebuildStrokeMeshFromAnchors(currentStroke, cachedBakedVertices, cachedBakedNormals);
@@ -480,23 +544,55 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public static bool IsIndexPointing(SculptHandFrame hand)
     {
+        return IsIndexPointing(hand, false, false);
+    }
+
+    public static bool IsIndexPointing(SculptHandFrame hand, bool alreadyDrawing)
+    {
+        return IsIndexPointing(hand, alreadyDrawing, false);
+    }
+
+    public static bool IsIndexPointing(SculptHandFrame hand, bool alreadyDrawing, bool easyMode)
+    {
         float palm = Mathf.Max(hand.PalmWidth, 0.001f);
-        return hand.IndexExtensionAngle >= 115f &&
-               hand.IndexTipPalmRatio >= 1.02f &&
-               hand.OtherFingersCurlRatio <= 1.35f &&
-               hand.MiddleTipPalmRatio <= 1.05f &&
-               hand.PinchDistance >= palm * 0.35f &&
-               !IsOpenPalm(hand);
+        float minAngle;
+        float minIndexReach;
+        float maxOtherReach;
+        float maxMiddleReach;
+        float minPinch;
+        if (easyMode)
+        {
+            minAngle = alreadyDrawing ? 58f : 70f;
+            minIndexReach = alreadyDrawing ? 0.62f : 0.72f;
+            maxOtherReach = alreadyDrawing ? 2.35f : 2.10f;
+            maxMiddleReach = alreadyDrawing ? 1.85f : 1.55f;
+            minPinch = alreadyDrawing ? palm * 0.05f : palm * 0.08f;
+        }
+        else
+        {
+            minAngle = alreadyDrawing ? 62f : 72f;
+            minIndexReach = alreadyDrawing ? 0.64f : 0.74f;
+            maxOtherReach = alreadyDrawing ? 2.20f : 2.00f;
+            maxMiddleReach = alreadyDrawing ? 1.70f : 1.48f;
+            minPinch = alreadyDrawing ? palm * 0.06f : palm * 0.10f;
+        }
+
+        bool indexOut = hand.IndexExtensionAngle >= minAngle &&
+                        hand.IndexTipPalmRatio >= minIndexReach;
+        bool othersOk = hand.OtherFingersCurlRatio <= maxOtherReach &&
+                        hand.MiddleTipPalmRatio <= maxMiddleReach;
+        bool notPinching = hand.PinchDistance >= minPinch;
+        return indexOut && othersOk && notPinching;
     }
 
     public static bool IsOpenPalm(SculptHandFrame hand)
     {
         float palm = Mathf.Max(hand.PalmWidth, 0.001f);
-        return hand.PinchDistance >= palm * 0.45f &&
-               hand.FingerCurlRatio >= 1.30f &&
-               hand.OtherFingersCurlRatio >= 1.25f &&
-               hand.IndexTipPalmRatio >= 1.02f &&
-               hand.MiddleTipPalmRatio >= 1.02f;
+        return hand.PinchDistance >= palm * 0.52f &&
+               hand.FingerCurlRatio >= 1.42f &&
+               hand.OtherFingersCurlRatio >= 1.40f &&
+               hand.IndexTipPalmRatio >= 1.08f &&
+               hand.MiddleTipPalmRatio >= 1.12f;
     }
 
     private void PerformRaycast(Ray ray)
@@ -572,9 +668,12 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             // Amber/Gold indicates locked state
             cursorColor = new Color(1f, 0.78f, 0.15f, 0.95f);
         }
+        else if (clayCoilMode)
+        {
+            cursorColor = new Color(clayColor.r, clayColor.g, clayColor.b, isDrawingActive ? 0.95f : 0.9f);
+        }
         else if (isDrawingActive)
         {
-            // Electric green while actively drawing with index finger
             cursorColor = new Color(0.2f, 1f, 0.35f, 0.95f);
         }
         else
@@ -610,28 +709,53 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             float angle = (float)i / segments * Mathf.PI * 2f;
             cursorRing.SetPosition(i, new Vector3(Mathf.Cos(angle) * localRadius, Mathf.Sin(angle) * localRadius, 0f));
         }
+
+        if (clayCoilMode)
+        {
+            float lineW = Mathf.Clamp(strokeWidth * 0.28f, 0.0012f, 0.007f);
+            cursorRing.startWidth = lineW;
+            cursorRing.endWidth = lineW;
+            if (cursorCenterDot != null)
+                cursorCenterDot.localScale = Vector3.one * Mathf.Max(0.003f, strokeWidth * 0.55f);
+        }
+        else
+        {
+            cursorRing.startWidth = 0.02f;
+            cursorRing.endWidth = 0.02f;
+            if (cursorCenterDot != null)
+                cursorCenterDot.localScale = Vector3.one * 0.024f;
+        }
     }
 
     private void BeginNewStroke()
     {
         EnsureStrokeContainer();
+        EnsureClayContainer();
         EnsureMaterial();
+        EnsureClayMaterial();
 
         isDrawingActive = true;
         accumulatedDistance = 0f;
+        lazyPointerReady = true;
 
-        GameObject strokeObj = new GameObject("PatternStroke_" + completedStrokes.Count);
-        strokeObj.transform.SetParent(strokeContainer.transform, false);
+        bool clay = clayCoilMode;
+        Transform parent = clay ? clayContainer.transform : strokeContainer.transform;
+        string objectName = clay
+            ? "ClayCoil_" + clayStrokes.Count
+            : "PatternStroke_" + completedStrokes.Count;
+        GameObject strokeObj = new GameObject(objectName);
+        strokeObj.transform.SetParent(parent, false);
 
         MeshFilter mf = strokeObj.AddComponent<MeshFilter>();
         MeshRenderer mr = strokeObj.AddComponent<MeshRenderer>();
 
-        Mesh mesh = new Mesh { name = "PatternStrokeMesh" };
+        Mesh mesh = new Mesh { name = clay ? "ClayCoilMesh" : "PatternStrokeMesh" };
         mesh.MarkDynamic();
         mf.sharedMesh = mesh;
 
-        Material mat = new Material(strokeMaterial);
-        if (activePatternTexture != null)
+        Material source = clay ? clayMaterial : strokeMaterial;
+        Material mat = new Material(source);
+        if (!clay && activePatternTexture != null)
         {
             mat.mainTexture = activePatternTexture;
             if (mat.HasProperty("_MainTex"))
@@ -639,10 +763,12 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             if (mat.HasProperty("_BaseMap"))
                 mat.SetTexture("_BaseMap", activePatternTexture);
         }
+
+        Color color = clay ? clayColor : strokeColor;
         if (mat.HasProperty("_Color"))
-            mat.SetColor("_Color", strokeColor);
+            mat.SetColor("_Color", color);
         if (mat.HasProperty("_BaseColor"))
-            mat.SetColor("_BaseColor", strokeColor);
+            mat.SetColor("_BaseColor", color);
         if (mat.HasProperty("_Opacity"))
             mat.SetFloat("_Opacity", 1f);
 
@@ -653,7 +779,9 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             strokeObject = strokeObj,
             strokeMesh = mesh,
             material = mat,
-            strokeWidth = strokeWidth
+            strokeWidth = strokeWidth,
+            clayLift = clayLift,
+            isClayCoil = clay
         };
 
         AppendPointToStroke(currentSurfacePoint, currentSurfaceNormal, lastHitTriangleIndex, lastHitBarycentric);
@@ -665,7 +793,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             return;
 
         float scaleFactor = GetLossyScaleFactor();
-        float worldOffset = 0.0035f;
+        float worldOffset = currentStroke.isClayCoil ? 0.0015f : 0.0035f;
         float localNormalOffset = worldOffset / scaleFactor;
 
         Vector3 pointOnSurface = worldPoint + worldNormal * worldOffset;
@@ -763,6 +891,12 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         int count = record.anchors.Count;
         if (count < 2)
             return;
+
+        if (record.isClayCoil)
+        {
+            RebuildClayCoilMesh(record, V, N);
+            return;
+        }
 
         int vertCount = count * 2;
         int triCount = (count - 1) * 6;
@@ -881,7 +1015,10 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         {
             if (currentStroke.anchors.Count >= 2)
             {
-                completedStrokes.Add(currentStroke);
+                if (currentStroke.isClayCoil)
+                    clayStrokes.Add(currentStroke);
+                else
+                    completedStrokes.Add(currentStroke);
             }
             else
             {
@@ -891,6 +1028,157 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         }
 
         currentStroke = null;
+        lazyPointerReady = false;
+    }
+
+    private void ApplyDrawIntent(bool hasHandData, SculptHandFrame hand, bool mouseHeld)
+    {
+        bool shouldDraw = false;
+        if (isPointerOnSurface && !isDrawingLocked)
+        {
+            if (hasHandData)
+                shouldDraw = IsIndexPointing(hand, isDrawingActive, clayCoilMode);
+            else
+                shouldDraw = mouseHeld;
+        }
+
+        if (shouldDraw)
+        {
+            if (!isDrawingActive)
+            {
+                ResetStabilizer();
+                BeginNewStroke();
+            }
+
+            AppendPointToStroke(
+                currentSurfacePoint,
+                currentSurfaceNormal,
+                lastHitTriangleIndex,
+                lastHitBarycentric);
+        }
+        else if (isDrawingActive)
+        {
+            FinishCurrentStroke();
+        }
+    }
+
+    private void UpdateOpenPalmLock(bool hasHandData, SculptHandFrame hand)
+    {
+        if (!hasHandData)
+            return;
+
+        if (IsOpenPalm(hand))
+        {
+            openPalmTimer += Time.deltaTime;
+            if (!isDrawingLocked && openPalmTimer >= 0.35f)
+                SetDrawingLocked(true);
+            else if (isDrawingLocked && openPalmTimer >= 0.6f)
+                SetDrawingLocked(false);
+        }
+        else
+        {
+            openPalmTimer = Mathf.Max(0f, openPalmTimer - Time.deltaTime * 2f);
+        }
+    }
+
+    private Ray StabilizedRay(Camera viewCamera, Vector2 rawScreen)
+    {
+        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+        Vector2 filtered = FilterPointer(rawScreen, dt);
+        Vector2 brushScreen = ApplyLazyPull(filtered, dt);
+        return viewCamera.ScreenPointToRay(new Vector3(brushScreen.x, brushScreen.y, 0f));
+    }
+
+    private Vector2 FilterPointer(Vector2 raw, float dt)
+    {
+        float amount = Mathf.Clamp01(stabilization);
+        if (amount <= 0.001f)
+        {
+            pointerFilterReady = false;
+            return raw;
+        }
+
+        if (!pointerFilterReady)
+        {
+            filteredPointerX = raw.x;
+            filteredPointerY = raw.y;
+            filteredPointerDx = 0f;
+            filteredPointerDy = 0f;
+            pointerFilterReady = true;
+            return raw;
+        }
+
+        float minCutoff = Mathf.Lerp(2.4f, oneEuroMinCutoff, amount);
+        float beta = Mathf.Lerp(0.04f, oneEuroBeta, amount);
+        const float dCutoff = 1f;
+
+        float dx = (raw.x - filteredPointerX) / dt;
+        filteredPointerDx = LowPass(dx, filteredPointerDx, Alpha(dCutoff, dt));
+        float cutoffX = minCutoff + beta * Mathf.Abs(filteredPointerDx);
+        filteredPointerX = LowPass(raw.x, filteredPointerX, Alpha(cutoffX, dt));
+
+        float dy = (raw.y - filteredPointerY) / dt;
+        filteredPointerDy = LowPass(dy, filteredPointerDy, Alpha(dCutoff, dt));
+        float cutoffY = minCutoff + beta * Mathf.Abs(filteredPointerDy);
+        filteredPointerY = LowPass(raw.y, filteredPointerY, Alpha(cutoffY, dt));
+
+        return new Vector2(filteredPointerX, filteredPointerY);
+    }
+
+    private Vector2 ApplyLazyPull(Vector2 filtered, float dt)
+    {
+        float amount = Mathf.Clamp01(stabilization);
+        if (amount <= 0.001f)
+        {
+            lazyPointerReady = false;
+            lazyScreen = filtered;
+            return filtered;
+        }
+
+        float heightScale = Mathf.Max(UnityEngine.Screen.height, 1) / 1080f;
+        float drawPull = Mathf.Lerp(6f, pullPixels, amount) * heightScale;
+        float hoverPull = drawPull * 0.28f;
+        float pull = isDrawingActive ? drawPull : hoverPull;
+
+        if (!lazyPointerReady)
+        {
+            lazyScreen = filtered;
+            lazyPointerReady = true;
+            return lazyScreen;
+        }
+
+        Vector2 delta = filtered - lazyScreen;
+        float dist = delta.magnitude;
+        if (dist > pull)
+        {
+            lazyScreen = filtered - delta.normalized * pull;
+        }
+        else if (!isDrawingActive)
+        {
+            float catchUp = 1f - Mathf.Exp(-dt * 16f);
+            lazyScreen = Vector2.Lerp(lazyScreen, filtered, catchUp);
+        }
+
+        return lazyScreen;
+    }
+
+    private void ResetStabilizer()
+    {
+        pointerFilterReady = false;
+        lazyPointerReady = false;
+        filteredPointerDx = 0f;
+        filteredPointerDy = 0f;
+    }
+
+    private static float Alpha(float cutoff, float dt)
+    {
+        float tau = 1f / (2f * Mathf.PI * Mathf.Max(cutoff, 0.01f));
+        return 1f / (1f + tau / dt);
+    }
+
+    private static float LowPass(float value, float previous, float alpha)
+    {
+        return alpha * value + (1f - alpha) * previous;
     }
 
     public void RefreshCollider()
@@ -938,6 +1226,126 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         strokeContainer.transform.SetParent(parent, false);
     }
 
+    private void EnsureClayContainer()
+    {
+        if (clayContainer != null)
+            return;
+
+        Transform parent = teapotRenderer != null ? teapotRenderer.transform : transform;
+        clayContainer = new GameObject("ClayCoilStrokes");
+        clayContainer.transform.SetParent(parent, false);
+    }
+
+    private void EnsureClayMaterial()
+    {
+        if (clayMaterial != null)
+            return;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        if (shader == null)
+            return;
+
+        clayMaterial = new Material(shader)
+        {
+            name = "Morphic Clay Coil Material"
+        };
+        clayMaterial.color = clayColor;
+        if (clayMaterial.HasProperty("_BaseColor"))
+            clayMaterial.SetColor("_BaseColor", clayColor);
+        if (clayMaterial.HasProperty("_Color"))
+            clayMaterial.SetColor("_Color", clayColor);
+        if (clayMaterial.HasProperty("_Smoothness"))
+            clayMaterial.SetFloat("_Smoothness", 0.28f);
+        if (clayMaterial.HasProperty("_Metallic"))
+            clayMaterial.SetFloat("_Metallic", 0f);
+    }
+
+    private void RebuildClayCoilMesh(StrokeRecord record, Vector3[] V, Vector3[] N)
+    {
+        int count = record.anchors.Count;
+        const int sides = 8;
+        float scaleFactor = GetLossyScaleFactor();
+        float radius = (record.strokeWidth / scaleFactor) * 0.5f;
+        float lift = radius * Mathf.Max(0.9f, record.clayLift);
+
+        Vector3[] pts = new Vector3[count];
+        Vector3[] norms = new Vector3[count];
+        for (int i = 0; i < count; i++)
+        {
+            pts[i] = EvaluatePosition(record.anchors[i], V, N);
+            norms[i] = EvaluateNormal(record.anchors[i], N);
+        }
+
+        int vertCount = count * sides;
+        int triCount = (count - 1) * sides * 6;
+        Vector3[] vertices = new Vector3[vertCount];
+        Vector3[] normals = new Vector3[vertCount];
+        Vector2[] uvs = new Vector2[vertCount];
+        int[] triangles = new int[triCount];
+
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 tangent;
+            if (i == 0)
+                tangent = (pts[1] - pts[0]).normalized;
+            else if (i == count - 1)
+                tangent = (pts[count - 1] - pts[count - 2]).normalized;
+            else
+                tangent = (pts[i + 1] - pts[i - 1]).normalized;
+            if (tangent.sqrMagnitude < 0.0001f)
+                tangent = Vector3.forward;
+
+            Vector3 n = norms[i].sqrMagnitude > 0.0001f ? norms[i].normalized : Vector3.up;
+            Vector3 binormal = Vector3.Cross(tangent, n);
+            if (binormal.sqrMagnitude < 0.0001f)
+                binormal = Vector3.Cross(Vector3.right, n);
+            binormal.Normalize();
+            n = Vector3.Cross(binormal, tangent).normalized;
+            Vector3 center = pts[i] + n * lift;
+
+            for (int s = 0; s < sides; s++)
+            {
+                float angle = s / (float)sides * Mathf.PI * 2f;
+                Vector3 radial = (binormal * Mathf.Cos(angle) + n * Mathf.Sin(angle)) * radius;
+                int idx = i * sides + s;
+                vertices[idx] = center + radial;
+                normals[idx] = radial.sqrMagnitude > 0.0001f ? radial.normalized : n;
+                uvs[idx] = new Vector2(s / (float)sides, i / Mathf.Max(1f, count - 1f));
+            }
+        }
+
+        int tri = 0;
+        for (int i = 0; i < count - 1; i++)
+        {
+            for (int s = 0; s < sides; s++)
+            {
+                int sNext = (s + 1) % sides;
+                int i0 = i * sides + s;
+                int i1 = i * sides + sNext;
+                int i2 = (i + 1) * sides + s;
+                int i3 = (i + 1) * sides + sNext;
+                triangles[tri++] = i0;
+                triangles[tri++] = i2;
+                triangles[tri++] = i1;
+                triangles[tri++] = i1;
+                triangles[tri++] = i2;
+                triangles[tri++] = i3;
+            }
+        }
+
+        record.strokeMesh.Clear();
+        record.strokeMesh.vertices = vertices;
+        record.strokeMesh.normals = normals;
+        record.strokeMesh.uv = uvs;
+        record.strokeMesh.triangles = triangles;
+        record.strokeMesh.RecalculateNormals();
+        record.strokeMesh.RecalculateBounds();
+    }
+
     private void EnsureCursor()
     {
         if (cursorObject != null)
@@ -971,8 +1379,9 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
         GameObject dot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         dot.name = "CursorCenterDot";
-        dot.transform.SetParent(cursorObject.transform, false);
-        dot.transform.localScale = Vector3.one * 0.024f;
+        cursorCenterDot = dot.transform;
+        cursorCenterDot.SetParent(cursorObject.transform, false);
+        cursorCenterDot.localScale = Vector3.one * 0.024f;
         Collider dotCol = dot.GetComponent<Collider>();
         if (dotCol != null)
             Destroy(dotCol);
