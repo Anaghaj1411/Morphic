@@ -89,6 +89,7 @@ public static class LanguagePageBuilder
         BuildTitle(root);
         BuildOptionButtons(root, controller);
         BuildBackButton(root, controller);
+        MorphicExitButton.Create(root);
     }
 
     private static void BuildCard(RectTransform root)

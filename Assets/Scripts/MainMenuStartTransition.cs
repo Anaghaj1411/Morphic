@@ -656,6 +656,7 @@ private IEnumerator MoveToRestaurant()
         }
 
         hasRun = true;
+        fadeGroups = FindFadeGroups();
 
         if (!EnsureCamera())
         {
@@ -678,7 +679,8 @@ private IEnumerator MoveToRestaurant()
             "Morphic Logo",
             "Start Button",
             "Language Button",
-            "Settings Button"
+            "Settings Button",
+            "Exit Button"
         };
 
         Canvas[] canvases = FindObjectsOfType<Canvas>();

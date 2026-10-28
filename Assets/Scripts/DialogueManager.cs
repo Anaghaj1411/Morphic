@@ -85,6 +85,7 @@ public class DialogueManager : MonoBehaviour
     private SculptingEnhancementTeapotColorController teapotColorController;
     private MorphicAIHelpUI aiHelpUi;
     private GameObject sculptBackRoot;
+    private GameObject craftExitRoot;
     private DialogueButtonClickSound dialogueButtonSound;
 
     private void Awake()
@@ -839,6 +840,7 @@ public class DialogueManager : MonoBehaviour
         ConfigureCultureButton(indiaButton, "India");
         ConfigureCultureButton(indonesiaButton, "Indonesia");
         ConfigureCultureButton(freestyleButton, "Freestyle");
+        SetCraftExitVisible(true);
     }
 
     private void ConfigureCultureButton(
@@ -1485,6 +1487,7 @@ public class DialogueManager : MonoBehaviour
     {
         if (cultureChoicesPanel != null)
             cultureChoicesPanel.SetActive(false);
+        SetCraftExitVisible(false);
     }
 
     private static GameObject FindSceneObject(string objectName)
@@ -1626,6 +1629,36 @@ public class DialogueManager : MonoBehaviour
         if (aiHelpUi == null)
             aiHelpUi = gameObject.AddComponent<MorphicAIHelpUI>();
         aiHelpUi.SetVisible(true);
+    }
+
+    private void EnsureCraftExitButton()
+    {
+        if (craftExitRoot != null)
+            return;
+
+        Canvas canvas = null;
+        if (dialoguePanel != null)
+            canvas = dialoguePanel.GetComponentInParent<Canvas>(true);
+        if (canvas == null && cultureChoicesPanel != null)
+            canvas = cultureChoicesPanel.GetComponentInParent<Canvas>(true);
+        if (canvas == null)
+            canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+        if (canvas == null)
+            return;
+
+        craftExitRoot = MorphicExitButton.Create(canvas.transform);
+        craftExitRoot.SetActive(false);
+    }
+
+    private void SetCraftExitVisible(bool visible)
+    {
+        EnsureCraftExitButton();
+        if (craftExitRoot == null)
+            return;
+
+        craftExitRoot.SetActive(visible);
+        if (visible)
+            craftExitRoot.transform.SetAsLastSibling();
     }
 
     private void EnsureSculptBackButton()
