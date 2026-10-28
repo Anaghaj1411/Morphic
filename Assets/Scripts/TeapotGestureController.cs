@@ -43,16 +43,16 @@ public sealed class TeapotGestureController : MonoBehaviour
     [SerializeField, Range(0.2f, 0.8f)] private float minimumThumbIndexSeparation = 0.42f;
 
     [Header("Pinch Up Attachments")]
-    [SerializeField, Range(0.1f, 1.2f)] private float pinchThreshold = 0.72f;
-    [SerializeField, Range(0.2f, 1.5f)] private float pinchReleaseThreshold = 0.95f;
-    [SerializeField, Min(1f)] private float leftPinchBoost = 1.35f;
-    [SerializeField, Min(1f)] private float pinchLiftSensitivity = 920f;
-    [SerializeField, Min(1f)] private float pinchEase = 28f;
-    [SerializeField, Min(1f)] private float shaftEase = 12f;
+    [SerializeField, Range(0.1f, 1.2f)] private float pinchThreshold = 0.88f;
+    [SerializeField, Range(0.2f, 1.6f)] private float pinchReleaseThreshold = 1.20f;
+    [SerializeField, Min(1f)] private float leftPinchBoost = 1.15f;
+    [SerializeField, Min(1f)] private float pinchLiftSensitivity = 1200f;
+    [SerializeField, Min(1f)] private float pinchEase = 26f;
+    [SerializeField, Min(1f)] private float shaftEase = 26f;
 
     [Header("Two Fists Down - Handle")]
-    [SerializeField, Min(1f)] private float handleDownSensitivity = 756f;
-    [SerializeField, Min(1f)] private float handleEase = 12f;
+    [SerializeField, Min(1f)] private float handleDownSensitivity = 1150f;
+    [SerializeField, Min(1f)] private float handleEase = 24f;
 
     [Header("Right V Up - Bevel")]
     [SerializeField, Min(1f)] private float bevelLiftSensitivity = 920f;
@@ -85,9 +85,14 @@ public sealed class TeapotGestureController : MonoBehaviour
     private float leftPinchStartY;
     private float rightPinchStartWeight;
     private float leftPinchStartWeight;
+    private float rightPinchGrace;
+    private float leftPinchGrace;
+    private const float PinchGraceDuration = 0.20f;
     private bool handleDownArmed;
     private float handleDownStartY;
     private float handleStartWeight;
+    private float handleDownGrace;
+    private const float HandleGraceDuration = 0.22f;
     private bool bevelArmed;
     private float bevelStartY;
     private float bevelStartWeight;
@@ -306,8 +311,21 @@ public sealed class TeapotGestureController : MonoBehaviour
         return PracticeGesture.None;
     }
 
+    private void EnsureResponsiveDefaults()
+    {
+        if (shaftEase < 22f) shaftEase = 26f;
+        if (pinchEase < 22f) pinchEase = 26f;
+        if (handleEase < 20f) handleEase = 24f;
+        if (pinchLiftSensitivity < 1050f) pinchLiftSensitivity = 1200f;
+        if (handleDownSensitivity < 950f) handleDownSensitivity = 1150f;
+        if (pinchThreshold < 0.82f) pinchThreshold = 0.88f;
+        if (pinchReleaseThreshold < 1.10f) pinchReleaseThreshold = 1.20f;
+        if (leftPinchBoost < 1.10f) leftPinchBoost = 1.15f;
+    }
+
     private void Awake()
     {
+        EnsureResponsiveDefaults();
         if (teapotRenderer == null)
             teapotRenderer = GetComponentInChildren<SkinnedMeshRenderer>(true);
 
@@ -322,6 +340,11 @@ public sealed class TeapotGestureController : MonoBehaviour
         middle = targetMiddle = Mathf.Clamp(middle, 0f, middleMaximumWeight);
         SetBlendShapeWeight("Middle", middle);
         EnsureTeapotFistRotator();
+    }
+
+    private void OnValidate()
+    {
+        EnsureResponsiveDefaults();
     }
 
     /// <summary>
@@ -411,6 +434,7 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     private void OnEnable()
     {
+        EnsureResponsiveDefaults();
         ApplyBandGoldMaterial();
         EnsureTeapotFistRotator();
         if (gestureStatus != null)
@@ -452,8 +476,18 @@ public sealed class TeapotGestureController : MonoBehaviour
         }
 
         bool twoV = hasTwoHands && IsVSign(first) && IsVSign(second);
-        bool twoFists = !twoV && hasTwoHands &&
+        bool twoFistsNow = !twoV && hasTwoHands &&
                         LooksLikeHandleFist(first) && LooksLikeHandleFist(second);
+        if (twoFistsNow)
+        {
+            handleDownGrace = HandleGraceDuration;
+        }
+        else
+        {
+            handleDownGrace -= Time.deltaTime;
+        }
+        bool twoFists = twoFistsNow || (handleDownArmed && handleDownGrace > 0f && hasTwoHands && !IsOpenPalm(first) && !IsOpenPalm(second));
+
         SculptHandFrame rightVHand;
         bool foundRightV = TryGetRightVHand(first, second, hasTwoHands, out rightVHand);
         bool rightV = !twoV && foundRightV;
@@ -737,10 +771,24 @@ public sealed class TeapotGestureController : MonoBehaviour
         ref bool armed = ref (physicalRight ? ref rightPinchArmed : ref leftPinchArmed);
         ref float startY = ref (physicalRight ? ref rightPinchStartY : ref leftPinchStartY);
         ref float startWeight = ref (physicalRight ? ref rightPinchStartWeight : ref leftPinchStartWeight);
+        ref float grace = ref (physicalRight ? ref rightPinchGrace : ref leftPinchGrace);
         string shapeName = physicalRight ? ActiveLidName : ActiveShaftName;
 
-        if (!IsPinching(hand, physicalRight, ref held) ||
-            !blendShapeIndices.TryGetValue(shapeName, out int index))
+        if (!blendShapeIndices.TryGetValue(shapeName, out int index))
+            return false;
+
+        bool pinching = IsPinching(hand, physicalRight, ref held);
+        if (pinching)
+        {
+            grace = PinchGraceDuration;
+        }
+        else
+        {
+            grace -= Time.deltaTime;
+        }
+
+        bool active = pinching || (armed && grace > 0f && !IsOpenPalm(hand) && !IsVSign(hand));
+        if (!active)
         {
             armed = false;
             return false;
@@ -764,7 +812,7 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     private bool IsPinching(SculptHandFrame hand, bool physicalRight, ref bool held)
     {
-        if (IsOpenPalm(hand) || IsIndexPointing(hand) || LooksLikeFist(hand) || IsVSign(hand))
+        if (IsOpenPalm(hand) || IsIndexPointing(hand) || IsVSign(hand))
         {
             held = false;
             return false;
@@ -775,18 +823,18 @@ public sealed class TeapotGestureController : MonoBehaviour
         float thumbMiddle = Vector2.Distance(
             new Vector2(hand.ThumbTip.x, hand.ThumbTip.y),
             new Vector2(hand.MiddleTip.x, hand.MiddleTip.y)) / palm;
+
+        float pinchDist = Mathf.Min(thumbIndex, thumbMiddle * 1.08f);
+
         float start = pinchThreshold;
-        float release = Mathf.Max(pinchReleaseThreshold, pinchThreshold + 0.12f);
+        float release = Mathf.Max(pinchReleaseThreshold, pinchThreshold + 0.25f);
         if (!physicalRight)
         {
             start *= leftPinchBoost;
             release *= leftPinchBoost;
         }
 
-        if (!held && thumbIndex > thumbMiddle + 0.04f)
-            return false;
-
-        held = held ? thumbIndex < release : thumbIndex < start;
+        held = held ? pinchDist < release : pinchDist < start;
         return held;
     }
 
@@ -802,7 +850,10 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     private static bool LooksLikeFist(SculptHandFrame hand)
     {
-        return FingersClosed(hand, 1.12f, 1.02f) && !HasExtendedThumb(hand);
+        float palm = Mathf.Max(hand.PalmWidth, 0.001f);
+        if (hand.PinchDistance / palm < 0.65f)
+            return false;
+        return FingersClosed(hand, 1.18f, 1.08f) && !HasExtendedThumb(hand);
     }
 
     private static bool FingersClosed(
@@ -871,11 +922,13 @@ public sealed class TeapotGestureController : MonoBehaviour
         leftPinchHeld = false;
         rightPinchArmed = false;
         leftPinchArmed = false;
+        rightPinchGrace = 0f;
+        leftPinchGrace = 0f;
     }
 
     private static bool LooksLikeHandleFist(SculptHandFrame hand)
     {
-        return FingersClosed(hand, 1.32f, 1.22f);
+        return FingersClosed(hand, 1.45f, 1.35f);
     }
 
     private void DriveHandleDown(SculptHandFrame first, SculptHandFrame second)
@@ -907,6 +960,7 @@ public sealed class TeapotGestureController : MonoBehaviour
     private void ResetHandleDownTracking()
     {
         handleDownArmed = false;
+        handleDownGrace = 0f;
     }
 
     private bool TryGetRightVHand(

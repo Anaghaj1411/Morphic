@@ -18,6 +18,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         SelectVariant,
         SelectColor,
         SelectDesign,
+        SelectDrawMotif,
+        DrawBandTargeting,
         Selfie,
         Review,
         Shelf,
@@ -50,6 +52,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     [SerializeField, Range(1f, 2.5f)] private float cameraToScreenRangeMultiplier = 1.8f;
     [Header("Body Designs")]
     [SerializeField] private Texture2D[] stampPatterns;
+    [Header("Band Patterns")]
+    [SerializeField] private Texture2D[] bandPatterns;
     [SerializeField, Range(3f, 12f)] private float designRepeatCount = 6f;
     [SerializeField, Range(0.08f, 0.5f)] private float designPatchHalfAngle = 0.22f;
     [SerializeField, Range(0.15f, 0.7f)] private float designVerticalHalfFraction = 0.38f;
@@ -101,6 +105,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private GameObject variantGroup;
     private GameObject bodyActionGroup;
     private GameObject designGroup;
+    private GameObject bandGroup;
     private GameObject colorGroup;
     private GameObject reviewGroup;
     private GameObject shelfGroup;
@@ -152,11 +157,33 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private readonly TMP_Text[] variantButtonLabels = new TMP_Text[2];
     private readonly Button[] designButtons = new Button[6];
     private readonly RawImage[] designPreviews = new RawImage[6];
+    private readonly Button[] bandButtons = new Button[8];
+    private readonly RawImage[] bandPreviews = new RawImage[8];
+    private readonly Button[] bandSizeButtons = new Button[4];
+    private readonly float[] bandSizes = new float[] { 0.05f, 0.085f, 0.12f, 0.16f };
+    private readonly string[] bandSizeLabels = new string[] { "SLIM", "MEDIUM", "BOLD", "WIDE" };
+    private int selectedBandSizeIndex = 1;
+    private Color committedBandColor = Color.white;
+    private bool bandTintActive;
+    private bool colorBackToBands;
+    private bool returnToBandDrawing;
+    private Image bandColorChip;
+    private GameObject bandTargetingBar;
+    private Button targetingSizeBtn;
+    private Button targetingColorBtn;
     private Transform designSurfaceRoot;
     private SkinnedMeshRenderer designSurfaceRenderer;
     private Material designSurfaceMaterial;
     private Material designHiddenMaterial;
     private Texture appliedDesignTexture;
+    private Texture2D appliedBandTexture;
+    private TeapotSurfacePatternPainter patternPainter;
+    private bool isBandActive;
+    private float bandCenterZ;
+    private float bandVerticalHalfFraction = 0.09f;
+    private float bandRepeatCount = 8f;
+    private float bandPatchHalfAngle = 0.3927f;
+    private float bandOpacity = 1f;
     private Color committedDesignTint = Color.white;
     private Texture2D capturedSelfieTexture;
     private Texture2D appliedSelfieTexture;
@@ -177,19 +204,21 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private static readonly Color PillPink = LanguagePageBuilder.Pink;
     private static readonly Color ActionPink = new Color32(242, 154, 214, 255);
     private static readonly Color DonePink = new Color32(236, 64, 168, 255);
-    private const float CustomizePanelWidth = 420f;
-    private const float PillWidth = 360f;
+    private static readonly Color DarkTextGreen = Color.black;
+    private const float CustomizePanelWidth = 540f;
+    private const float PillWidth = 490f;
     private const float PillHeight = 60f;
-    private const float MainMenuPanelHeight = 472f;
-    private const float ReviewPanelHeight = 420f;
-    private const float ShelfPanelHeight = 430f;
-    private const float PartSelectionPanelHeight = 700f;
-    private const float ColorSelectionPanelHeight = 640f;
-    private const float SelfiePanelHeight = 560f;
-    private const float VariantSelectionPanelHeight = 420f;
-    private const float BodyActionsPanelHeight = 360f;
-    private const float DesignSelectionPanelHeight = 560f;
-    private const float HistoryBarHeight = 72f;
+    private const float MainMenuPanelHeight = 500f;
+    private const float ReviewPanelHeight = 450f;
+    private const float ShelfPanelHeight = 450f;
+    private const float PartSelectionPanelHeight = 740f;
+    private const float ColorSelectionPanelHeight = 680f;
+    private const float SelfiePanelHeight = 600f;
+    private const float VariantSelectionPanelHeight = 460f;
+    private const float BodyActionsPanelHeight = 470f;
+    private const float DesignSelectionPanelHeight = 600f;
+    private const float BandSelectionPanelHeight = 840f;
+    private const float HistoryBarHeight = 78f;
     private const int MaxHistory = 20;
 
     private sealed class TeapotSnapshot
@@ -199,6 +228,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         public Texture Stamp;
         public Color StampTint;
         public bool StampVisible;
+        public bool IsBand;
+        public float BandCenterZ;
     }
 
     public void WriteHelpDecor(MorphicCraftHelpState state)
@@ -276,6 +307,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         TeapotCollectionStore.Clear();
         BuildInterface();
         LoadStampPatterns();
+        LoadBandPatterns();
         if (paletteAvailable)
         {
             ShowMainMenu();
@@ -329,7 +361,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             ShowLiveSelfiePreview();
 
         Vector2 screenPosition;
-        if (handRunner.TryGetLatestHand(out SculptHandFrame hand))
+        bool hasHand = handRunner.TryGetLatestHand(out SculptHandFrame hand);
+        if (hasHand)
         {
             SetCursorVisible(true);
             Vector2 expanded = ExpandCameraPoint(
@@ -342,7 +375,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             SetCursorVisible(false);
             screenPosition = Input.mousePosition;
-            if (mode != ColorMode.SelectColor)
+            if (mode != ColorMode.SelectColor && mode != ColorMode.DrawBandTargeting && mode != ColorMode.SelectDrawMotif)
             {
                 SetHoveredTarget(null);
                 ResetDwell();
@@ -352,6 +385,37 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         lastColorSampleScreen = screenPosition;
         HitTarget nextHovered = FindHitTarget(screenPosition);
+
+        if (mode == ColorMode.DrawBandTargeting && patternPainter != null)
+        {
+            bool cursorOverUi = IsCursorOverColorUi(screenPosition);
+            if (cursorOverUi)
+            {
+                patternPainter.SetPaintingEnabled(false);
+            }
+            else
+            {
+                patternPainter.SetPaintingEnabled(true);
+                patternPainter.ProcessPointer(screenPosition, hasHand, Input.GetMouseButton(0));
+
+                if (patternPainter.IsLocked)
+                {
+                    instructionText.text = "DRAWING LOCKED (Open palm detected). Show open palm again to unlock, or tap <- MOTIFS.";
+                }
+                else if (patternPainter.IsDrawing)
+                {
+                    instructionText.text = "DRAWING... Trace index finger across teapot to draw!";
+                }
+                else if (patternPainter.IsOverSurface)
+                {
+                    instructionText.text = "Point index finger to draw. Open palm to lock.";
+                }
+                else
+                {
+                    instructionText.text = "Aim at teapot. Point index finger to draw, open palm to lock.";
+                }
+            }
+        }
 
         if (mode == ColorMode.MainMenu)
         {
@@ -414,18 +478,18 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         ApplyBottomRightDocking(panelRect);
 
         headerText = CreateText(
-            "Header", panelRect, new Vector2(20f, -16f),
-            new Vector2(380f, 56f), "COLOR PALETTE", 36f,
+            "Header", panelRect, new Vector2(10f, -16f),
+            new Vector2(520f, 56f), "COLOR PALETTE", 40f,
             TextAlignmentOptions.Center, FontStyles.Bold);
         StyleMorphicTitle(headerText);
         BuildTitleBursts(panelRect);
         headerBackButton = CreateHeaderBackButton(panelRect);
         headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>();
         instructionText = CreateText(
-            "Instruction", panelRect, new Vector2(20f, -78f),
-            new Vector2(380f, 36f), "Choose the whole teapot or one part.", 18f,
+            "Instruction", panelRect, new Vector2(10f, -78f),
+            new Vector2(520f, 38f), "Choose the whole teapot or one part.", 19.5f,
             TextAlignmentOptions.Center, FontStyles.Bold);
-        instructionText.color = LanguagePageBuilder.Green;
+        instructionText.color = DarkTextGreen;
 
         mainActionGroup = new GameObject("MainActions", typeof(RectTransform));
         mainActionGroup.transform.SetParent(panelRect, false);
@@ -503,7 +567,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         Button colorDone = CreateButton("Done", colorRect, new Vector2(0f, -368f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
-        colorDone.onClick.AddListener(ShowMainMenu);
+        colorDone.onClick.AddListener(OnColorDoneClicked);
         RegisterHitTarget(colorDone, false, false, default);
 
         BuildHistoryBar(panelRect);
@@ -523,17 +587,31 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         barRect.anchorMax = new Vector2(1f, 0f);
         barRect.pivot = new Vector2(0.5f, 0f);
         barRect.anchoredPosition = new Vector2(0f, 18f);
-        barRect.sizeDelta = new Vector2(-32f, 56f);
+        barRect.sizeDelta = new Vector2(-40f, 58f);
 
-        Button undo = CreateButton("Undo", barRect, new Vector2(-92f, 0f),
-            new Vector2(168f, 52f), "UNDO", PillPink);
-        CenterInBar(undo, -92f);
+        Button undo = CreateButton("Undo", barRect, new Vector2(-130f, 0f),
+            new Vector2(230f, 54f), "UNDO", PillPink);
+        CenterInBar(undo, -130f);
+        TMP_Text uText = undo.GetComponentInChildren<TMP_Text>();
+        if (uText != null)
+        {
+            uText.fontSize = 24f;
+            uText.fontStyle = FontStyles.Bold;
+            uText.color = DarkTextGreen;
+        }
         undo.onClick.AddListener(UndoHistory);
         RegisterHitTarget(undo, false, false, default);
 
-        Button reset = CreateButton("Reset", barRect, new Vector2(92f, 0f),
-            new Vector2(168f, 52f), "RESET", DonePink);
-        CenterInBar(reset, 92f);
+        Button reset = CreateButton("Reset", barRect, new Vector2(130f, 0f),
+            new Vector2(230f, 54f), "RESET", DonePink);
+        CenterInBar(reset, 130f);
+        TMP_Text rText = reset.GetComponentInChildren<TMP_Text>();
+        if (rText != null)
+        {
+            rText.fontSize = 24f;
+            rText.fontStyle = FontStyles.Bold;
+            rText.color = DarkTextGreen;
+        }
         reset.onClick.AddListener(ShowConfirmReset);
         RegisterHitTarget(reset, false, false, default);
     }
@@ -1740,6 +1818,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             ShowBodyActions();
         else if (modeBeforeConfirm == ColorMode.SelectDesign)
             ShowDesignSelection();
+        else if (modeBeforeConfirm == ColorMode.SelectDrawMotif || modeBeforeConfirm == ColorMode.DrawBandTargeting)
+            ShowBandSelection();
         else if (modeBeforeConfirm == ColorMode.SelectColor)
             ContinueToColorSelection();
         else
@@ -1771,6 +1851,14 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private void UndoHistory()
     {
         RestoreSelectedPreview();
+        if (patternPainter != null && patternPainter.StrokeCount > 0)
+        {
+            patternPainter.UndoLastStroke();
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Last drawing stroke undone.";
+            return;
+        }
+
         if (history.Count < 2)
         {
             instructionText.gameObject.SetActive(true);
@@ -1794,7 +1882,22 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         if (mode == ColorMode.SelectColor)
         {
-            if (colorBackToDesigns)
+            if (bandTintActive)
+            {
+                bandTintActive = false;
+                colorBackToBands = false;
+                if (returnToBandDrawing)
+                {
+                    returnToBandDrawing = false;
+                    ResumeBandDrawing();
+                }
+                else
+                {
+                    ShowBandSelection();
+                }
+                return;
+            }
+            else if (colorBackToDesigns)
                 ShowDesignSelection();
             else if (selectedPart == 1)
                 ShowBodyActions();
@@ -1804,6 +1907,16 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 ShowPartSelection();
         }
         else if (mode == ColorMode.SelectDesign)
+            ShowBodyActions();
+        else if (mode == ColorMode.DrawBandTargeting)
+        {
+            if (patternPainter != null)
+                patternPainter.SetPaintingEnabled(false);
+            if (bandTargetingBar != null)
+                bandTargetingBar.SetActive(false);
+            ShowBandSelection();
+        }
+        else if (mode == ColorMode.SelectDrawMotif)
             ShowBodyActions();
         else if (mode == ColorMode.SelectBodyActions || mode == ColorMode.SelectVariant)
             ShowPartSelection();
@@ -2415,6 +2528,17 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (selectedPart < 0)
             selectedPart = 0;
         ApplyColor(selectedPart, color);
+        if (bandTintActive)
+        {
+            committedBandColor = color;
+            if (patternPainter != null)
+                patternPainter.SetStrokeColor(color, true);
+            if (bandColorChip != null)
+                bandColorChip.color = color;
+            PushHistory();
+            instructionText.text = "Band color selected. Pick another color or press DONE.";
+            return;
+        }
         if (designTintActive)
             committedDesignTint = color;
         else
@@ -2607,6 +2731,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             bodyActionGroup.SetActive(false);
         if (designGroup != null)
             designGroup.SetActive(false);
+        if (bandGroup != null)
+            bandGroup.SetActive(false);
+        if (bandTargetingBar != null)
+            bandTargetingBar.SetActive(false);
+        if (patternPainter != null && mode != ColorMode.DrawBandTargeting)
+            patternPainter.SetPaintingEnabled(false);
     }
 
     private static bool PartNeedsVariant(int partIndex)
@@ -2815,6 +2945,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             variantGroup.SetActive(false);
         if (designGroup != null)
             designGroup.SetActive(false);
+        if (bandGroup != null)
+            bandGroup.SetActive(false);
         colorGroup.SetActive(false);
         if (reviewGroup != null)
             reviewGroup.SetActive(false);
@@ -2914,10 +3046,14 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private void ClearDesign()
     {
         appliedDesignTexture = null;
+        appliedBandTexture = null;
+        isBandActive = false;
         designTintActive = false;
         committedDesignTint = Color.white;
         if (designSurfaceRenderer != null)
             designSurfaceRenderer.enabled = false;
+        if (patternPainter != null)
+            patternPainter.ClearAllStrokes();
         instructionText.text = "Design cleared.";
         PushHistory();
     }
@@ -2930,7 +3066,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         bodyActionGroup = new GameObject("BodyActions", typeof(RectTransform));
         bodyActionGroup.transform.SetParent(panel.transform, false);
         RectTransform bodyRect = bodyActionGroup.GetComponent<RectTransform>();
-        DockTop(bodyRect, -124f, 220f);
+        DockTop(bodyRect, -124f, 310f);
 
         Button changeColor = CreateButton(
             "ChangeColor", bodyRect, new Vector2(0f, 0f),
@@ -2939,17 +3075,547 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         RegisterHitTarget(changeColor, false, false, default);
 
         Button addDesign = CreateButton(
-            "AddDesign", bodyRect, new Vector2(0f, -72f),
+            "AddDesign", bodyRect, new Vector2(0f, -74f),
             new Vector2(PillWidth, PillHeight), "ADD DESIGN", PillPink);
         addDesign.onClick.AddListener(ShowDesignSelection);
         RegisterHitTarget(addDesign, false, false, default);
 
+        Button drawBand = CreateButton(
+            "DrawBand", bodyRect, new Vector2(0f, -148f),
+            new Vector2(PillWidth, PillHeight), "DRAW BAND", PillPink);
+        drawBand.onClick.AddListener(ShowBandSelection);
+        RegisterHitTarget(drawBand, false, false, default);
+
         Button done = CreateButton(
-            "Done", bodyRect, new Vector2(0f, -144f),
+            "Done", bodyRect, new Vector2(0f, -222f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         done.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(done, false, false, default);
         bodyActionGroup.SetActive(false);
+    }
+
+    private void EnsureBandGroup()
+    {
+        if (bandGroup != null || panel == null)
+            return;
+
+        bandGroup = new GameObject("BandSelection", typeof(RectTransform));
+        bandGroup.transform.SetParent(panel.transform, false);
+        RectTransform bandRect = bandGroup.GetComponent<RectTransform>();
+        DockTop(bandRect, -120f, 720f);
+
+        // 8 Motif buttons in 4 rows x 2 columns (Width 232f, height 90f)
+        for (int i = 0; i < bandButtons.Length; i++)
+        {
+            int bandIndex = i;
+            int column = i % 2;
+            int row = i / 2;
+            float posX = column == 0 ? -129f : 129f;
+            float posY = -row * 100f;
+
+            // Frame
+            Image frame = LanguagePageBuilder.CreateRoundedImage("Band" + i, bandRect, 20, LanguagePageBuilder.Green);
+            RectTransform rect = frame.rectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(posX, posY);
+            rect.sizeDelta = new Vector2(232f, 90f);
+            frame.raycastTarget = true;
+
+            // Fill
+            Image fill = LanguagePageBuilder.CreateRoundedImage("Fill", frame.transform, 16, PillPink);
+            LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(4f, 4f));
+            fill.raycastTarget = true;
+
+            // Pattern Preview (Top ~58% of card)
+            GameObject previewObj = new GameObject("Preview", typeof(RectTransform), typeof(RawImage));
+            previewObj.transform.SetParent(fill.transform, false);
+            RectTransform prevRect = previewObj.GetComponent<RectTransform>();
+            prevRect.anchorMin = new Vector2(0.04f, 0.38f);
+            prevRect.anchorMax = new Vector2(0.96f, 0.94f);
+            prevRect.offsetMin = Vector2.zero;
+            prevRect.offsetMax = Vector2.zero;
+            RawImage prevImg = previewObj.GetComponent<RawImage>();
+            prevImg.color = Color.white;
+            prevImg.raycastTarget = false;
+            bandPreviews[i] = prevImg;
+
+            // Label (Bottom ~36% of card - 18pt bold, solid black)
+            GameObject labelObj = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            labelObj.transform.SetParent(fill.transform, false);
+            RectTransform labelRect = labelObj.GetComponent<RectTransform>();
+            labelRect.anchorMin = new Vector2(0f, 0.02f);
+            labelRect.anchorMax = new Vector2(1f, 0.38f);
+            labelRect.offsetMin = Vector2.zero;
+            labelRect.offsetMax = Vector2.zero;
+            TextMeshProUGUI labelText = labelObj.GetComponent<TextMeshProUGUI>();
+            labelText.text = "BAND " + (i + 1);
+            labelText.fontSize = 18f;
+            labelText.fontStyle = FontStyles.Bold;
+            labelText.alignment = TextAlignmentOptions.Center;
+            labelText.color = DarkTextGreen;
+            labelText.raycastTarget = false;
+
+            Button btn = frame.gameObject.AddComponent<Button>();
+            btn.targetGraphic = fill;
+            btn.onClick.AddListener(() => SelectBandMotif(bandIndex));
+            RegisterHitTarget(btn, false, true, default);
+            bandButtons[i] = btn;
+        }
+
+        // Section Title: "BAND WIDTH" at y = -406f (Bold, solid black)
+        TMP_Text widthTitle = CreateText(
+            "WidthTitle", bandRect, new Vector2(0f, -406f),
+            new Vector2(PillWidth, 24f), "BAND WIDTH", 19f,
+            TextAlignmentOptions.Center, FontStyles.Bold);
+        widthTitle.color = DarkTextGreen;
+
+        // 4 Size preset pills at y = -438f (Touch pills: 114 x 48)
+        for (int s = 0; s < bandSizeButtons.Length; s++)
+        {
+            int sizeIdx = s;
+            float posX = -174f + s * 116f;
+            bandSizeButtons[s] = CreateButton(
+                "BandSize" + s,
+                bandRect,
+                new Vector2(posX, -438f),
+                new Vector2(114f, 48f),
+                bandSizeLabels[s],
+                s == selectedBandSizeIndex ? ActionPink : PillPink);
+            TMP_Text sizeText = bandSizeButtons[s].GetComponentInChildren<TMP_Text>();
+            if (sizeText != null)
+            {
+                sizeText.fontSize = 18f;
+                sizeText.fontStyle = FontStyles.Bold;
+                sizeText.color = DarkTextGreen;
+            }
+            bandSizeButtons[s].onClick.AddListener(() => SelectBandSize(sizeIdx));
+            RegisterHitTarget(bandSizeButtons[s], false, false, default);
+        }
+
+        // BAND COLOR button at y = -502f (Height: 56px, large bold text)
+        Button bandColorBtn = CreateButton(
+            "BandColor", bandRect, new Vector2(0f, -502f),
+            new Vector2(PillWidth, 56f), "BAND COLOR", ActionPink);
+        bandColorBtn.onClick.AddListener(OpenBandColorSelection);
+        TMP_Text bColText = bandColorBtn.GetComponentInChildren<TMP_Text>();
+        if (bColText != null)
+        {
+            bColText.fontSize = 24f;
+            bColText.fontStyle = FontStyles.Bold;
+            bColText.color = DarkTextGreen;
+        }
+        RegisterHitTarget(bandColorBtn, false, false, default);
+
+        // Polished Color preview swatch frame inside Band Color button
+        Image swatchFrame = LanguagePageBuilder.CreateRoundedImage("SwatchFrame", bandColorBtn.transform, 10, LanguagePageBuilder.Green);
+        RectTransform sfRect = swatchFrame.rectTransform;
+        sfRect.anchorMin = sfRect.anchorMax = new Vector2(0.88f, 0.5f);
+        sfRect.pivot = new Vector2(0.5f, 0.5f);
+        sfRect.anchoredPosition = Vector2.zero;
+        sfRect.sizeDelta = new Vector2(52f, 34f);
+        swatchFrame.raycastTarget = false;
+
+        Image swatchFill = LanguagePageBuilder.CreateRoundedImage("SwatchFill", swatchFrame.transform, 8, committedBandColor);
+        LanguagePageBuilder.Stretch(swatchFill.rectTransform, new Vector2(3f, 3f));
+        swatchFill.raycastTarget = false;
+        bandColorChip = swatchFill;
+
+        // CLEAR DRAWINGS button at y = -570f (Height: 52px)
+        Button clearStrokes = CreateButton(
+            "ClearStrokes", bandRect, new Vector2(0f, -570f),
+            new Vector2(PillWidth, 52f), "CLEAR DRAWINGS", PillPink);
+        TMP_Text clearText = clearStrokes.GetComponentInChildren<TMP_Text>();
+        if (clearText != null)
+        {
+            clearText.fontSize = 22f;
+            clearText.fontStyle = FontStyles.Bold;
+            clearText.color = DarkTextGreen;
+        }
+        clearStrokes.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.ClearAllStrokes();
+            instructionText.text = "All drawings cleared.";
+        });
+        RegisterHitTarget(clearStrokes, false, false, default);
+
+        // DONE button at y = -634f (Height: 60px)
+        Button done = CreateButton(
+            "Done", bandRect, new Vector2(0f, -634f),
+            new Vector2(PillWidth, 60f), "DONE", DonePink);
+        TMP_Text doneText = done.GetComponentInChildren<TMP_Text>();
+        if (doneText != null)
+        {
+            doneText.fontSize = 26f;
+            doneText.fontStyle = FontStyles.Bold;
+            doneText.color = DarkTextGreen;
+        }
+        done.onClick.AddListener(ShowBodyActions);
+        RegisterHitTarget(done, false, false, default);
+
+        bandGroup.SetActive(false);
+    }
+
+    private void SelectBandSize(int sizeIdx)
+    {
+        selectedBandSizeIndex = Mathf.Clamp(sizeIdx, 0, bandSizes.Length - 1);
+        float width = bandSizes[selectedBandSizeIndex];
+        if (patternPainter != null)
+            patternPainter.SetStrokeWidth(width, true);
+
+        RefreshBandSizeButtons();
+        instructionText.text = "Band width: " + bandSizeLabels[selectedBandSizeIndex] + " (" + Mathf.RoundToInt(width * 100f) + " cm).";
+    }
+
+    private void RefreshBandSizeButtons()
+    {
+        for (int s = 0; s < bandSizeButtons.Length; s++)
+        {
+            if (bandSizeButtons[s] == null)
+                continue;
+            Image fill = GetButtonFill(bandSizeButtons[s]);
+            if (fill != null)
+                fill.color = s == selectedBandSizeIndex ? ActionPink : PillPink;
+            TMP_Text txt = bandSizeButtons[s].GetComponentInChildren<TMP_Text>();
+            if (txt != null)
+            {
+                txt.fontSize = 18.5f;
+                txt.fontStyle = FontStyles.Bold;
+                txt.color = DarkTextGreen;
+            }
+        }
+
+        if (targetingSizeBtn != null)
+        {
+            TMP_Text label = targetingSizeBtn.GetComponentInChildren<TMP_Text>();
+            if (label != null)
+            {
+                label.text = "SIZE: " + bandSizeLabels[selectedBandSizeIndex];
+                label.fontSize = 17f;
+                label.fontStyle = FontStyles.Bold;
+                label.color = DarkTextGreen;
+            }
+        }
+    }
+
+    private void OpenBandColorSelection()
+    {
+        colorBackToDesigns = false;
+        colorBackToBands = true;
+        bandTintActive = true;
+        designTintActive = false;
+        selectedPart = 1;
+        ContinueToColorSelection();
+        headerText.text = "BAND COLOR";
+        SetHeaderBackLabel(mode == ColorMode.DrawBandTargeting ? "← DRAW" : "← MOTIFS");
+        instructionText.text = "Point and hold on a color to tint the band designs.";
+    }
+
+    private void OnColorDoneClicked()
+    {
+        if (bandTintActive)
+        {
+            bandTintActive = false;
+            colorBackToBands = false;
+            if (returnToBandDrawing)
+            {
+                returnToBandDrawing = false;
+                ResumeBandDrawing();
+            }
+            else
+            {
+                ShowBandSelection();
+            }
+            return;
+        }
+
+        if (colorBackToDesigns)
+        {
+            colorBackToDesigns = false;
+            ShowDesignSelection();
+            return;
+        }
+
+        ShowMainMenu();
+    }
+
+    private void EnsureBandTargetingBar()
+    {
+        if (bandTargetingBar != null || panel == null)
+            return;
+
+        bandTargetingBar = new GameObject("BandTargetingBar", typeof(RectTransform));
+        bandTargetingBar.transform.SetParent(panel.transform, false);
+        RectTransform barRect = bandTargetingBar.GetComponent<RectTransform>();
+        DockTop(barRect, -116f, 56f);
+
+        // [SIZE: M] button
+        targetingSizeBtn = CreateButton(
+            "TargetingSize", barRect,
+            new Vector2(-171f, 0f),
+            new Vector2(126f, 48f),
+            "SIZE: " + bandSizeLabels[selectedBandSizeIndex],
+            PillPink);
+        TMP_Text tSize = targetingSizeBtn.GetComponentInChildren<TMP_Text>();
+        if (tSize != null)
+        {
+            tSize.fontSize = 18f;
+            tSize.fontStyle = FontStyles.Bold;
+            tSize.color = DarkTextGreen;
+        }
+        targetingSizeBtn.onClick.AddListener(() =>
+        {
+            int next = (selectedBandSizeIndex + 1) % bandSizes.Length;
+            SelectBandSize(next);
+        });
+        RegisterHitTarget(targetingSizeBtn, false, false, default);
+
+        // [COLOR] button
+        targetingColorBtn = CreateButton(
+            "TargetingColor", barRect,
+            new Vector2(-57f, 0f),
+            new Vector2(108f, 48f),
+            "COLOR",
+            ActionPink);
+        TMP_Text tColor = targetingColorBtn.GetComponentInChildren<TMP_Text>();
+        if (tColor != null)
+        {
+            tColor.fontSize = 18f;
+            tColor.fontStyle = FontStyles.Bold;
+            tColor.color = DarkTextGreen;
+        }
+        targetingColorBtn.onClick.AddListener(() =>
+        {
+            returnToBandDrawing = true;
+            OpenBandColorSelection();
+        });
+        RegisterHitTarget(targetingColorBtn, false, false, default);
+
+        // [UNDO] button
+        Button undoBtn = CreateButton(
+            "TargetingUndo", barRect,
+            new Vector2(57f, 0f),
+            new Vector2(108f, 48f),
+            "UNDO",
+            PillPink);
+        TMP_Text tUndo = undoBtn.GetComponentInChildren<TMP_Text>();
+        if (tUndo != null)
+        {
+            tUndo.fontSize = 18f;
+            tUndo.fontStyle = FontStyles.Bold;
+            tUndo.color = DarkTextGreen;
+        }
+        undoBtn.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.UndoLastStroke();
+            instructionText.text = "Last stroke undone.";
+        });
+        RegisterHitTarget(undoBtn, false, false, default);
+
+        // [CLEAR] button
+        Button clearBtn = CreateButton(
+            "TargetingClear", barRect,
+            new Vector2(171f, 0f),
+            new Vector2(108f, 48f),
+            "CLEAR",
+            PillPink);
+        TMP_Text tClear = clearBtn.GetComponentInChildren<TMP_Text>();
+        if (tClear != null)
+        {
+            tClear.fontSize = 18f;
+            tClear.fontStyle = FontStyles.Bold;
+            tClear.color = DarkTextGreen;
+        }
+        clearBtn.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.ClearAllStrokes();
+            instructionText.text = "All drawings cleared.";
+        });
+        RegisterHitTarget(clearBtn, false, false, default);
+
+        bandTargetingBar.SetActive(false);
+    }
+
+    private void ResumeBandDrawing()
+    {
+        mode = ColorMode.DrawBandTargeting;
+        colorGroup.SetActive(false);
+        if (bandGroup != null)
+            bandGroup.SetActive(false);
+        EnsureBandTargetingBar();
+        if (bandTargetingBar != null)
+            bandTargetingBar.SetActive(true);
+        EnsurePatternPainter();
+        if (patternPainter != null)
+        {
+            patternPainter.SetStrokeColor(committedBandColor, false);
+            patternPainter.SetPaintingEnabled(true);
+        }
+        SetPanelHeight(330f);
+        string motifName = appliedBandTexture != null ? appliedBandTexture.name.Replace("Band_", "").ToUpper() : "BAND";
+        headerText.text = "DRAW: " + motifName;
+        SetHeaderBackLabel("← MOTIFS");
+        SetHeaderBackVisible(true);
+        instructionText.text = "Trace index finger across teapot to draw. Open palm to lock.";
+        instructionText.fontSize = 20f;
+        instructionText.fontStyle = FontStyles.Bold;
+        instructionText.color = DarkTextGreen;
+        instructionText.gameObject.SetActive(true);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void ShowBandSelection()
+    {
+        LoadBandPatterns();
+        EnsureBandGroup();
+        RefreshBandButtons();
+        RefreshBandSizeButtons();
+        EnsurePatternPainter();
+        if (patternPainter != null)
+            patternPainter.SetPaintingEnabled(false);
+        if (bandTargetingBar != null)
+            bandTargetingBar.SetActive(false);
+        if (bandColorChip != null)
+            bandColorChip.color = committedBandColor;
+        selectedPart = 1;
+        mode = ColorMode.SelectDrawMotif;
+        SetPanelHeight(BandSelectionPanelHeight);
+        mainActionGroup.SetActive(false);
+        partGroup.SetActive(false);
+        if (variantGroup != null)
+            variantGroup.SetActive(false);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(false);
+        colorGroup.SetActive(false);
+        if (reviewGroup != null)
+            reviewGroup.SetActive(false);
+        if (bandGroup != null)
+            bandGroup.SetActive(true);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        instructionText.gameObject.SetActive(true);
+        SetTitleBurstsVisible(false);
+        headerText.text = "DRAW BAND";
+        SetHeaderBackLabel("← BODY");
+        SetHeaderBackVisible(true);
+        instructionText.text = "Select a motif, adjust size & color, then trace on teapot.";
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void RefreshBandButtons()
+    {
+        int bandCount = bandPatterns != null ? bandPatterns.Length : 0;
+        for (int i = 0; i < bandButtons.Length; i++)
+        {
+            bool visible = i < bandCount && bandPatterns[i] != null;
+            if (bandButtons[i] != null)
+                bandButtons[i].gameObject.SetActive(visible);
+            if (!visible)
+                continue;
+
+            if (bandPreviews[i] != null)
+                bandPreviews[i].texture = bandPatterns[i];
+
+            TMP_Text label = bandButtons[i].GetComponentInChildren<TMP_Text>();
+            if (label != null)
+            {
+                string bName = bandPatterns[i].name;
+                if (bName.StartsWith("Band_"))
+                    bName = bName.Substring(5);
+                label.text = bName.ToUpper();
+                label.fontSize = 18f;
+                label.fontStyle = FontStyles.Bold;
+                label.color = DarkTextGreen;
+            }
+        }
+    }
+
+    private void SelectBandMotif(int index)
+    {
+        if (bandPatterns == null || index < 0 || index >= bandPatterns.Length)
+            return;
+
+        Texture2D motif = bandPatterns[index];
+        if (motif == null)
+            return;
+
+        EnsurePatternPainter();
+        if (patternPainter != null)
+        {
+            patternPainter.SetPatternTexture(motif);
+            patternPainter.SetStrokeWidth(bandSizes[selectedBandSizeIndex], false);
+            patternPainter.SetStrokeColor(committedBandColor, false);
+            patternPainter.SetDrawingLocked(false);
+            patternPainter.SetPaintingEnabled(true);
+        }
+
+        // Hide static stamp overlay so it doesn't block the drawing surface
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = false;
+        appliedDesignTexture = null;
+        isBandActive = false;
+
+        appliedBandTexture = motif;
+        mode = ColorMode.DrawBandTargeting;
+        if (bandGroup != null)
+            bandGroup.SetActive(false);
+        EnsureBandTargetingBar();
+        if (bandTargetingBar != null)
+            bandTargetingBar.SetActive(true);
+
+        SetPanelHeight(330f);
+        headerText.text = "DRAW: " + motif.name.Replace("Band_", "").ToUpper();
+        SetHeaderBackLabel("← MOTIFS");
+        SetHeaderBackVisible(true);
+        instructionText.text = "Trace index finger across teapot to draw. Open palm to lock.";
+        instructionText.fontSize = 20f;
+        instructionText.fontStyle = FontStyles.Bold;
+        instructionText.color = DarkTextGreen;
+        instructionText.gameObject.SetActive(true);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void EnsurePatternPainter()
+    {
+        if (patternPainter != null || teapotRenderer == null)
+            return;
+
+        patternPainter = teapotRenderer.GetComponent<TeapotSurfacePatternPainter>();
+        if (patternPainter == null)
+            patternPainter = teapotRenderer.gameObject.AddComponent<TeapotSurfacePatternPainter>();
+
+        patternPainter.Initialize(handRunner, teapotRenderer);
+    }
+
+    private void LoadBandPatterns()
+    {
+        if (bandPatterns != null && bandPatterns.Length >= 8)
+            return;
+
+#if UNITY_EDITOR
+        string[] guids = UnityEditor.AssetDatabase.FindAssets(
+            "t:Texture2D",
+            new[] { "Assets/SculptingEnhancement/Art/BandPatterns" });
+        var loaded = new List<Texture2D>(guids.Length);
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
+            Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (texture != null)
+                loaded.Add(texture);
+        }
+
+        loaded.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+        bandPatterns = loaded.ToArray();
+#endif
     }
 
     private void EnsureDesignGroup()
@@ -3165,12 +3831,26 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         Bounds localBounds = GetTeapotBodyLocalBounds();
         designSurfaceMaterial.SetTexture("_DesignTex", texture);
-        designSurfaceMaterial.SetFloat("_Opacity", 1f);
-        designSurfaceMaterial.SetFloat("_RepeatCount", designRepeatCount);
-        designSurfaceMaterial.SetFloat("_PatchHalfAngle", designPatchHalfAngle);
-        designSurfaceMaterial.SetFloat("_VerticalHalfFraction", designVerticalHalfFraction);
-        designSurfaceMaterial.SetVector("_ObjectCenter", localBounds.center);
-        designSurfaceMaterial.SetVector("_ObjectExtents", localBounds.extents);
+        if (isBandActive)
+        {
+            designSurfaceMaterial.SetFloat("_Opacity", bandOpacity);
+            designSurfaceMaterial.SetFloat("_RepeatCount", bandRepeatCount);
+            designSurfaceMaterial.SetFloat("_PatchHalfAngle", bandPatchHalfAngle);
+            designSurfaceMaterial.SetFloat("_VerticalHalfFraction", bandVerticalHalfFraction);
+            Vector3 center = localBounds.center;
+            center.z = bandCenterZ;
+            designSurfaceMaterial.SetVector("_ObjectCenter", center);
+            designSurfaceMaterial.SetVector("_ObjectExtents", localBounds.extents);
+        }
+        else
+        {
+            designSurfaceMaterial.SetFloat("_Opacity", 1f);
+            designSurfaceMaterial.SetFloat("_RepeatCount", designRepeatCount);
+            designSurfaceMaterial.SetFloat("_PatchHalfAngle", designPatchHalfAngle);
+            designSurfaceMaterial.SetFloat("_VerticalHalfFraction", designVerticalHalfFraction);
+            designSurfaceMaterial.SetVector("_ObjectCenter", localBounds.center);
+            designSurfaceMaterial.SetVector("_ObjectExtents", localBounds.extents);
+        }
     }
 
     private void ApplyDesignTint(Color color)
@@ -3182,6 +3862,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void ApplyColor(int partIndex, Color color)
     {
+        if (bandTintActive)
+        {
+            if (patternPainter != null)
+                patternPainter.SetStrokeColor(color, true);
+            if (bandColorChip != null)
+                bandColorChip.color = color;
+            return;
+        }
+
         if (designTintActive && appliedDesignTexture != null)
         {
             ApplyDesignTint(color);
@@ -3362,6 +4051,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         snapshot.StampVisible = appliedDesignTexture != null &&
             designSurfaceRenderer != null &&
             designSurfaceRenderer.enabled;
+        snapshot.IsBand = isBandActive;
+        snapshot.BandCenterZ = bandCenterZ;
         return snapshot;
     }
 
@@ -3388,6 +4079,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         appliedDesignTexture = snapshot.Stamp;
         committedDesignTint = snapshot.StampTint;
+        isBandActive = snapshot.IsBand;
+        bandCenterZ = snapshot.BandCenterZ;
         if (snapshot.StampVisible && snapshot.Stamp != null)
         {
             EnsureDesignOverlay();
@@ -3791,12 +4484,20 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private Button CreateHeaderBackButton(RectTransform parent)
     {
-        Button button = CreateButton("HeaderBack", parent, new Vector2(20f, -16f),
-            new Vector2(140f, 36f), "← BACK", PillPink);
+        Button button = CreateButton("HeaderBack", parent, new Vector2(16f, -14f),
+            new Vector2(130f, 42f), "← BACK", PillPink);
         RectTransform rect = button.GetComponent<RectTransform>();
         rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
         rect.pivot = new Vector2(0f, 1f);
-        rect.anchoredPosition = new Vector2(16f, -12f);
+        rect.anchoredPosition = new Vector2(16f, -14f);
+        rect.sizeDelta = new Vector2(130f, 42f);
+        TMP_Text text = button.GetComponentInChildren<TMP_Text>();
+        if (text != null)
+        {
+            text.fontSize = 17.5f;
+            text.fontStyle = FontStyles.Bold;
+            text.color = DarkTextGreen;
+        }
         button.onClick.AddListener(NavigateBack);
         RegisterHitTarget(button, false, false, default);
         return button;
@@ -3806,12 +4507,54 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (headerBackButton != null)
             headerBackButton.gameObject.SetActive(visible);
+
+        if (headerText != null)
+        {
+            RectTransform hRect = headerText.rectTransform;
+            if (visible)
+            {
+                hRect.anchoredPosition = new Vector2(10f, -44f);
+                hRect.sizeDelta = new Vector2(520f, 48f);
+                headerText.fontSize = 35f;
+                headerText.fontStyle = FontStyles.Bold;
+                headerText.color = DarkTextGreen;
+                if (instructionText != null)
+                {
+                    instructionText.rectTransform.anchoredPosition = new Vector2(10f, -92f);
+                    instructionText.rectTransform.sizeDelta = new Vector2(520f, 42f);
+                    instructionText.fontSize = 19.5f;
+                    instructionText.fontStyle = FontStyles.Bold;
+                    instructionText.color = DarkTextGreen;
+                }
+            }
+            else
+            {
+                hRect.anchoredPosition = new Vector2(10f, -18f);
+                hRect.sizeDelta = new Vector2(520f, 60f);
+                headerText.fontSize = 40f;
+                headerText.fontStyle = FontStyles.Bold;
+                headerText.color = DarkTextGreen;
+                if (instructionText != null)
+                {
+                    instructionText.rectTransform.anchoredPosition = new Vector2(10f, -84f);
+                    instructionText.rectTransform.sizeDelta = new Vector2(520f, 42f);
+                    instructionText.fontSize = 20f;
+                    instructionText.fontStyle = FontStyles.Bold;
+                    instructionText.color = DarkTextGreen;
+                }
+            }
+        }
     }
 
     private void SetHeaderBackLabel(string label)
     {
         if (headerBackText != null)
+        {
             headerBackText.text = label;
+            headerBackText.fontSize = 17.5f;
+            headerBackText.fontStyle = FontStyles.Bold;
+            headerBackText.color = DarkTextGreen;
+        }
     }
 
     private void EnsureSelfieOnPalette()
@@ -3860,7 +4603,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         rect.anchorMax = new Vector2(1f, 1f);
         rect.pivot = new Vector2(0.5f, 1f);
         rect.anchoredPosition = new Vector2(0f, y);
-        rect.sizeDelta = new Vector2(-32f, height);
+        rect.sizeDelta = new Vector2(-40f, height);
     }
 
     private static void CenterInBar(Button button, float x)
@@ -3898,10 +4641,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             TMP_Text text = CreateText(
                 "Label", fill.rectTransform, Vector2.zero, size - new Vector2(16f, 10f),
-                label, isDone || isChangeColor ? 22f : 20f,
+                label, isDone || isChangeColor ? 26f : 24f,
                 TextAlignmentOptions.Center, FontStyles.Bold);
             Stretch(text.rectTransform);
-            text.color = LanguagePageBuilder.Green;
+            text.color = DarkTextGreen;
             text.raycastTarget = false;
         }
 
@@ -3942,13 +4685,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (text == null)
             return;
-        text.color = LanguagePageBuilder.Pink;
+        text.color = DarkTextGreen;
         text.fontStyle = FontStyles.Bold;
         Outline outline = text.GetComponent<Outline>();
         if (outline == null)
             outline = text.gameObject.AddComponent<Outline>();
-        outline.effectColor = LanguagePageBuilder.Green;
-        outline.effectDistance = new Vector2(3.5f, -3.5f);
+        outline.effectColor = new Color32(0x0E, 0x2A, 0x14, 0x66);
+        outline.effectDistance = new Vector2(2f, -2f);
     }
 
     private void BuildTitleBursts(RectTransform parent)
@@ -3958,8 +4701,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         Stretch(titleBurstRoot.GetComponent<RectTransform>());
         Vector2[] positions =
         {
-            new Vector2(-150f, -28f), new Vector2(150f, -28f),
-            new Vector2(-168f, -50f), new Vector2(168f, -50f)
+            new Vector2(-215f, -28f), new Vector2(215f, -28f),
+            new Vector2(-235f, -50f), new Vector2(235f, -50f)
         };
         float[] rotations = { 28f, -28f, -18f, 18f };
         for (int i = 0; i < positions.Length; i++)
