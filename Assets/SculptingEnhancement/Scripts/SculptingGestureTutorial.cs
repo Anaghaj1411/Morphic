@@ -16,7 +16,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
     }
 
     private const string ImageFolder =
-        "Assets/SculptingEnhancement/Art/TutorialGestures/";
+        "MorphicGestures/";
 
     private static readonly Step[] Steps =
     {
@@ -285,11 +285,8 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
 
     private static Texture2D LoadTutorialTexture(string path)
     {
-#if UNITY_EDITOR
-        return UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-#else
-        return null;
-#endif
+        string resourcePath = path.Replace(".jpg", string.Empty);
+        return Resources.Load<Texture2D>(resourcePath);
     }
 
     private static RawImage CreateRawImage(
@@ -386,6 +383,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         fill.raycastTarget = true;
         Button button = frame.gameObject.AddComponent<Button>();
         button.targetGraphic = fill;
+        DialogueButtonClickSound.Instance?.RegisterButton(button);
         button.onClick.AddListener(() => onClick());
         TMP_Text text = CreateLabel(fill.transform, "Label", Vector2.zero, size.x - 12f, size.y, 20f);
         Stretch(text.rectTransform);

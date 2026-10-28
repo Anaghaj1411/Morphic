@@ -4,9 +4,6 @@ using UnityEngine.UI;
 /// Shared pink/green back icon used by Language, Settings, and lantern UI.
 public static class MorphicBackButton
 {
-    public const string SpritePath =
-        "Assets/Art/Environments/MainMenu/Texture/back.png";
-
     private static Sprite cachedSprite;
 
     public static Sprite LoadSprite()
@@ -14,23 +11,7 @@ public static class MorphicBackButton
         if (cachedSprite != null)
             return cachedSprite;
 
-        Sprite sprite = null;
-#if UNITY_EDITOR
-        sprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(SpritePath);
-        if (sprite == null)
-        {
-            Texture2D texture =
-                UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(SpritePath);
-            if (texture != null)
-            {
-                sprite = Sprite.Create(
-                    texture,
-                    new Rect(0f, 0f, texture.width, texture.height),
-                    new Vector2(0.5f, 0.5f),
-                    100f);
-            }
-        }
-#endif
+        Sprite sprite = Resources.Load<Sprite>("MorphicBackButton");
         cachedSprite = sprite;
         return sprite;
     }

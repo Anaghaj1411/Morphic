@@ -77,7 +77,8 @@ namespace Mediapipe.Unity.Sample
 
         if (!GpuManager.IsInitialized)
         {
-          Debug.LogWarning("If your native library is built for CPU, change 'Preferable Inference Mode' to CPU from the Inspector Window for AppSettings");
+          Debug.LogWarning("GPU inference is unavailable, falling back to CPU.");
+          inferenceMode = InferenceMode.CPU;
         }
       }
 
@@ -91,13 +92,16 @@ namespace Mediapipe.Unity.Sample
 
     private void DecideInferenceMode()
     {
-#if UNITY_EDITOR_OSX || UNITY_EDITOR_WIN
-      if (_appSettings.preferableInferenceMode == InferenceMode.GPU) {
+      // Desktop MediaPipe plugins ship CPU-only. GPU entry points exist on
+      // Android/iOS OpenGL ES, not Windows/macOS/Linux players or editors.
+#if UNITY_ANDROID || UNITY_IOS
+      inferenceMode = _appSettings.preferableInferenceMode;
+#else
+      if (_appSettings.preferableInferenceMode == InferenceMode.GPU)
+      {
         Debug.LogWarning("Current platform does not support GPU inference mode, so falling back to CPU mode");
       }
       inferenceMode = InferenceMode.CPU;
-#else
-      inferenceMode = _appSettings.preferableInferenceMode;
 #endif
     }
 

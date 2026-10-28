@@ -988,7 +988,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         if (strokeMaterial != null)
             return;
 
-        Shader shader = Shader.Find("Morphic/Pattern Ribbon Stroke");
+        Shader shader = MorphicOverlayShaders.PatternRibbon();
         if (shader == null)
             shader = Shader.Find("Universal Render Pipeline/Unlit");
 

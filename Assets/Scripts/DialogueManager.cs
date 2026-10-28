@@ -85,10 +85,12 @@ public class DialogueManager : MonoBehaviour
     private SculptingEnhancementTeapotColorController teapotColorController;
     private MorphicAIHelpUI aiHelpUi;
     private GameObject sculptBackRoot;
+    private DialogueButtonClickSound dialogueButtonSound;
 
     private void Awake()
     {
         FindMissingReferences();
+        EnsureDialogueButtonSound();
         StyleDialogueUi();
         StyleCultureChoices();
 
@@ -169,6 +171,35 @@ public class DialogueManager : MonoBehaviour
         {
             bootstrapGameObject.SetActive(false);
         }
+    }
+
+    private void EnsureDialogueButtonSound()
+    {
+        if (dialoguePanel == null)
+            return;
+
+        dialogueButtonSound = DialogueButtonClickSound.Instance;
+        if (dialogueButtonSound == null)
+        {
+            GameObject audioRoot = new GameObject("Morphic Button Audio");
+            DontDestroyOnLoad(audioRoot);
+            dialogueButtonSound = audioRoot.AddComponent<DialogueButtonClickSound>();
+        }
+
+        AudioSource source = dialogueButtonSound.audioSource;
+        if (source == null)
+            source = dialogueButtonSound.gameObject.AddComponent<AudioSource>();
+
+        source.playOnAwake = false;
+        source.spatialBlend = 0f;
+        dialogueButtonSound.audioSource = source;
+
+        if (dialogueButtonSound.clickSound == null)
+            dialogueButtonSound.clickSound = Resources.Load<AudioClip>("MorphicClick");
+        if (dialogueButtonSound.hoverSound == null)
+            dialogueButtonSound.hoverSound = Resources.Load<AudioClip>("MorphicHover");
+
+        dialogueButtonSound.RegisterAllSceneButtons();
     }
 
     private void AddHoverEffect(Button btn)
@@ -783,11 +814,8 @@ public class DialogueManager : MonoBehaviour
 
         button.onClick.RemoveAllListeners();
 
-        DialogueButtonClickSound clickSound = dialoguePanel != null
-            ? dialoguePanel.GetComponent<DialogueButtonClickSound>()
-            : null;
-        if (clickSound != null)
-            clickSound.RegisterButton(button);
+        if (dialogueButtonSound != null)
+            dialogueButtonSound.RegisterButton(button);
 
         if (action != null)
             button.onClick.AddListener(action);

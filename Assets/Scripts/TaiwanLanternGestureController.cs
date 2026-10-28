@@ -916,9 +916,9 @@ public class TaiwanLanternGestureController : MonoBehaviour
         int unused = FindPopShape(mesh, isTop, !useRectangle);
         if (active >= 0)
             shapeIndex[channel] = active;
-        unusedShape = unused;
-        if (unused >= 0)
-            lanternRenderer.SetBlendShapeWeight(unused, 0f);
+        unusedShape = unused == active ? -1 : unused;
+        if (unusedShape >= 0)
+            lanternRenderer.SetBlendShapeWeight(unusedShape, 0f);
         label = isTop
             ? (useRectangle ? "TOP RECTANGLE" : "TOP CIRCLE")
             : (useRectangle ? "BOTTOM RECTANGLE" : "BOTTOM CIRCLE");
@@ -926,12 +926,17 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
     private static int FindPopShape(Mesh mesh, bool isTop, bool useRectangle)
     {
+        int named = -1;
+        int generic = -1;
         for (int i = 0; i < mesh.blendShapeCount; i++)
         {
             string compact = Normalize(mesh.GetBlendShapeName(i));
-            bool onEnd = isTop ? compact.Contains("TOP") : compact.Contains("BOTTOM");
+            bool onEnd = isTop
+                ? compact.Contains("TOP") && !compact.Contains("BOTTOM")
+                : compact.Contains("BOTTOM") && !compact.Contains("TOP");
             if (!onEnd)
                 continue;
+
             if (useRectangle)
             {
                 if (compact.Contains("RECTANGLE"))
@@ -940,10 +945,20 @@ public class TaiwanLanternGestureController : MonoBehaviour
             }
 
             if (compact.Contains("CIRCLE") && !compact.Contains("RECTANGLE"))
-                return i;
+            {
+                named = i;
+                continue;
+            }
+
+            if (generic < 0 &&
+                (compact.Contains("POPUPTOP") || compact.Contains("POPUPBOTTOM") ||
+                 compact.Contains("POPTOP") || compact.Contains("POPBOTTOM")))
+                generic = i;
         }
 
-        return -1;
+        if (named >= 0)
+            return named;
+        return generic;
     }
 
     private static int FindShapeContaining(Mesh mesh, string token)

@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b2e9c14a8d64f1e9c3a5b8d0e2f4a16, type: 3}
+  m_Name: MorphicPatternCatalog
+  m_EditorClassIdentifier: 
+  stamps:
+  - {fileID: 2800000, guid: 9ca729d320b7a694892d6c9c4d8e1aa4, type: 3}
+  - {fileID: 2800000, guid: 09b9b828f43308848a2e15cf8cb56bd7, type: 3}
+  - {fileID: 2800000, guid: c0200d1b347708146a17c88dcbb20a25, type: 3}
+  - {fileID: 2800000, guid: 53cdd18d9699d03478be802c91e6933b, type: 3}
+  bands:
+  - {fileID: 2800000, guid: 1ea45c40dc8f4884a4a4c7e9b524e2ff, type: 3}
+  - {fileID: 2800000, guid: b5e70c451d534076b495824c0869ee20, type: 3}
+  - {fileID: 2800000, guid: fd1b95149e4e4d9fa4f886e79a52d773, type: 3}
+  - {fileID: 2800000, guid: 3badab669a49499aaae26a905ddf0f6b, type: 3}
+  - {fileID: 2800000, guid: 9793d9ef44824ffda687e73ad60ab407, type: 3}
+  - {fileID: 2800000, guid: 10059f38f3b84fc4998ff77ffc2935c2, type: 3}
+  - {fileID: 2800000, guid: 4f9aaa682c154878a1ac921a4e249e41, type: 3}
+  - {fileID: 2800000, guid: 80123528cf18428195f290a8ddd287ce, type: 3}

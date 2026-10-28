@@ -49,6 +49,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     [SerializeField] private TaiwanLanternGestureController originalGestureController;
     [SerializeField] private SculptingEnhancementIndexGestureController indexGestureController;
     [SerializeField] private LanternFistRotationController lanternFistRotation;
+    [SerializeField] private VertexSculptController vertexSculptController;
 
     [Header("Lantern Material Slots")]
     [Tooltip("Adjust these four indices in the enhancement scene if the imported FBX material order differs.")]
@@ -120,6 +121,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private int[][] partMaterialIndices;
     private Mesh runtimePartMesh;
     private readonly List<Material> isolatedLidMaterials = new List<Material>();
+    private readonly List<Material> isolatedBottomMaterials = new List<Material>();
     private readonly List<Material> isolatedTasselMaterials = new List<Material>();
 
     private Canvas canvas;
@@ -205,6 +207,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private bool partSelectionLocked;
     private bool paletteAvailable;
     private bool sculptLockedByTutorial;
+    private bool vertexSculptEnabled;
+    private Button vertexSculptButton;
     private bool uiPointerBlockingSculpt;
     private Color freePalettePreviewColor = Color.white;
     private Vector2 freePaletteMarkerPosition;
@@ -283,6 +287,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         if (!available)
         {
+            if (vertexSculptEnabled)
+                ToggleVertexSculpt();
             RestoreSelectedPreview();
             if (!sculptLockedByTutorial)
                 SetSculptControllersEnabled(true);
@@ -304,7 +310,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         CaptureInitialColors();
         LoadStampPatterns();
+        EnsureVertexSculptController();
         BuildInterface();
+        EnsureVertexSculptButton();
 
         // DialogueManager can enable the palette before this component's
         // inactive GameObject receives its first Start call. Preserve that
@@ -333,6 +341,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void OnDisable()
     {
         RestoreSelectedPreview();
+        vertexSculptEnabled = false;
+        if (vertexSculptController != null)
+            vertexSculptController.SetEnabled(false);
         SetSculptControllersEnabled(true);
         ShowSculptMode();
         if (uiRoot != null)
@@ -403,7 +414,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (mode == ColorMode.DrawBandTargeting && patternPainter != null)
         {
             bool cursorOverUi = IsCursorOverColorUi(screenPosition);
-            if (cursorOverUi)
+            if (vertexSculptEnabled || cursorOverUi)
             {
                 patternPainter.SetPaintingEnabled(false);
             }
@@ -437,7 +448,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (uiPointerBlockingSculpt != shouldBlock)
             {
                 uiPointerBlockingSculpt = shouldBlock;
-                SetSculptControllersEnabled(!uiPointerBlockingSculpt);
+                SetSculptControllersEnabled(!uiPointerBlockingSculpt && !vertexSculptEnabled);
             }
         }
 
@@ -503,6 +514,83 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         BuildInterfaceHierarchy();
+    }
+
+    private void EnsureVertexSculptController()
+    {
+        if (handRunner == null)
+            handRunner = FindFirstObjectByType<SculptHandLandmarkerRunner>(FindObjectsInactive.Include);
+
+        if (lanternRenderer == null)
+        {
+            Debug.LogWarning("MORPHIC Enhancement: Cannot enable lantern vertex sculpting without a lantern mesh.", this);
+            return;
+        }
+
+        if (vertexSculptController != null)
+            return;
+
+        VertexSculptController settingsSource = FindFirstObjectByType<VertexSculptController>();
+        GameObject lanternObject = lanternRenderer.gameObject;
+        if (lanternObject.GetComponent<MeshCollider>() == null)
+            lanternObject.AddComponent<MeshCollider>();
+
+        vertexSculptController = lanternObject.GetComponent<VertexSculptController>();
+        if (vertexSculptController == null)
+            vertexSculptController = lanternObject.AddComponent<VertexSculptController>();
+
+        vertexSculptController.BindHandRunner(handRunner);
+        if (settingsSource != null && settingsSource != vertexSculptController)
+            vertexSculptController.CopySculptSettingsFrom(settingsSource);
+    }
+
+    private void EnsureVertexSculptButton()
+    {
+        if (mainActionGroup == null || vertexSculptButton != null)
+            return;
+
+        Transform finishTransform = mainActionGroup.transform.Find("Finish");
+        if (finishTransform is RectTransform finishRect)
+            finishRect.anchoredPosition = new Vector2(0f, -216f);
+
+        vertexSculptButton = CreateButton(
+            "VertexSculpt", mainActionGroup.GetComponent<RectTransform>(),
+            new Vector2(0f, -144f), new Vector2(PillWidth, PillHeight),
+            "VERTEX SCULPT", PillPink);
+        TMP_Text buttonText = vertexSculptButton.GetComponentInChildren<TMP_Text>();
+        if (buttonText != null)
+        {
+            buttonText.fontSize = 22f;
+            buttonText.fontStyle = FontStyles.Bold;
+            buttonText.color = DarkTextGreen;
+        }
+        vertexSculptButton.onClick.AddListener(ToggleVertexSculpt);
+        RegisterHitTarget(vertexSculptButton, false, false, default);
+    }
+
+    private void ToggleVertexSculpt()
+    {
+        vertexSculptEnabled = !vertexSculptEnabled;
+        if (vertexSculptController != null)
+            vertexSculptController.SetEnabled(vertexSculptEnabled);
+
+        SetSculptControllersEnabled(!vertexSculptEnabled);
+        if (vertexSculptEnabled && patternPainter != null)
+            patternPainter.SetPaintingEnabled(false);
+
+        TMP_Text buttonText = vertexSculptButton != null
+            ? vertexSculptButton.GetComponentInChildren<TMP_Text>()
+            : null;
+        if (buttonText != null)
+            buttonText.text = vertexSculptEnabled ? "VERTEX SCULPT: ON" : "VERTEX SCULPT";
+
+        if (instructionText != null)
+        {
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = vertexSculptEnabled
+                ? "Pinch and hold to sculpt the lantern."
+                : "Vertex sculpting disabled.";
+        }
     }
 
     private void BuildInterfaceHierarchy()
@@ -1361,10 +1449,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     {
         RestoreSelectedPreview();
         ClearAttachedSelfie();
+        ClearWorkingDesignAndBand();
         if (originalGestureController != null)
             originalGestureController.RestoreRestState();
         if (history.Count > 0)
             ApplySnapshot(history[0]);
+        ClearWorkingDesignAndBand();
         lanternSaved = false;
         RefreshSavedStatus();
         CaptureBaseline();
@@ -1379,6 +1469,25 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         appliedSelfieTexture = null;
     }
 
+    private void ClearWorkingDesignAndBand()
+    {
+        appliedDesignTexture = null;
+        appliedBandTexture = null;
+        isBandActive = false;
+        bandTintActive = false;
+        designTintActive = false;
+        committedDesignTint = Color.white;
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = false;
+        if (designSurfaceRoot != null)
+            designSurfaceRoot.gameObject.SetActive(false);
+        if (patternPainter != null)
+        {
+            patternPainter.SetPaintingEnabled(false);
+            patternPainter.ClearAllStrokes();
+        }
+    }
+
     private void CopySelfieSurfaceOntoClone(GameObject clone)
     {
         if (clone == null || appliedSelfieTexture == null)
@@ -1390,7 +1499,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (cloneSkin == null || cloneSkin.sharedMesh == null)
             return;
 
-        Shader shader = Shader.Find("Morphic/Selfie Surface Overlay");
+        Shader shader = MorphicOverlayShaders.SelfieSurface();
         if (shader == null)
             return;
 
@@ -1548,6 +1657,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementIndexGestureController>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<LanternFistRotationController>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementLanternColorController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<TeapotSurfacePatternPainter>(true));
+        DestroyNamedChildren(clone.transform, "BrushCursor");
         DisableAndDestroy(clone.GetComponentsInChildren<Canvas>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<Camera>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<AudioListener>(true));
@@ -1766,7 +1877,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         SetSculptControllersEnabled(false);
 
-        SetSculptControllersEnabled(!uiPointerBlockingSculpt);
+        SetSculptControllersEnabled(!uiPointerBlockingSculpt && !vertexSculptEnabled);
 
         mode = ColorMode.MainMenu;
         SetPanelHeight(MainMenuPanelHeight);
@@ -2397,25 +2508,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return null;
 
         Texture source = imageSource.GetCurrentTexture();
-        if (source == null || source.width <= 16 || source.height <= 16)
+        Texture2D readable = MorphicOverlayShaders.CaptureWebcamFrame(source);
+        if (readable == null)
             return null;
-
-        const int maxDimension = 768;
-        float scale = Mathf.Min(1f, maxDimension / (float)Mathf.Max(source.width, source.height));
-        int width = Mathf.Max(2, Mathf.RoundToInt(source.width * scale));
-        int height = Mathf.Max(2, Mathf.RoundToInt(source.height * scale));
-        RenderTexture temporary = RenderTexture.GetTemporary(
-            width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
-        RenderTexture previous = RenderTexture.active;
-        Graphics.Blit(source, temporary);
-        RenderTexture.active = temporary;
-
-        Texture2D readable = new Texture2D(width, height, TextureFormat.RGBA32, false);
-        readable.ReadPixels(new Rect(0f, 0f, width, height), 0, 0, false);
-        readable.Apply(false, false);
-
-        RenderTexture.active = previous;
-        RenderTexture.ReleaseTemporary(temporary);
 
         var transformOptions = imageSource.GetTransformationOptions();
         Texture2D result = TransformCapturedTexture(
@@ -2627,7 +2722,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
             return;
 
-        Shader shader = Shader.Find("Morphic/Selfie Surface Overlay");
+        Shader shader = MorphicOverlayShaders.SelfieSurface();
         if (shader == null)
         {
             Debug.LogError(
@@ -3404,6 +3499,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void UpdateSculptLockFromUi(bool overUi)
     {
+        if (vertexSculptEnabled)
+        {
+            SetSculptControllersEnabled(false);
+            if (patternPainter != null)
+                patternPainter.SetPaintingEnabled(false);
+            return;
+        }
+
         if (mode == ColorMode.Sculpt)
             return;
 
@@ -3478,6 +3581,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         // cannot modify the student's original material assets.
         runtimeMaterials = lanternRenderer.materials;
         IsolateTopLidOntoOwnMaterials();
+        IsolateBottomLidOntoOwnMaterials();
         IsolateTasselOntoOwnMaterials();
         CaptureCommittedColors();
         colorsCaptured = true;
@@ -3778,7 +3882,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partMaterialIndices = new int[partNames.Length][];
         partMaterialIndices[1] = new[] { bodyMaterialIndex };
         partMaterialIndices[2] = IsolatedOrFallback(isolatedLidMaterials, topMaterialIndex);
-        partMaterialIndices[3] = new[] { bottomMaterialIndex };
+        partMaterialIndices[3] = IsolatedOrFallback(isolatedBottomMaterials, bottomMaterialIndex);
         partMaterialIndices[4] = IsolatedOrFallback(isolatedTasselMaterials, tasselMaterialIndex);
     }
 
@@ -3803,6 +3907,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void IsolateTopLidOntoOwnMaterials()
     {
         IsolateMovingPartOntoOwnMaterials(IsTopLidShape, isolatedLidMaterials, "_TopLid");
+    }
+
+    private void IsolateBottomLidOntoOwnMaterials()
+    {
+        IsolateMovingPartOntoOwnMaterials(IsBottomLidShape, isolatedBottomMaterials, "_BottomLid");
     }
 
     private void IsolateTasselOntoOwnMaterials()
@@ -3936,7 +4045,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         string compact = CompactShapeName(shapeName);
         if (!compact.Contains("TOP") || compact.Contains("BOTTOM"))
             return false;
-        return compact.Contains("CIRCLE") || compact.Contains("RECTANGLE");
+        return compact.Contains("CIRCLE") ||
+               compact.Contains("RECTANGLE") ||
+               compact.Contains("POPUPTOP");
+    }
+
+    private static bool IsBottomLidShape(string shapeName)
+    {
+        string compact = CompactShapeName(shapeName);
+        if (!compact.Contains("BOTTOM") || compact.Contains("TOP"))
+            return false;
+        return compact.Contains("CIRCLE") ||
+               compact.Contains("RECTANGLE") ||
+               compact.Contains("POPUPBOTTOM");
     }
 
     private static bool IsTasselColorShape(string shapeName)
@@ -5103,25 +5224,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void LoadBandPatterns()
     {
-        if (bandPatterns != null && bandPatterns.Length >= 8)
+        if (bandPatterns != null && bandPatterns.Length > 0)
             return;
 
-#if UNITY_EDITOR
-        string[] guids = UnityEditor.AssetDatabase.FindAssets(
-            "t:Texture2D",
-            new[] { "Assets/SculptingEnhancement/Art/BandPatterns" });
-        var loaded = new List<Texture2D>(guids.Length);
-        for (int i = 0; i < guids.Length; i++)
-        {
-            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
-            Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-            if (texture != null)
-                loaded.Add(texture);
-        }
-
-        loaded.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-        bandPatterns = loaded.ToArray();
-#endif
+        bandPatterns = MorphicPatternCatalog.Bands();
     }
 
     private void EnsureDesignGroup()
@@ -5269,22 +5375,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (stampPatterns != null && stampPatterns.Length > 0)
             return;
 
-#if UNITY_EDITOR
-        string[] guids = UnityEditor.AssetDatabase.FindAssets(
-            "t:Texture2D",
-            new[] { "Assets/SculptingEnhancement/Art/StampPatterns" });
-        var loaded = new List<Texture2D>(guids.Length);
-        for (int i = 0; i < guids.Length; i++)
-        {
-            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
-            Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-            if (texture != null)
-                loaded.Add(texture);
-        }
-
-        loaded.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-        stampPatterns = loaded.ToArray();
-#endif
+        stampPatterns = MorphicPatternCatalog.Stamps();
     }
 
     private void EnsureDesignOverlay()
@@ -5292,7 +5383,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (lanternRenderer == null || lanternRenderer.sharedMesh == null)
             return;
 
-        Shader shader = Shader.Find("Morphic/Lantern Body Design Overlay");
+        Shader shader = MorphicOverlayShaders.BodyDesign();
         if (shader == null)
         {
             Debug.LogError(
@@ -5451,6 +5542,17 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void UndoHistory()
     {
         RestoreSelectedPreview();
+        if (vertexSculptController != null && vertexSculptController.HasUndo &&
+            vertexSculptController.UndoLastStroke())
+        {
+            if (instructionText != null)
+            {
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last sculpt stroke undone.";
+            }
+            return;
+        }
+
         if (patternPainter != null && patternPainter.StrokeCount > 0)
         {
             patternPainter.UndoLastStroke();
@@ -5559,8 +5661,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             originalGestureController.RestoreRestState();
         if (history.Count > 0)
             ApplySnapshot(history[0]);
-        if (patternPainter != null)
-            patternPainter.ClearAllStrokes();
+        ClearWorkingDesignAndBand();
         CaptureBaseline();
         HideConfirmReset();
         if (instructionText != null)

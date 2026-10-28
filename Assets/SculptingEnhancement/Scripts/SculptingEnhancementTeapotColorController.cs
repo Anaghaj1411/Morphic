@@ -46,6 +46,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     [SerializeField] private TeapotFistRotationController teapotFistRotation;
     [SerializeField] private SculptingEnhancementTeapotIndexGestureController teapotIndexGestures;
     [SerializeField] private TMP_Text gestureIndicator;
+    [SerializeField] private VertexSculptController vertexSculptController;
     [SerializeField, Min(0)] private int bodyMaterialIndex = 1;
     [SerializeField, Range(0.25f, 2.5f)] private float selectionDwellTime = 1.5f;
     [SerializeField, Min(1f)] private float cursorSmoothing = 24f;
@@ -146,6 +147,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private bool colorsCaptured;
     private bool paletteAvailable;
     private bool sculptLockedByTutorial;
+    private bool vertexSculptEnabled = false;
+    private Button vertexSculptButton;
     private bool uiPointerBlockingSculpt;
     private ColorMode modeBeforeConfirm;
     private int selectedVariant = -1;
@@ -260,6 +263,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             teapotIndexGestures = gestures.GetComponent<SculptingEnhancementTeapotIndexGestureController>();
         if (gestureIndicator == null && gestures != null)
             gestureIndicator = gestures.GestureStatus;
+        if (vertexSculptController == null)
+            vertexSculptController = FindFirstObjectByType<VertexSculptController>();
     }
 
     public void SetPaletteAvailable(bool available)
@@ -320,6 +325,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private void OnDisable()
     {
         RestoreSelectedPreview();
+        vertexSculptEnabled = false;
+        if (vertexSculptController != null)
+            vertexSculptController.SetEnabled(false);
         SetSculptControllersEnabled(true);
         ShowSculptMode();
         if (uiRoot != null)
@@ -389,7 +397,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (mode == ColorMode.DrawBandTargeting && patternPainter != null)
         {
             bool cursorOverUi = IsCursorOverColorUi(screenPosition);
-            if (cursorOverUi)
+            if (vertexSculptEnabled || cursorOverUi)
             {
                 patternPainter.SetPaintingEnabled(false);
             }
@@ -423,7 +431,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             if (uiPointerBlockingSculpt != shouldBlock)
             {
                 uiPointerBlockingSculpt = shouldBlock;
-                SetSculptControllersEnabled(!uiPointerBlockingSculpt);
+                SetSculptControllersEnabled(!uiPointerBlockingSculpt && !vertexSculptEnabled);
             }
         }
 
@@ -511,7 +519,20 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         changeColor.onClick.AddListener(ContinueToColorSelection);
         RegisterHitTarget(changeColor, false, false, default);
 
-        Button finish = CreateButton("Finish", mainRect, new Vector2(0f, -144f),
+        // Add Vertex Sculpt toggle button between CHANGE COLOR and FINISH
+        vertexSculptButton = CreateButton("VertexSculpt", mainRect, new Vector2(0f, -144f),
+            new Vector2(PillWidth, PillHeight), "VERTEX SCULPT", PillPink);
+        TMP_Text vText = vertexSculptButton.GetComponentInChildren<TMP_Text>();
+        if (vText != null)
+        {
+            vText.fontSize = 22f;
+            vText.fontStyle = FontStyles.Bold;
+            vText.color = DarkTextGreen;
+        }
+        vertexSculptButton.onClick.AddListener(ToggleVertexSculpt);
+        RegisterHitTarget(vertexSculptButton, false, false, default);
+
+        Button finish = CreateButton("Finish", mainRect, new Vector2(0f, -216f),
             new Vector2(PillWidth, PillHeight), "FINISH", DonePink);
         finish.onClick.AddListener(ShowReview);
         RegisterHitTarget(finish, false, false, default);
@@ -1168,18 +1189,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         }
 
         Texture source = imageSource.GetCurrentTexture();
-        if (source == null)
+        Texture2D readable = MorphicOverlayShaders.CaptureWebcamFrame(source);
+        if (readable == null)
+        {
+            selfieInstructionText.text = "Could not capture the camera image. Please try again.";
             return;
-
-        RenderTexture temporary = RenderTexture.GetTemporary(source.width, source.height, 0);
-        Graphics.Blit(source, temporary);
-        RenderTexture previous = RenderTexture.active;
-        RenderTexture.active = temporary;
-        Texture2D readable = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
-        readable.ReadPixels(new Rect(0f, 0f, source.width, source.height), 0, 0);
-        readable.Apply();
-        RenderTexture.active = previous;
-        RenderTexture.ReleaseTemporary(temporary);
+        }
 
         DestroyRuntime(capturedSelfieTexture);
         capturedSelfieTexture = readable;
@@ -1345,7 +1360,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (teapotRenderer == null || teapotRenderer.sharedMesh == null)
             return false;
 
-        Shader shader = Shader.Find("Morphic/Selfie Surface Overlay");
+        Shader shader = MorphicOverlayShaders.SelfieSurface();
         if (shader == null)
             return false;
 
@@ -1843,6 +1858,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         committedDesignTint = Color.white;
         if (designSurfaceRenderer != null)
             designSurfaceRenderer.enabled = false;
+        ClearWorkingBand();
         CaptureBaseline();
         HideConfirmReset();
         instructionText.text = "Teapot reset.";
@@ -1851,6 +1867,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private void UndoHistory()
     {
         RestoreSelectedPreview();
+
+        if (vertexSculptController != null && vertexSculptController.HasUndo &&
+            vertexSculptController.UndoLastStroke())
+        {
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Last sculpt stroke undone.";
+            return;
+        }
+
         if (patternPainter != null && patternPainter.StrokeCount > 0)
         {
             patternPainter.UndoLastStroke();
@@ -1870,6 +1895,32 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         ApplySnapshot(history[history.Count - 1]);
         instructionText.gameObject.SetActive(true);
         instructionText.text = "Last change undone.";
+    }
+
+    private void ToggleVertexSculpt()
+    {
+        vertexSculptEnabled = !vertexSculptEnabled;
+
+        if (vertexSculptController != null)
+        {
+            vertexSculptController.SetEnabled(vertexSculptEnabled);
+        }
+
+        // Vertex sculpt owns the teapot hand input while active. The regular
+        // deformation, rotate, and pattern-paint tools resume when it is off.
+        SetSculptControllersEnabled(!vertexSculptEnabled);
+        if (patternPainter != null && vertexSculptEnabled)
+            patternPainter.SetPaintingEnabled(false);
+
+        // Update button text
+        TMP_Text buttonText = vertexSculptButton.GetComponentInChildren<TMP_Text>();
+        if (buttonText != null)
+        {
+            buttonText.text = vertexSculptEnabled ? "VERTEX SCULPT: ON" : "VERTEX SCULPT";
+        }
+
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = vertexSculptEnabled ? "Vertex sculpting enabled." : "Vertex sculpting disabled.";
     }
 
     private void NavigateBack()
@@ -2160,6 +2211,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             teapotGestures.RestoreRestState();
         if (history.Count > 0)
             ApplySnapshot(history[0]);
+        ClearWorkingBand();
         teapotSaved = false;
         RefreshSavedStatus();
         CaptureBaseline();
@@ -2180,6 +2232,19 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             designSurfaceRenderer.enabled = false;
         if (designSurfaceRoot != null)
             designSurfaceRoot.gameObject.SetActive(false);
+        ClearWorkingBand();
+    }
+
+    private void ClearWorkingBand()
+    {
+        appliedBandTexture = null;
+        isBandActive = false;
+        bandTintActive = false;
+        if (patternPainter != null)
+        {
+            patternPainter.SetPaintingEnabled(false);
+            patternPainter.ClearAllStrokes();
+        }
     }
 
     private TeapotCollectionStore.Record CaptureCollectionRecord()
@@ -2270,6 +2335,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         DisableAndDestroy(fists);
         DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementTeapotIndexGestureController>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementTeapotColorController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<TeapotSurfacePatternPainter>(true));
+        DestroyNamedChildren(clone.transform, "BrushCursor");
         DisableAndDestroy(clone.GetComponentsInChildren<Canvas>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<Camera>(true));
         DisableAndDestroy(clone.GetComponentsInChildren<AudioListener>(true));
@@ -2326,7 +2393,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (cloneSkin == null || cloneSkin.sharedMesh == null)
             return;
 
-        Shader shader = Shader.Find("Morphic/Lantern Body Design Overlay");
+        Shader shader = MorphicOverlayShaders.BodyDesign();
         if (shader == null)
             return;
 
@@ -2389,7 +2456,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (cloneSkin == null || cloneSkin.sharedMesh == null)
             return;
 
-        Shader shader = Shader.Find("Morphic/Selfie Surface Overlay");
+        Shader shader = MorphicOverlayShaders.SelfieSurface();
         if (shader == null)
             return;
 
@@ -3597,25 +3664,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void LoadBandPatterns()
     {
-        if (bandPatterns != null && bandPatterns.Length >= 8)
+        if (bandPatterns != null && bandPatterns.Length > 0)
             return;
 
-#if UNITY_EDITOR
-        string[] guids = UnityEditor.AssetDatabase.FindAssets(
-            "t:Texture2D",
-            new[] { "Assets/SculptingEnhancement/Art/BandPatterns" });
-        var loaded = new List<Texture2D>(guids.Length);
-        for (int i = 0; i < guids.Length; i++)
-        {
-            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
-            Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-            if (texture != null)
-                loaded.Add(texture);
-        }
-
-        loaded.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-        bandPatterns = loaded.ToArray();
-#endif
+        bandPatterns = MorphicPatternCatalog.Bands();
     }
 
     private void EnsureDesignGroup()
@@ -3711,22 +3763,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (stampPatterns != null && stampPatterns.Length > 0)
             return;
 
-#if UNITY_EDITOR
-        string[] guids = UnityEditor.AssetDatabase.FindAssets(
-            "t:Texture2D",
-            new[] { "Assets/SculptingEnhancement/Art/StampPatterns" });
-        var loaded = new List<Texture2D>(guids.Length);
-        for (int i = 0; i < guids.Length; i++)
-        {
-            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
-            Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-            if (texture != null)
-                loaded.Add(texture);
-        }
-
-        loaded.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-        stampPatterns = loaded.ToArray();
-#endif
+        stampPatterns = MorphicPatternCatalog.Stamps();
     }
 
     private void EnsureDesignOverlay()
@@ -3734,7 +3771,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (teapotRenderer == null || teapotRenderer.sharedMesh == null)
             return;
 
-        Shader shader = Shader.Find("Morphic/Lantern Body Design Overlay");
+        Shader shader = MorphicOverlayShaders.BodyDesign();
         if (shader == null)
         {
             Debug.LogError("MORPHIC: Body design shader was not found.", this);
@@ -4133,6 +4170,14 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void UpdateSculptLockFromUi(bool overUi)
     {
+        if (vertexSculptEnabled)
+        {
+            SetSculptControllersEnabled(false);
+            if (patternPainter != null)
+                patternPainter.SetPaintingEnabled(false);
+            return;
+        }
+
         if (mode == ColorMode.Review || mode == ColorMode.Shelf || mode == ColorMode.ConfirmDelete)
         {
             SetSculptControllersEnabled(false);
