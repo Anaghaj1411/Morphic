@@ -20,6 +20,8 @@ public class MorphicAIHelpUI : MonoBehaviour
         root.SetActive(visible);
         if (visible)
             root.transform.SetAsLastSibling();
+        else if (dialogueBox != null)
+            dialogueBox.SetActive(false);
     }
 
     private void Awake()
@@ -155,7 +157,7 @@ public class MorphicAIHelpUI : MonoBehaviour
         boxRect.anchorMin = boxRect.anchorMax = new Vector2(0.5f, 0f);
         boxRect.pivot = new Vector2(0.5f, 0f);
         boxRect.anchoredPosition = new Vector2(0f, 28f);
-        boxRect.sizeDelta = new Vector2(860f, 156f);
+        boxRect.sizeDelta = new Vector2(720f, 156f);
         outline.raycastTarget = false;
 
         Image cream = LanguagePageBuilder.CreateRoundedImage(
@@ -168,10 +170,11 @@ public class MorphicAIHelpUI : MonoBehaviour
         cream.raycastTarget = false;
 
         helpText = CreateLabel(
-            cream.transform, "", 20f, TextAlignmentOptions.TopLeft);
-        helpText.color = new Color32(52, 40, 28, 255);
+            cream.transform, "", 26f, TextAlignmentOptions.TopLeft);
+        helpText.color = new Color32(32, 24, 18, 255);
+        helpText.fontStyle = FontStyles.Bold;
         helpText.enableWordWrapping = true;
-        helpText.overflowMode = TextOverflowModes.Ellipsis;
+        helpText.overflowMode = TextOverflowModes.Overflow;
         helpText.lineSpacing = 4f;
         RectTransform textRect = helpText.rectTransform;
         textRect.offsetMin = new Vector2(24f, 18f);
@@ -316,11 +319,38 @@ public class MorphicAIHelpUI : MonoBehaviour
         if (dialogueBox != null)
             dialogueBox.SetActive(!string.IsNullOrWhiteSpace(message));
         if (helpText != null)
+        {
             helpText.text = message;
+            UpdateDialogueBoxHeight();
+        }
 
         MorphicAIFeedbackUI feedback =
             FindFirstObjectByType<MorphicAIFeedbackUI>(FindObjectsInactive.Include);
         if (feedback != null)
             feedback.ShowHint(message);
+    }
+
+    private void UpdateDialogueBoxHeight()
+    {
+        if (dialogueBox == null || helpText == null)
+            return;
+
+        RectTransform boxRect = dialogueBox.GetComponent<RectTransform>();
+        if (boxRect == null)
+            return;
+
+        // Force layout update to calculate text height
+        helpText.ForceMeshUpdate();
+
+        // Calculate the preferred height of the text
+        float textHeight = helpText.preferredHeight;
+        float padding = 36f; // 18f top + 18f bottom padding from textRect
+        float minHeight = 100f; // Minimum height for short messages
+        float maxHeight = 400f; // Maximum height to prevent it from getting too tall
+
+        float targetHeight = Mathf.Clamp(textHeight + padding, minHeight, maxHeight);
+
+        // Update the box height
+        boxRect.sizeDelta = new Vector2(boxRect.sizeDelta.x, targetHeight);
     }
 }

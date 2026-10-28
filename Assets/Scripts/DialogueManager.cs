@@ -58,6 +58,10 @@ public class DialogueManager : MonoBehaviour
     [Tooltip("Teapot_Updated scene instance to show when India sculpting starts.")]
     [SerializeField] private GameObject indiaTeapot;
 
+    [Header("Indonesia Keris")]
+    [Tooltip("Keris scene instance to show when Indonesia sculpting starts.")]
+    [SerializeField] private GameObject indonesiaKeris;
+
     [Header("Taiwan Hand Tracking")]
     [SerializeField] private GameObject taiwanHandTracking;
     [SerializeField] private GameObject taiwanGestureController;
@@ -118,6 +122,16 @@ public class DialogueManager : MonoBehaviour
 
         if (indiaTeapot != null)
             indiaTeapot.SetActive(false);
+
+        // The keris is placed in the scene like the lantern and teapot, but stays hidden
+        // until the user chooses Indonesia and presses Start Sculpting.
+        if (indonesiaKeris == null)
+        {
+            indonesiaKeris = FindSceneObject("Keris");
+        }
+
+        if (indonesiaKeris != null)
+            indonesiaKeris.SetActive(false);
 
         AddHoverEffect(taiwanButton);
         AddHoverEffect(indiaButton);
@@ -1067,6 +1081,10 @@ public class DialogueManager : MonoBehaviour
         HideAllChoices();
         HideCultureChoices();
 
+        // Hide AI help dialog when switching cultures
+        if (aiHelpUi != null)
+            aiHelpUi.SetVisible(false);
+
         if (lanternColorController == null)
         {
             lanternColorController =
@@ -1086,6 +1104,12 @@ public class DialogueManager : MonoBehaviour
         {
             case "Taiwan":
                 Debug.Log("MORPHIC: Taiwan selected - Lantern");
+
+                // Deactivate other culture objects to prevent overlap
+                if (indiaTeapot != null)
+                    indiaTeapot.SetActive(false);
+                if (indonesiaKeris != null)
+                    indonesiaKeris.SetActive(false);
 
                 if (taiwanLantern != null)
                 {
@@ -1220,6 +1244,12 @@ public class DialogueManager : MonoBehaviour
             case "India":
                 Debug.Log("MORPHIC: India selected - Teapot");
 
+                // Deactivate other culture objects to prevent overlap
+                if (taiwanLantern != null)
+                    taiwanLantern.SetActive(false);
+                if (indonesiaKeris != null)
+                    indonesiaKeris.SetActive(false);
+
                 // India and Taiwan share the configured hand-tracking source,
                 // but only the selected craft's gesture controller should be
                 // allowed to drive its own mesh.
@@ -1315,10 +1345,51 @@ public class DialogueManager : MonoBehaviour
 
             case "Indonesia":
                 Debug.Log("MORPHIC: Indonesia selected - Keris");
+
+                // Deactivate other culture objects to prevent overlap
+                if (taiwanLantern != null)
+                    taiwanLantern.SetActive(false);
+                if (indiaTeapot != null)
+                    indiaTeapot.SetActive(false);
+
+                // Deactivate Taiwan gesture controllers
+                if (taiwanGestureController != null)
+                    taiwanGestureController.SetActive(false);
+                if (taiwanGestureIndicator != null)
+                    taiwanGestureIndicator.SetActive(false);
+
+                // Activate Indonesia Keris
+                if (indonesiaKeris != null)
+                {
+                    indonesiaKeris.SetActive(true);
+                    Debug.Log("MORPHIC: Indonesia Keris activated.");
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        "MORPHIC: Indonesia Keris reference is missing. " +
+                        "Add the Keris scene object and assign it to " +
+                        "DialogueManager > Indonesia Keris."
+                    );
+                }
                 break;
 
             case "Freestyle":
                 Debug.Log("MORPHIC: Freestyle selected");
+
+                // Deactivate all culture objects for freestyle mode
+                if (taiwanLantern != null)
+                    taiwanLantern.SetActive(false);
+                if (indiaTeapot != null)
+                    indiaTeapot.SetActive(false);
+                if (indonesiaKeris != null)
+                    indonesiaKeris.SetActive(false);
+
+                // Deactivate Taiwan gesture controllers
+                if (taiwanGestureController != null)
+                    taiwanGestureController.SetActive(false);
+                if (taiwanGestureIndicator != null)
+                    taiwanGestureIndicator.SetActive(false);
                 break;
         }
 
