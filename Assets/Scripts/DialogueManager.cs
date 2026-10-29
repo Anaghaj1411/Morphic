@@ -139,7 +139,8 @@ public class DialogueManager : MonoBehaviour
         AddHoverEffect(taiwanButton);
         AddHoverEffect(indiaButton);
         AddHoverEffect(indonesiaButton);
-        AddHoverEffect(freestyleButton);
+        if (freestyleButton != null)
+            freestyleButton.gameObject.SetActive(false);
 
         HideAllChoices();
         HideCultureChoices();
@@ -726,7 +727,7 @@ public class DialogueManager : MonoBehaviour
             layout.childControlHeight = false;
         }
 
-        Button[] crafts = { taiwanButton, indiaButton, indonesiaButton, freestyleButton };
+        Button[] crafts = { taiwanButton, indiaButton, indonesiaButton };
         for (int i = 0; i < crafts.Length; i++)
         {
             Button button = crafts[i];
@@ -839,7 +840,8 @@ public class DialogueManager : MonoBehaviour
         ConfigureCultureButton(taiwanButton, "Taiwan");
         ConfigureCultureButton(indiaButton, "India");
         ConfigureCultureButton(indonesiaButton, "Indonesia");
-        ConfigureCultureButton(freestyleButton, "Freestyle");
+        if (freestyleButton != null)
+            freestyleButton.gameObject.SetActive(false);
         SetCraftExitVisible(true);
     }
 

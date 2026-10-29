@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a7c4e1b29d8f4c6e9a1b3d5f70829416, type: 3}
+  m_Name: MorphicLightingSettings
+  m_EditorClassIdentifier: 
+  globalBrightness: 0.76
+  warmth: 0.862
+  restaurantKey: 1
+  restaurantFill: 1
+  potteryShop: 1.68
+  workbench: 1
+  street: 4
+  clouds: 3.5
+  cloudRange: 180
+  useSavedPositions: 1
+  restaurantKeyPosition: {x: -33.129463, y: 4.136741, z: -5.92}
+  restaurantFillPosition: {x: -31.134008, y: 4.886741, z: -6.5720882}
+  potteryShopPosition: {x: -21.340317, y: 3.572, z: -7.8086796}
+  workbenchPosition: {x: -25.286, y: 3.271, z: -4.792}
+  streetPosition: {x: -17.37, y: 19.32, z: 5.45}
+  cloudPosition: {x: -35.24, y: 21.06, z: 6.92}
+  cloudPosition2: {x: -20.99, y: 20.23, z: 4.78}
+  cloudPosition3: {x: -43.3, y: 19.088, z: 4.55}
+  cloudPosition4: {x: -28.02, y: 20.64, z: 4.1}
+  cloudPosition5: {x: -53.73, y: 21.3, z: 5.94}

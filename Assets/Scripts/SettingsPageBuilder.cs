@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -11,7 +12,6 @@ using UnityEngine.UI;
 ///   SETTINGS
 ///   Music        [ - ] [ Music Volume ] [ + ]
 ///   Sound Effects[ - ] [ SFX Volume    ] [ + ]
-///   Fullscreen   [ ON / OFF ]
 ///   BACK
 /// </summary>
 public static class SettingsPageBuilder
@@ -60,7 +60,7 @@ public static class SettingsPageBuilder
         List<Image> rows = new List<Image>();
 
         // Rows run downward from just under the title.
-        float topY = 92f;
+        float topY = 48f;
         float y = topY;
 
         rows.Add(BuildVolumeRow(
@@ -87,15 +87,6 @@ public static class SettingsPageBuilder
             controller.IncreaseSfx,
             y));
 
-        y -= RowHeight + RowGap;
-
-        rows.Add(BuildToggleRow(
-            root,
-            controller,
-            "Fullscreen",
-            controller.IsFullscreen,
-            y));
-
         BuildBackButton(root, controller);
 
         // Same staggered reveal as the language options.
@@ -111,7 +102,7 @@ public static class SettingsPageBuilder
             LanguagePageBuilder.Green);
 
         card.rectTransform.sizeDelta =
-            new Vector2(760f, 700f);
+            new Vector2(760f, 560f);
 
         Image fill = LanguagePageBuilder.CreateRoundedImage(
             "Card Fill",
@@ -136,7 +127,7 @@ public static class SettingsPageBuilder
             new Vector2(430f, 96f);
 
         pill.rectTransform.anchoredPosition =
-            new Vector2(0f, 268f);
+            new Vector2(0f, 188f);
 
         Image inner = LanguagePageBuilder.CreateRoundedImage(
             "Title Inner",
@@ -216,11 +207,11 @@ public static class SettingsPageBuilder
         Image valuePill = LanguagePageBuilder.CreateRoundedImage(
             "Value",
             fill.transform,
-            20,
+            26,
             LanguagePageBuilder.Green);
 
         valuePill.rectTransform.sizeDelta =
-            new Vector2(150f, 52f);
+            new Vector2(150f, 54f);
 
         valuePill.rectTransform.anchoredPosition =
             new Vector2(130f, 0f);
@@ -228,12 +219,12 @@ public static class SettingsPageBuilder
         Image valueInner = LanguagePageBuilder.CreateRoundedImage(
             "Value Inner",
             valuePill.transform,
-            16,
+            22,
             LanguagePageBuilder.PanelFill);
 
         LanguagePageBuilder.Stretch(
             valueInner.rectTransform,
-            new Vector2(5f, 5f));
+            new Vector2(4f, 4f));
 
         LanguagePageBuilder.TextLabel valueText =
             LanguagePageBuilder.CreateLabel(
@@ -280,7 +271,8 @@ public static class SettingsPageBuilder
     }
 
     /// <summary>
-    /// A circular -/+ button.
+    /// A circular -/+ button with a candy-bubble rim, inner shine, and
+    /// a crisp glyph.
     /// </summary>
     private static void BuildStepper(
         Transform parent,
@@ -288,27 +280,59 @@ public static class SettingsPageBuilder
         Vector2 position,
         System.Action onClick)
     {
+        const float size = 56f;
+        Sprite circle = LanguagePageBuilder.Circle(192);
+        Color bubbleGreen = new Color32(0x4F, 0x96, 0x2C, 0xFF);
+
+        Image shadow = LanguagePageBuilder.CreateImage(
+            "Shadow",
+            parent,
+            circle);
+        shadow.rectTransform.sizeDelta = new Vector2(size, size);
+        shadow.rectTransform.anchoredPosition = position + new Vector2(0f, -3f);
+        shadow.color = new Color(0.08f, 0.16f, 0.04f, 0.28f);
+        shadow.raycastTarget = false;
+
         Image disc = LanguagePageBuilder.CreateImage(
             symbol == "-" ? "Minus" : "Plus",
             parent,
-            LanguagePageBuilder.Circle(96));
-
-        disc.rectTransform.sizeDelta =
-            new Vector2(52f, 52f);
-
+            circle);
+        disc.rectTransform.sizeDelta = new Vector2(size, size);
         disc.rectTransform.anchoredPosition = position;
-
         disc.color = LanguagePageBuilder.Green;
+
+        Image cream = LanguagePageBuilder.CreateImage("Rim", disc.transform, circle);
+        LanguagePageBuilder.Stretch(cream.rectTransform, new Vector2(3.5f, 3.5f));
+        cream.color = LanguagePageBuilder.PanelFill;
+        cream.raycastTarget = false;
+
+        Image core = LanguagePageBuilder.CreateImage("Core", disc.transform, circle);
+        LanguagePageBuilder.Stretch(core.rectTransform, new Vector2(6.5f, 6.5f));
+        core.color = bubbleGreen;
+        core.raycastTarget = false;
+
+        Image shine = LanguagePageBuilder.CreateImage("Shine", disc.transform, circle);
+        RectTransform shineRect = shine.rectTransform;
+        shineRect.anchorMin = shineRect.anchorMax = new Vector2(0.5f, 0.5f);
+        shineRect.pivot = new Vector2(0.5f, 0.5f);
+        shineRect.sizeDelta = new Vector2(28f, 14f);
+        shineRect.anchoredPosition = new Vector2(-1f, 10f);
+        shine.color = new Color(1f, 1f, 1f, 0.42f);
+        shine.raycastTarget = false;
 
         LanguagePageBuilder.TextLabel glyph =
             LanguagePageBuilder.CreateLabel(
                 "Glyph",
                 disc.transform,
-                symbol,
-                40);
-
+                symbol == "-" ? "−" : "+",
+                symbol == "-" ? 38 : 36);
         LanguagePageBuilder.Stretch(glyph.Rect);
-        glyph.SetColor(LanguagePageBuilder.Pink);
+        glyph.SetColor(LanguagePageBuilder.PanelFill);
+        glyph.Label.fontStyle = FontStyles.Bold;
+        glyph.Label.characterSpacing = -4f;
+        Outline outline = glyph.Label.gameObject.AddComponent<Outline>();
+        outline.effectColor = new Color32(0x22, 0x42, 0x12, 200);
+        outline.effectDistance = new Vector2(1.1f, -1.1f);
 
         Button button = disc.gameObject.AddComponent<Button>();
         button.targetGraphic = disc;
@@ -334,118 +358,6 @@ public static class SettingsPageBuilder
                 onClick();
             }
         });
-    }
-
-    /// <summary>
-    /// A row with a label and an ON / OFF pill that toggles.
-    /// </summary>
-    private static Image BuildToggleRow(
-        RectTransform root,
-        SettingsPageController controller,
-        string label,
-        bool value,
-        float y)
-    {
-        Image row = LanguagePageBuilder.CreateRoundedImage(
-            label + " Row",
-            root,
-            26,
-            LanguagePageBuilder.Green);
-
-        row.rectTransform.sizeDelta =
-            new Vector2(RowWidth, RowHeight);
-
-        row.rectTransform.anchoredPosition =
-            new Vector2(0f, y);
-
-        Image fill = LanguagePageBuilder.CreateRoundedImage(
-            "Fill",
-            row.transform,
-            22,
-            LanguagePageBuilder.Pink);
-
-        LanguagePageBuilder.Stretch(
-            fill.rectTransform,
-            new Vector2(6f, 6f));
-
-        LanguagePageBuilder.TextLabel name =
-            LanguagePageBuilder.CreateLabel(
-                "Label",
-                fill.transform,
-                label,
-                30);
-
-        RectTransform nameRect = name.Rect;
-        nameRect.anchorMin = new Vector2(0.5f, 0.5f);
-        nameRect.anchorMax = new Vector2(0.5f, 0.5f);
-        nameRect.pivot = new Vector2(1f, 0.5f);
-        nameRect.sizeDelta = new Vector2(210f, RowHeight);
-        nameRect.anchoredPosition = new Vector2(-40f, 0f);
-        name.SetColor(LanguagePageBuilder.Green);
-
-        Image pill = LanguagePageBuilder.CreateRoundedImage(
-            "Toggle",
-            fill.transform,
-            20,
-            LanguagePageBuilder.Green);
-
-        pill.rectTransform.sizeDelta =
-            new Vector2(150f, 52f);
-
-        pill.rectTransform.anchoredPosition =
-            new Vector2(130f, 0f);
-
-        Image pillInner = LanguagePageBuilder.CreateRoundedImage(
-            "Toggle Inner",
-            pill.transform,
-            16,
-            LanguagePageBuilder.PanelFill);
-
-        LanguagePageBuilder.Stretch(
-            pillInner.rectTransform,
-            new Vector2(5f, 5f));
-
-        LanguagePageBuilder.TextLabel state =
-            LanguagePageBuilder.CreateLabel(
-                "State Text",
-                pill.transform,
-                value ? "ON" : "OFF",
-                24);
-
-        LanguagePageBuilder.Stretch(state.Rect);
-        state.SetColor(LanguagePageBuilder.Green);
-
-        // The whole row toggles, which is easier to hit than the pill.
-        Button button = fill.gameObject.AddComponent<Button>();
-        button.targetGraphic = fill;
-        button.colors = LanguagePageBuilder.ButtonColors();
-
-        MenuButtonHover hover =
-            row.gameObject.AddComponent<MenuButtonHover>();
-
-        LanguagePageBuilder.SetField(
-            hover,
-            "hoverArea",
-            row.rectTransform);
-
-        LanguagePageBuilder.SetField(
-            hover,
-            "visualTarget",
-            row.rectTransform);
-
-        button.onClick.AddListener(() =>
-        {
-            controller.ToggleFullscreen();
-
-            // Flip the text in place; rebuilding would restart the
-            // reveal animation and hide every row again.
-            state.Label.text =
-                controller.IsFullscreen ? "ON" : "OFF";
-
-            state.SetColor(LanguagePageBuilder.Green);
-        });
-
-        return row;
     }
 
     /// <summary>

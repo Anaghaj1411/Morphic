@@ -4,7 +4,7 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Drives the Settings popup: builds the panel, opens and closes it,
-/// and owns the persisted Music / Sound Effects / Fullscreen values.
+/// and owns the persisted Music / Sound Effects values.
 ///
 /// There is no dedicated Settings Page object in the scene, so the
 /// panel is created on demand. That keeps the scene free of
@@ -14,7 +14,6 @@ public class SettingsPageController : MonoBehaviour
 {
     private const string MusicKey = "Morphic.MusicVolume";
     private const string SfxKey = "Morphic.SfxVolume";
-    private const string FullscreenKey = "Morphic.Fullscreen";
 
     private const float DefaultVolume = 0.7f;
     private const float Step = 0.1f;
@@ -33,7 +32,6 @@ public class SettingsPageController : MonoBehaviour
     // Current values, mirrored by the buttons.
     public float MusicVolume { get; private set; }
     public float SfxVolume { get; private set; }
-    public bool IsFullscreen { get; private set; }
 
     /// <summary>
     /// Raised whenever any setting changes, so an audio mixer or
@@ -276,10 +274,6 @@ public class SettingsPageController : MonoBehaviour
     {
         MusicVolume = PlayerPrefs.GetFloat(MusicKey, DefaultVolume);
         SfxVolume = PlayerPrefs.GetFloat(SfxKey, DefaultVolume);
-
-        IsFullscreen = PlayerPrefs.GetInt(
-            FullscreenKey,
-            Screen.fullScreen ? 1 : 0) == 1;
     }
 
     // ------------------------------------------------------------
@@ -487,18 +481,6 @@ public class SettingsPageController : MonoBehaviour
         SetSfx(SfxVolume - Step);
     }
 
-    public void ToggleFullscreen()
-    {
-        IsFullscreen = !IsFullscreen;
-
-        Screen.fullScreen = IsFullscreen;
-
-        PlayerPrefs.SetInt(FullscreenKey, IsFullscreen ? 1 : 0);
-        PlayerPrefs.Save();
-
-        NotifyChanged();
-    }
-
     private void SetMusic(float value)
     {
         MusicVolume = Mathf.Clamp01(value);
@@ -521,6 +503,8 @@ public class SettingsPageController : MonoBehaviour
 
     private void NotifyChanged()
     {
+        MorphicBackgroundMusic.RefreshVolume();
+
         if (SettingsChanged != null)
         {
             SettingsChanged();
