@@ -14,6 +14,9 @@ public class MorphicCraftHelpState
     public int lidBottom;
     public int bamboo;
     public int tassel;
+    public int kerisHandle1;
+    public int kerisHandle2;
+    public int kerisUseHandle2;
     public int hasStamp;
     public int hasSelfie;
     public int locked;

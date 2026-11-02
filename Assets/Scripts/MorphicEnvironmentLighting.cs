@@ -50,6 +50,7 @@ public sealed class MorphicEnvironmentLighting : MonoBehaviour
     [Tooltip("Select these in Hierarchy. Intensity, Range, and Transform are edited on each Light itself.")]
     private Light[] worldLights;
     [SerializeField] private bool worldLightReady;
+    private bool shopMaterialsRestored;
     [SerializeField] private Light restaurantKey;
     [SerializeField] private Light restaurantFill;
     [SerializeField] private Light potteryShop;
@@ -348,6 +349,11 @@ public sealed class MorphicEnvironmentLighting : MonoBehaviour
         ApplyLight(workbench, workbenchBase * settings.workbench * global, WarmKey, settings.warmth);
         ApplyLight(street, streetBase * settings.street * global, CoolFill,
             Mathf.Lerp(1.15f, 0.35f, Mathf.Clamp01(settings.warmth)));
+        if (potteryShop != null)
+            potteryShop.enabled = true;
+        if (street != null)
+            street.enabled = true;
+        RestoreShopMaterials();
         float cloudIntensity = cloudBase * settings.clouds * global;
         ApplyLight(cloud, cloudIntensity, CoolFill, 0.35f);
         ApplyLight(cloud2, cloudIntensity, CoolFill, 0.35f);
@@ -366,6 +372,51 @@ public sealed class MorphicEnvironmentLighting : MonoBehaviour
         SetShadows(potteryShop, LightShadows.None);
         SetShadows(workbench, LightShadows.None);
         SetShadows(street, LightShadows.None);
+    }
+
+    private void RestoreShopMaterials()
+    {
+        if (shopMaterialsRestored)
+            return;
+        shopMaterialsRestored = true;
+
+        GameObject leftover = GameObject.Find("Morphic Shop Surfaces");
+        if (leftover != null)
+            DestroyImmediate(leftover);
+
+#if UNITY_EDITOR
+        Renderer[] renderers = FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null || renderer.gameObject.scene != gameObject.scene)
+                continue;
+
+            Material[] shared = renderer.sharedMaterials;
+            bool revert = false;
+            for (int m = 0; m < shared.Length; m++)
+            {
+                if (shared[m] == null)
+                {
+                    revert = true;
+                    break;
+                }
+                string matName = shared[m].name;
+                if (matName.StartsWith("Shop") ||
+                    matName.IndexOf("(Instance)", System.StringComparison.Ordinal) >= 0)
+                {
+                    revert = true;
+                    break;
+                }
+            }
+
+            if (!revert)
+                continue;
+
+            if (PrefabUtility.IsPartOfPrefabInstance(renderer))
+                PrefabUtility.RevertObjectOverride(renderer, InteractionMode.AutomatedAction);
+        }
+#endif
     }
 
     private void MarkLightingDirty()

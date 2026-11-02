@@ -34,7 +34,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties: 
+  m_LockedProperties: _ParallaxMap
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -131,8 +131,8 @@ Material:
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1
     m_Colors:
-    - _BaseColor: {r: 0.9019, g: 0.4966, b: 0.2978, a: 1}
-    - _Color: {r: 0.9019, g: 0.4965999, b: 0.29779994, a: 1}
+    - _BaseColor: {r: 0.86415094, g: 0.50755364, b: 0.33098605, a: 1}
+    - _Color: {r: 0.86415094, g: 0.50755364, b: 0.33098602, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 0}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []

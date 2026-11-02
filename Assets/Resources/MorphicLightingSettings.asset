@@ -24,8 +24,8 @@ MonoBehaviour:
   useSavedPositions: 1
   restaurantKeyPosition: {x: -33.129463, y: 4.136741, z: -5.92}
   restaurantFillPosition: {x: -31.134008, y: 4.886741, z: -6.5720882}
-  potteryShopPosition: {x: -21.340317, y: 3.572, z: -7.8086796}
-  workbenchPosition: {x: -25.286, y: 3.271, z: -4.792}
+  potteryShopPosition: {x: -21.340317, y: 7.77, z: -8.42}
+  workbenchPosition: {x: -25.266, y: 3.472, z: -5.613}
   streetPosition: {x: -17.37, y: 19.32, z: 5.45}
   cloudPosition: {x: -35.24, y: 21.06, z: 6.92}
   cloudPosition2: {x: -20.99, y: 20.23, z: 4.78}

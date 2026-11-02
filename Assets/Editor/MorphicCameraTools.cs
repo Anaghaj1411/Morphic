@@ -7,7 +7,6 @@ public static class MorphicCameraTools
     [MenuItem("Tools/MORPHIC/Capture Current Camera as Pottery View")]
     public static void CapturePotteryCamera()
     {
-        // Find Main Camera
         Camera mainCamera = Camera.main;
 
         if (mainCamera == null)
@@ -18,7 +17,6 @@ public static class MorphicCameraTools
             return;
         }
 
-        // Find pottery target
         GameObject targetObject =
             GameObject.Find("PotteryStudioCameraTarget");
 
@@ -39,11 +37,9 @@ public static class MorphicCameraTools
             targetTransform,
             "Capture Pottery Camera View");
 
-        // Copy EXACT position
         targetTransform.position =
             cameraTransform.position;
 
-        // Copy EXACT rotation
         targetTransform.rotation =
             cameraTransform.rotation;
 

@@ -366,7 +366,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     imageSource.textureWidth,
                     imageSource.textureHeight,
                     TextureFormat.RGBA32,
-                    10
+                    4
                 );
 
             if (annotationController == null)
@@ -405,12 +405,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
                 ".");
 
             if (annotationController != null)
-            {
-                SetupAnnotationController(
-                    annotationController,
-                    imageSource
-                );
-            }
+                annotationController.enabled = false;
 
             EnsureSkeletonOverlay();
 

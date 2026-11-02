@@ -16,6 +16,7 @@ public class VertexSculptController : MonoBehaviour
 
     [Header("References")]
     [SerializeField] private SkinnedMeshRenderer targetMesh;
+    [SerializeField] private MeshFilter targetFilter;
     [SerializeField] private Camera sculptingCamera;
     [SerializeField] private Collider targetCollider;
     [SerializeField] private SculptHandLandmarkerRunner handRunner;
@@ -85,6 +86,11 @@ public class VertexSculptController : MonoBehaviour
 
     public bool HasUndo => undoHistory.Count > 0 ||
         (strokeChanged && strokeStartPositions != null && strokeStartPositions.Count > 0);
+    public bool IsPinching => isSculptPinching;
+
+    private Transform MeshXform =>
+        targetMesh != null ? targetMesh.transform :
+        targetFilter != null ? targetFilter.transform : transform;
 
     private void Awake()
     {
@@ -211,20 +217,21 @@ public class VertexSculptController : MonoBehaviour
     private void InitializeMesh()
     {
         if (targetMesh == null)
-        {
             targetMesh = GetComponent<SkinnedMeshRenderer>();
-        }
+        if (targetMesh == null)
+            targetMesh = GetComponentInChildren<SkinnedMeshRenderer>(true);
+        if (targetFilter == null && targetMesh == null)
+            targetFilter = GetComponent<MeshFilter>();
+        if (targetFilter == null && targetMesh == null)
+            targetFilter = GetComponentInChildren<MeshFilter>(true);
 
         if (targetCollider == null && targetMesh != null)
             targetCollider = targetMesh.GetComponent<Collider>();
+        if (targetCollider == null && targetFilter != null)
+            targetCollider = targetFilter.GetComponent<Collider>();
 
-        if (targetMesh == null)
-        {
-            Debug.LogError("VertexSculptController: No SkinnedMeshRenderer found.", this);
-            return;
-        }
-
-        sourceMesh = targetMesh.sharedMesh;
+        sourceMesh = targetMesh != null ? targetMesh.sharedMesh :
+            targetFilter != null ? targetFilter.sharedMesh : null;
         if (sourceMesh == null)
         {
             Debug.LogError("VertexSculptController: Mesh is null.", this);
@@ -234,7 +241,7 @@ public class VertexSculptController : MonoBehaviour
         // Work on a private instance so sculpting never changes the imported/shared asset.
         mesh = Instantiate(sourceMesh);
         mesh.name = $"{sourceMesh.name} (Sculpt Instance)";
-        targetMesh.sharedMesh = mesh;
+        AssignRuntimeMesh(mesh);
 
         // MeshCollider was added in the scene with no mesh assigned. Give it
         // the same private mesh used by the renderer so fingertip rays can hit it.
@@ -242,13 +249,19 @@ public class VertexSculptController : MonoBehaviour
         if (targetMeshCollider != null)
         {
             sourceColliderMesh = targetMeshCollider.sharedMesh;
-            targetMeshCollider.sharedMesh = mesh;
-            bakedColliderMesh = new Mesh { name = $"{mesh.name} (Collider Pose)" };
-            lastColliderBlendShapeWeights = new float[mesh.blendShapeCount];
-            targetMesh.BakeMesh(bakedColliderMesh);
-            targetMeshCollider.sharedMesh = bakedColliderMesh;
-            for (int i = 0; i < lastColliderBlendShapeWeights.Length; i++)
-                lastColliderBlendShapeWeights[i] = targetMesh.GetBlendShapeWeight(i);
+            if (targetMesh != null)
+            {
+                bakedColliderMesh = new Mesh { name = $"{mesh.name} (Collider Pose)" };
+                lastColliderBlendShapeWeights = new float[mesh.blendShapeCount];
+                targetMesh.BakeMesh(bakedColliderMesh);
+                targetMeshCollider.sharedMesh = bakedColliderMesh;
+                for (int i = 0; i < lastColliderBlendShapeWeights.Length; i++)
+                    lastColliderBlendShapeWeights[i] = targetMesh.GetBlendShapeWeight(i);
+            }
+            else
+            {
+                targetMeshCollider.sharedMesh = mesh;
+            }
         }
 
         originalVertices = mesh.vertices;
@@ -284,7 +297,20 @@ public class VertexSculptController : MonoBehaviour
 
     private void SyncColliderToBlendShapes()
     {
-        if (targetMeshCollider == null || targetMesh == null || bakedColliderMesh == null)
+        if (targetMeshCollider == null)
+            return;
+
+        if (targetMesh == null)
+        {
+            if (!colliderNeedsRefresh || mesh == null)
+                return;
+            targetMeshCollider.sharedMesh = null;
+            targetMeshCollider.sharedMesh = mesh;
+            colliderNeedsRefresh = false;
+            return;
+        }
+
+        if (bakedColliderMesh == null)
             return;
 
         int blendShapeCount = targetMesh.sharedMesh.blendShapeCount;
@@ -474,6 +500,20 @@ public class VertexSculptController : MonoBehaviour
             handRunner = runner;
     }
 
+    public void BindSculptingCamera(Camera camera)
+    {
+        if (camera != null)
+            sculptingCamera = camera;
+    }
+
+    private void AssignRuntimeMesh(Mesh runtime)
+    {
+        if (targetMesh != null)
+            targetMesh.sharedMesh = runtime;
+        if (targetFilter != null)
+            targetFilter.sharedMesh = runtime;
+    }
+
     private void BeginSculptStroke()
     {
         if (currentVertices == null)
@@ -555,7 +595,7 @@ public class VertexSculptController : MonoBehaviour
         // Check distance in world space
         for (int i = 0; i < currentVertices.Length; i++)
         {
-            Vector3 vertexWorldPos = targetMesh.transform.TransformPoint(currentVertices[i]);
+            Vector3 vertexWorldPos = MeshXform.TransformPoint(currentVertices[i]);
             float distance = Vector3.Distance(vertexWorldPos, worldPosition);
 
             if (distance < closestDistance)
@@ -684,8 +724,8 @@ public class VertexSculptController : MonoBehaviour
             brushRadius, smallestExtent * 0.02f, smallestExtent * 0.16f);
         float maximumDisplacement = smallestExtent * Mathf.Lerp(0.16f, 0.7f, sculptStrength);
 
-        Vector3 localPosition = targetMesh.transform.InverseTransformPoint(worldPosition);
-        Vector3 pressDirection = targetMesh.transform.InverseTransformDirection(worldNormal);
+        Vector3 localPosition = MeshXform.InverseTransformPoint(worldPosition);
+        Vector3 pressDirection = MeshXform.InverseTransformDirection(worldNormal);
         if (pressDirection.sqrMagnitude < 0.0001f)
             pressDirection = Vector3.up;
         else
@@ -758,13 +798,13 @@ public class VertexSculptController : MonoBehaviour
 
     private void ApplyMeshChanges()
     {
-        if (mesh == null || targetMesh == null)
+        if (mesh == null)
             return;
 
         mesh.vertices = currentVertices;
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
-        targetMesh.sharedMesh = mesh;
+        AssignRuntimeMesh(mesh);
         if (targetMeshCollider != null)
         {
             colliderNeedsRefresh = true;
@@ -777,6 +817,8 @@ public class VertexSculptController : MonoBehaviour
         {
             if (targetMesh != null && targetMesh.sharedMesh == mesh)
                 targetMesh.sharedMesh = sourceMesh;
+            if (targetFilter != null && targetFilter.sharedMesh == mesh)
+                targetFilter.sharedMesh = sourceMesh;
 
             if (targetMeshCollider != null &&
                 (targetMeshCollider.sharedMesh == mesh || targetMeshCollider.sharedMesh == bakedColliderMesh))

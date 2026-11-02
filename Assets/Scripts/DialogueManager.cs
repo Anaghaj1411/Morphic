@@ -83,6 +83,7 @@ public class DialogueManager : MonoBehaviour
     private bool dialogueStarted;
     private SculptingEnhancementLanternColorController lanternColorController;
     private SculptingEnhancementTeapotColorController teapotColorController;
+    private SculptingEnhancementKerisColorController kerisColorController;
     private MorphicAIHelpUI aiHelpUi;
     private GameObject sculptBackRoot;
     private GameObject craftExitRoot;
@@ -128,11 +129,7 @@ public class DialogueManager : MonoBehaviour
 
         // The keris is placed in the scene like the lantern and teapot, but stays hidden
         // until the user chooses Indonesia and presses Start Sculpting.
-        if (indonesiaKeris == null)
-        {
-            indonesiaKeris = FindSceneObject("Keris");
-        }
-
+        EnsureIndonesiaKeris();
         if (indonesiaKeris != null)
             indonesiaKeris.SetActive(false);
 
@@ -1142,6 +1139,7 @@ public class DialogueManager : MonoBehaviour
                     indiaTeapot.SetActive(false);
                 if (indonesiaKeris != null)
                     indonesiaKeris.SetActive(false);
+                HideKerisPalette();
 
                 if (taiwanLantern != null)
                 {
@@ -1281,6 +1279,7 @@ public class DialogueManager : MonoBehaviour
                     taiwanLantern.SetActive(false);
                 if (indonesiaKeris != null)
                     indonesiaKeris.SetActive(false);
+                HideKerisPalette();
 
                 // India and Taiwan share the configured hand-tracking source,
                 // but only the selected craft's gesture controller should be
@@ -1384,24 +1383,36 @@ public class DialogueManager : MonoBehaviour
                 if (indiaTeapot != null)
                     indiaTeapot.SetActive(false);
 
+                GameObject teapotGestureStatus = FindSceneObject("Teapot Gesture Status");
+                if (teapotGestureStatus != null)
+                    teapotGestureStatus.SetActive(false);
+
                 // Deactivate Taiwan gesture controllers
                 if (taiwanGestureController != null)
                     taiwanGestureController.SetActive(false);
                 if (taiwanGestureIndicator != null)
                     taiwanGestureIndicator.SetActive(false);
 
-                // Activate Indonesia Keris
+                if (lanternColorController != null)
+                    lanternColorController.SetPaletteAvailable(false);
+                if (teapotColorController != null)
+                    teapotColorController.SetPaletteAvailable(false);
+
+                EnsureIndonesiaKeris();
                 if (indonesiaKeris != null)
                 {
                     indonesiaKeris.SetActive(true);
                     Debug.Log("MORPHIC: Indonesia Keris activated.");
+                    ActivateSharedStudioTracking();
+                    BindKerisFistRotation();
+                    BindKerisCustomize();
                 }
                 else
                 {
                     Debug.LogWarning(
-                        "MORPHIC: Indonesia Keris reference is missing. " +
-                        "Add the Keris scene object and assign it to " +
-                        "DialogueManager > Indonesia Keris."
+                        "MORPHIC: Indonesia Keris is missing. " +
+                        "Add Keris_Updated to the scene or keep it at " +
+                        "Assets/Art/Environments/MainMenu/Keris_Updated.fbx."
                     );
                 }
                 break;
@@ -1416,6 +1427,7 @@ public class DialogueManager : MonoBehaviour
                     indiaTeapot.SetActive(false);
                 if (indonesiaKeris != null)
                     indonesiaKeris.SetActive(false);
+                HideKerisPalette();
 
                 // Deactivate Taiwan gesture controllers
                 if (taiwanGestureController != null)
@@ -1492,6 +1504,75 @@ public class DialogueManager : MonoBehaviour
         SetCraftExitVisible(false);
     }
 
+    private void EnsureIndonesiaKeris()
+    {
+        if (indonesiaKeris == null)
+            indonesiaKeris = FindSceneObject("Keris_Updated");
+        if (indonesiaKeris == null)
+            indonesiaKeris = FindSceneObject("Keris");
+        if (indonesiaKeris == null)
+            indonesiaKeris = FindSceneObjectContaining("Keris");
+        if (indonesiaKeris != null)
+            return;
+
+        GameObject prefab = LoadKerisPrefab();
+        if (prefab == null)
+            return;
+
+        indonesiaKeris = Instantiate(prefab);
+        indonesiaKeris.name = "Keris_Updated";
+        PlaceKerisAtStudio(indonesiaKeris);
+        indonesiaKeris.SetActive(false);
+        Debug.Log("MORPHIC: Spawned Keris_Updated in the pottery studio.");
+    }
+
+    private void PlaceKerisAtStudio(GameObject keris)
+    {
+        if (keris == null)
+            return;
+
+        Transform kerisTransform = keris.transform;
+        if (indiaTeapot != null)
+        {
+            kerisTransform.SetPositionAndRotation(
+                indiaTeapot.transform.position,
+                indiaTeapot.transform.rotation);
+            kerisTransform.localScale = indiaTeapot.transform.localScale;
+            return;
+        }
+
+        kerisTransform.position = new Vector3(-25.13f, 2.248f, -6.369f);
+        kerisTransform.rotation = Quaternion.Euler(181.643f, 359.536f, 7.011f);
+        kerisTransform.localScale = new Vector3(0.05f, 0.06f, 0.05f);
+    }
+
+    private static GameObject LoadKerisPrefab()
+    {
+        GameObject fromResources = Resources.Load<GameObject>("Keris_Updated");
+        if (fromResources != null)
+            return fromResources;
+
+#if UNITY_EDITOR
+        return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Art/Environments/MainMenu/Keris_Updated.fbx");
+#else
+        return null;
+#endif
+    }
+
+    private static GameObject FindSceneObjectContaining(string namePart)
+    {
+        foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+        {
+            if (!candidate.scene.IsValid() || candidate.transform.parent != null)
+                continue;
+            if (candidate.name.IndexOf(namePart, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return candidate;
+        }
+
+        return null;
+    }
+
     private static GameObject FindSceneObject(string objectName)
     {
         // Find inactive scene instances too; exclude prefab assets returned by
@@ -1550,8 +1631,105 @@ public class DialogueManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Activates the shared MediaPipe hierarchy used by both crafts. The
-    /// Solution GameObject cannot start while its TaiwanHandTracking parent
+    /// Webcam and MediaPipe used by India and Indonesia. Does not bind teapot
+    /// or lantern gesture controllers.
+    /// </summary>
+    private void ActivateSharedStudioTracking()
+    {
+        SculptHandLandmarkerRunner handRunner = ResolveConfiguredHandRunner();
+        ActivateSharedHandTrackingRoot();
+
+        if (handRunner != null)
+        {
+            Debug.Log(
+                "MORPHIC: Indonesia Keris using shared hand-tracking runner on '" +
+                handRunner.gameObject.name +
+                "'; waiting for Bootstrap initialization.");
+            handRunner.EnsureStartedForTeapot();
+        }
+        else
+        {
+            Debug.LogError("MORPHIC: Indonesia Keris could not find the configured hand-tracking runner.");
+        }
+
+        if (webcamDisplayController != null)
+        {
+            webcamDisplayController.SetActive(true);
+            WebcamDisplayController displayController =
+                webcamDisplayController.GetComponent<WebcamDisplayController>();
+            if (displayController != null)
+            {
+                if (handRunner != null && handRunner.webcamScreen != null)
+                    displayController.UseScreen(handRunner.webcamScreen);
+                else
+                    Debug.LogError("MORPHIC: Hand runner or its Annotatable Screen is missing.");
+
+                displayController.Activate();
+            }
+            Debug.Log("MORPHIC: Webcam display activated.");
+        }
+        else
+        {
+            Debug.LogWarning("MORPHIC: Webcam display controller reference is missing.");
+        }
+
+        if (handAnnotationController != null)
+        {
+            handAnnotationController.SetActive(true);
+            Debug.Log("MORPHIC: Hand landmark annotation activated with the runner's Annotatable Screen.");
+        }
+
+        if (handRunner != null)
+            StartCoroutine(CheckHandDetection(handRunner));
+    }
+
+    private void BindKerisFistRotation()
+    {
+        if (indonesiaKeris == null)
+            return;
+
+        KerisFistRotationController rotator =
+            indonesiaKeris.GetComponentInChildren<KerisFistRotationController>(true);
+        if (rotator == null)
+            rotator = indonesiaKeris.AddComponent<KerisFistRotationController>();
+
+        Renderer kerisRenderer = indonesiaKeris.GetComponentInChildren<SkinnedMeshRenderer>(true);
+        if (kerisRenderer == null)
+            kerisRenderer = indonesiaKeris.GetComponentInChildren<MeshRenderer>(true);
+
+        rotator.BindFrom(ResolveConfiguredHandRunner(), kerisRenderer);
+        rotator.suppressDriving = false;
+        rotator.enabled = true;
+    }
+
+    private void BindKerisCustomize()
+    {
+        if (indonesiaKeris == null)
+            return;
+
+        VertexSculptController pinchSculpt =
+            indonesiaKeris.GetComponentInChildren<VertexSculptController>(true);
+        if (pinchSculpt != null)
+            pinchSculpt.SetEnabled(false);
+
+        kerisColorController =
+            indonesiaKeris.GetComponentInChildren<SculptingEnhancementKerisColorController>(true);
+        if (kerisColorController == null)
+            kerisColorController = indonesiaKeris.AddComponent<SculptingEnhancementKerisColorController>();
+
+        kerisColorController.BindFrom(ResolveConfiguredHandRunner(), indonesiaKeris);
+        kerisColorController.SetPaletteAvailable(true);
+    }
+
+    private void HideKerisPalette()
+    {
+        if (kerisColorController != null)
+            kerisColorController.SetPaletteAvailable(false);
+    }
+
+    /// <summary>
+    /// Activates the shared MediaPipe hierarchy used by lantern, teapot, and keris.
+    /// The Solution GameObject cannot start while its TaiwanHandTracking parent
     /// stays inactive.
     /// </summary>
     private void ActivateSharedHandTrackingRoot()
@@ -1745,6 +1923,7 @@ public class DialogueManager : MonoBehaviour
 
         if (teapotColorController != null)
             teapotColorController.SetPaletteAvailable(false);
+        HideKerisPalette();
 
         SetLanternSculptDriving(false);
         if (taiwanGestureIndicator != null)
@@ -1758,6 +1937,8 @@ public class DialogueManager : MonoBehaviour
 
         if (indiaTeapot != null)
             indiaTeapot.SetActive(false);
+        if (indonesiaKeris != null)
+            indonesiaKeris.SetActive(false);
 
         GameObject teapotStatus = FindSceneObject("Teapot Gesture Status");
         if (teapotStatus != null)
