@@ -23,8 +23,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     [SerializeField] private SkinnedMeshRenderer teapotRenderer;
 
     [Header("Brush Settings")]
-    [SerializeField, Range(0.04f, 0.20f)] private float strokeWidth = 0.085f;
-    [SerializeField, Range(0.003f, 0.03f)] private float minPointSpacing = 0.011f;
+    [SerializeField, Range(0.001f, 0.20f)] private float strokeWidth = 0.085f;
+    [SerializeField, Range(0.0005f, 0.03f)] private float minPointSpacing = 0.011f;
     [SerializeField] private Color strokeColor = Color.white;
 
     [Header("Stroke Stabilization")]
@@ -128,7 +128,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public void SetStrokeWidth(float width, bool updateExisting = true)
     {
-        strokeWidth = Mathf.Clamp(width, 0.005f, 0.22f);
+        strokeWidth = Mathf.Clamp(width, 0.0001f, 0.5f);
         UpdateCursorRingGeometry();
 
         if (updateExisting && cachedBakedVertices != null)
@@ -143,6 +143,21 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
                 }
             }
         }
+    }
+
+    public void SetMinPointSpacing(float spacing)
+    {
+        minPointSpacing = Mathf.Max(0.0001f, spacing);
+    }
+
+    public void SetStabilization(float value)
+    {
+        stabilization = Mathf.Clamp01(value);
+    }
+
+    public void SetPullPixels(float pixels)
+    {
+        pullPixels = Mathf.Max(0f, pixels);
     }
 
     public void SetClayCoilMode(bool enabled)
@@ -168,7 +183,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public void SetClayLift(float lift)
     {
-        clayLift = Mathf.Clamp(lift, 0.85f, 1.8f);
+        clayLift = Mathf.Clamp(lift, 0.5f, 5.0f);
     }
 
     public void SetClayColor(Color color, bool updateExisting = true)

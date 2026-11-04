@@ -54,6 +54,9 @@ public sealed partial class SculptingEnhancementKerisColorController
     private Texture2D[] kerisStamps;
     private readonly Button[] shelfSlotButtons = new Button[KerisCollectionStore.MaxCount];
     private Color[] savedPartColors = { new Color(0.80f, 0.58f, 0.22f, 1f), Color.white, Color.white };
+    private const int UnresolvedCarvingSlot = -2;
+    private int cachedCarvingSlot = UnresolvedCarvingSlot;
+    private Mesh cachedCarvingMesh;
 
     private const int SelfieTileRows = 5;
     private const float SelfieTileSpanFraction = 0.72f;
@@ -71,11 +74,11 @@ public sealed partial class SculptingEnhancementKerisColorController
         Button cancel = CreateButton("CancelReset", rect, new Vector2(-125f, -90f),
             new Vector2(220f, 56f), "CANCEL", PillPink);
         cancel.onClick.AddListener(HideConfirmReset);
-        RegisterHitTarget(cancel, false, Color.white);
+        RegisterHitTarget(cancel, false, false, Color.white);
         Button confirm = CreateButton("ConfirmReset", rect, new Vector2(125f, -90f),
             new Vector2(220f, 56f), "RESET", DonePink);
         confirm.onClick.AddListener(() => { ResetKerisColor(); HideConfirmReset(); ShowMainMenu(); });
-        RegisterHitTarget(confirm, false, Color.white);
+        RegisterHitTarget(confirm, false, false, Color.white);
         confirmResetGroup.SetActive(false);
     }
 
@@ -129,7 +132,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             ? Color.Lerp(hue, Color.white, (y - 0.5f) * 2f)
             : Color.Lerp(Color.black, hue, y * 2f);
         lastColorSampleScreen = screenPosition;
-        if (clayTintActive) committedClayColor = freePalettePreviewColor;
+        if (clayTintActive) PreviewClayColor(freePalettePreviewColor);
         else if (designTintActive) committedDesignTint = freePalettePreviewColor;
         else if (bandTintActive) committedBandColor = freePalettePreviewColor;
         else ApplyKerisColor(freePalettePreviewColor);
@@ -162,19 +165,19 @@ public sealed partial class SculptingEnhancementKerisColorController
         Button save = CreateButton("SaveKeris", rect, new Vector2(0f, -95f),
             new Vector2(PillWidth, 56f), "SAVE TO SHELF", ActionPink);
         save.onClick.AddListener(SaveKerisToShelf);
-        RegisterHitTarget(save, false, Color.white);
+        RegisterHitTarget(save, false, false, Color.white);
         Button done = CreateButton("ReviewDone", rect, new Vector2(0f, -162f),
             new Vector2(PillWidth, 56f), "DONE", DonePink);
         done.onClick.AddListener(ShowMainMenu);
-        RegisterHitTarget(done, false, Color.white);
+        RegisterHitTarget(done, false, false, Color.white);
         Button decorate = CreateButton("ReviewDecorate", rect, new Vector2(0f, -228f),
             new Vector2(PillWidth, 54f), "STAMP & DRAW", PillPink);
         decorate.onClick.AddListener(ShowDesignSelection);
-        RegisterHitTarget(decorate, false, Color.white);
+        RegisterHitTarget(decorate, false, false, Color.white);
         Button openShelf = CreateButton("ReviewShelf", rect, new Vector2(0f, -292f),
             new Vector2(PillWidth, 54f), "OPEN SHELF", ActionPink);
         openShelf.onClick.AddListener(ShowShelf);
-        RegisterHitTarget(openShelf, false, Color.white);
+        RegisterHitTarget(openShelf, false, false, Color.white);
         reviewGroup.SetActive(false);
 
         shelfGroup = new GameObject("KerisShelf", typeof(RectTransform));
@@ -190,12 +193,12 @@ public sealed partial class SculptingEnhancementKerisColorController
                 new Vector2(-165f + (i % 3) * 165f, -55f - (i / 3) * 58f),
                 new Vector2(154f, 48f), "EMPTY", PillPink);
             shelfSlotButtons[i].onClick.AddListener(() => LoadKerisFromShelf(slot));
-            RegisterHitTarget(shelfSlotButtons[i], false, Color.white);
+            RegisterHitTarget(shelfSlotButtons[i], false, true, Color.white);
         }
         Button shelfDone = CreateButton("ShelfDone", shelfRect, new Vector2(0f, -242f),
             new Vector2(PillWidth, 56f), "DONE", DonePink);
         shelfDone.onClick.AddListener(LeaveShelfDone);
-        RegisterHitTarget(shelfDone, false, Color.white);
+        RegisterHitTarget(shelfDone, false, false, Color.white);
         shelfGroup.SetActive(false);
         confirmDeleteGroup = null;
     }
@@ -243,27 +246,27 @@ public sealed partial class SculptingEnhancementKerisColorController
         takeSelfieButton = CreateButton("TakeSelfie", selfieRect, new Vector2(0f, -234f),
             new Vector2(PillWidth, PillHeight), "TAKE SELFIE", PillPink);
         takeSelfieButton.onClick.AddListener(CaptureSelfie);
-        RegisterHitTarget(takeSelfieButton, false, Color.white);
+        RegisterHitTarget(takeSelfieButton, false, false, Color.white);
 
         selfieBackButton = CreateButton("Back", selfieRect, new Vector2(0f, -306f),
             new Vector2(PillWidth, PillHeight), "BACK", PillPink);
         selfieBackButton.onClick.AddListener(ShowMainMenu);
-        RegisterHitTarget(selfieBackButton, false, Color.white);
+        RegisterHitTarget(selfieBackButton, false, false, Color.white);
 
         attachSelfieButton = CreateButton("AttachToKeris", selfieRect, new Vector2(0f, -234f),
             new Vector2(PillWidth, PillHeight), "ATTACH TO KERIS", ActionPink);
         attachSelfieButton.onClick.AddListener(KeepSelfie);
-        RegisterHitTarget(attachSelfieButton, false, Color.white);
+        RegisterHitTarget(attachSelfieButton, false, false, Color.white);
 
         retakeSelfieButton = CreateButton("Retake", selfieRect, new Vector2(-92f, -306f),
             new Vector2(172f, PillHeight), "RETAKE", PillPink);
         retakeSelfieButton.onClick.AddListener(BeginSelfieRetake);
-        RegisterHitTarget(retakeSelfieButton, false, Color.white);
+        RegisterHitTarget(retakeSelfieButton, false, false, Color.white);
 
         selfieDoneButton = CreateButton("Done", selfieRect, new Vector2(92f, -306f),
             new Vector2(172f, PillHeight), "DONE", DonePink);
         selfieDoneButton.onClick.AddListener(ShowMainMenu);
-        RegisterHitTarget(selfieDoneButton, false, Color.white);
+        RegisterHitTarget(selfieDoneButton, false, false, Color.white);
 
         selfiePanel.SetActive(false);
         SetSelfieReviewControls(false);
@@ -389,16 +392,16 @@ public sealed partial class SculptingEnhancementKerisColorController
                     new Vector2(-125f + (i % 3) * 125f, -(i / 3) * 82f),
                     new Vector2(110f, 64f), "STAMP " + (i + 1), PillPink);
                 button.onClick.AddListener(() => SelectStamp(stamp));
-                RegisterHitTarget(button, false, Color.white);
+                RegisterHitTarget(button, false, false, Color.white);
             }
             Button draw = CreateButton("DrawDesign", designGroup.transform, new Vector2(0f, -210f),
                 new Vector2(PillWidth, 58f), "FREE DRAW", ActionPink);
             draw.onClick.AddListener(ResumeBandDrawing);
-            RegisterHitTarget(draw, false, Color.white);
+            RegisterHitTarget(draw, false, false, Color.white);
             Button tint = CreateButton("StampColor", designGroup.transform, new Vector2(0f, -278f),
                 new Vector2(PillWidth, 54f), "STAMP COLOR", PillPink);
             tint.onClick.AddListener(() => { designTintActive = true; ShowColorSelection(); });
-            RegisterHitTarget(tint, false, Color.white);
+            RegisterHitTarget(tint, false, false, Color.white);
         }
         designGroup.SetActive(true);
     }
@@ -1152,8 +1155,18 @@ public sealed partial class SculptingEnhancementKerisColorController
         }
 
         savedPartColors[part] = color;
-        Renderer target = part == PartBody ? kerisRenderer :
-            FindOverlayRenderer(part == PartCarving ? "KerisFlowers" : "KerisHandle");
+        if (part == PartCarving)
+        {
+            // Carving 1 is the coded flower overlay; Carving 2 deforms the keris
+            // mesh itself, so tint the material slot the carving shape moves.
+            if (selectedVariant == 1)
+                SetRendererSlotColor(kerisRenderer, ResolveCarvingSlot(), color);
+            else
+                SetRendererColor(FindOverlayRenderer("KerisFlowers"), color);
+            return;
+        }
+
+        Renderer target = part == PartBody ? kerisRenderer : FindOverlayRenderer("KerisHandle");
         SetRendererColor(target, color);
     }
 
@@ -1175,5 +1188,109 @@ public sealed partial class SculptingEnhancementKerisColorController
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             if (material.HasProperty("_Color")) material.SetColor("_Color", color);
         }
+    }
+
+    private static void SetRendererSlotColor(Renderer target, int slot, Color color)
+    {
+        if (target == null) return;
+        Material[] materials = target.materials;
+        if (materials == null || slot < 0 || slot >= materials.Length) return;
+        Material material = materials[slot];
+        if (material == null) return;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color")) material.SetColor("_Color", color);
+    }
+
+    // The carving geometry is its own submesh on the keris mesh (the Carving 2
+    // blend shape pushes it out). Find that submesh so its material slot can be
+    // tinted, instead of guessing a fixed slot index. Cached because this runs
+    // on every color preview/hover update.
+    private int ResolveCarvingSlot()
+    {
+        Mesh mesh = GetSharedMesh(kerisRenderer);
+        if (mesh == null)
+            return FlowerMaterialSlot;
+        if (cachedCarvingSlot != UnresolvedCarvingSlot && ReferenceEquals(mesh, cachedCarvingMesh))
+            return cachedCarvingSlot;
+
+        int slot = ResolveShapeSlot(mesh, "Carving 2");
+        if (slot < 0)
+            slot = ResolveShapeSlot(mesh, "Carving 2.001");
+        cachedCarvingSlot = slot >= 0 ? slot : FlowerMaterialSlot;
+        cachedCarvingMesh = mesh;
+        int slots = kerisRenderer.sharedMaterials != null ? kerisRenderer.sharedMaterials.Length : 0;
+        Debug.Log(
+            "MORPHIC: Keris carving color slot resolved=" + cachedCarvingSlot +
+            " (mesh submeshes=" + mesh.subMeshCount + ", material slots=" + slots + ")",
+            kerisRenderer);
+        return cachedCarvingSlot;
+    }
+
+    private static int ResolveShapeSlot(Mesh mesh, string shapeName)
+    {
+        if (mesh == null || mesh.subMeshCount <= 1 || !mesh.isReadable)
+            return -1;
+
+        int shape = -1;
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            if (string.Equals(mesh.GetBlendShapeName(i), shapeName, StringComparison.OrdinalIgnoreCase))
+            {
+                shape = i;
+                break;
+            }
+        }
+        if (shape < 0 || mesh.GetBlendShapeFrameCount(shape) <= 0)
+            return -1;
+
+        int vertexCount = mesh.vertexCount;
+        if (vertexCount == 0)
+            return -1;
+
+        Vector3[] delta = new Vector3[vertexCount];
+        Vector3[] normals = new Vector3[vertexCount];
+        Vector3[] tangents = new Vector3[vertexCount];
+        mesh.GetBlendShapeFrameVertices(shape, 0, delta, normals, tangents);
+
+        float maxSqr = 0f;
+        for (int i = 0; i < vertexCount; i++)
+            if (delta[i].sqrMagnitude > maxSqr) maxSqr = delta[i].sqrMagnitude;
+        if (maxSqr <= 0f)
+            return -1;
+
+        // Only strongly displaced vertices count, so incidental drift on the
+        // body/blade does not win over the actual carving relief.
+        float threshold = maxSqr * 0.25f;
+        var moved = new HashSet<int>();
+        int bestSlot = -1;
+        int bestScore = 0;
+        for (int sm = 0; sm < mesh.subMeshCount; sm++)
+        {
+            int[] tris = mesh.GetTriangles(sm);
+            moved.Clear();
+            for (int k = 0; k < tris.Length; k++)
+            {
+                int vi = tris[k];
+                if (vi < 0 || vi >= vertexCount || moved.Contains(vi))
+                    continue;
+                if (delta[vi].sqrMagnitude < threshold)
+                    continue;
+                moved.Add(vi);
+            }
+            if (moved.Count > bestScore)
+            {
+                bestScore = moved.Count;
+                bestSlot = sm;
+            }
+        }
+        return bestSlot;
+    }
+
+    private static Mesh GetSharedMesh(Renderer target)
+    {
+        SkinnedMeshRenderer skin = target as SkinnedMeshRenderer;
+        if (skin != null) return skin.sharedMesh;
+        MeshFilter filter = target.GetComponent<MeshFilter>();
+        return filter != null ? filter.sharedMesh : null;
     }
 }

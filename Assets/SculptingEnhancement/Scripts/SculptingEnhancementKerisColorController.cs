@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using Mediapipe.Unity.Sample;
 using Mediapipe.Unity.Sample.HandLandmarkDetection;
@@ -34,6 +35,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         public RectTransform Rect;
         public Outline Outline;
         public bool IsColor;
+        public bool IsPersistentChoice;
         public bool IsFreeColorPalette;
         public Color PreviewColor;
         public Color BaseColor;
@@ -50,6 +52,10 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     [SerializeField] private int selfieWidth = 640;
     [SerializeField] private int selfieHeight = 480;
     [SerializeField] private int selfieFPS = 30;
+    [Header("Vertex Sculpt Camera")]
+    [SerializeField] private Vector3 sculptCameraPosition = new Vector3(-26.3f, 2.478407f, -6.239563f);
+    [SerializeField] private Vector3 sculptCameraRotation = new Vector3(1.35f, -265.187f, 89.806f);
+    [SerializeField] private float sculptCameraFov = 35f;
 
     private static readonly Color CardCream = new Color32(255, 239, 214, 255);
     private static readonly Color PillPink = LanguagePageBuilder.Pink;
@@ -61,7 +67,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private const float PillHeight = 60f;
     private const float MainMenuPanelHeight = 620f;
     private const float ColorSelectionPanelHeight = 680f;
-    private const float VertexSculptPanelHeight = 520f;
+    private const float VertexSculptPanelHeight = 600f;
     private const float HistoryBarHeight = 78f;
     private const float PartSelectionPanelHeight = 560f;
     private const float VariantSelectionPanelHeight = 460f;
@@ -95,13 +101,19 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         new Color32(235, 225, 205, 255)
     };
 
-    private readonly float[] coilSizes = { 0.006f, 0.012f, 0.018f, 0.028f };
+    private readonly float[] coilSizes = { 0.0004f, 0.0009f, 0.0018f, 0.0035f };
     private readonly string[] coilSizeLabels = { "S", "M", "L", "XL" };
-    private readonly float[] coilHeights = { 1f, 1.18f, 1.38f, 1.65f };
+    private readonly float[] coilHeights = { 1.1f, 1.4f, 2.0f, 3.2f };
     private readonly string[] coilHeightLabels = { "SOFT", "MED", "STRONG", "MAX" };
     private readonly Button[] coilSizeButtons = new Button[4];
     private readonly Button[] coilHeightButtons = new Button[4];
     private readonly List<HitTarget> hitTargets = new List<HitTarget>();
+    private bool vertexSculptCameraZoomed;
+    private Vector3 storedSculptCamPos;
+    private Quaternion storedSculptCamRot;
+    private float storedSculptCamFov;
+    private float storedSculptCamNear;
+    private Coroutine sculptCameraMove;
 
     private ColorMode mode = ColorMode.Hidden;
     private bool paletteAvailable;
@@ -237,6 +249,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             Destroy(selfieSurfaceRoot.gameObject);
         if (designSurfaceRoot != null)
             Destroy(designSurfaceRoot.gameObject);
+        SnapRestoreVertexSculptCamera();
     }
 
     private void Update()
@@ -355,17 +368,17 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         selfieEntryButton = CreateButton("SelfieEntry", panelRect, new Vector2(0f, -118f),
             new Vector2(PillWidth, PillHeight), "SELFIE", new Color32(155, 92, 130, 255));
         selfieEntryButton.onClick.AddListener(ShowSelfieCapture);
-        RegisterHitTarget(selfieEntryButton, false, Color.white);
+        RegisterHitTarget(selfieEntryButton, false, false, Color.white);
 
         Button selectPart = CreateButton("SelectPart", mainRect, Vector2.zero,
             new Vector2(PillWidth, PillHeight), "SELECT PART", PillPink);
         selectPart.onClick.AddListener(ShowPartSelection);
-        RegisterHitTarget(selectPart, false, Color.white);
+        RegisterHitTarget(selectPart, false, false, Color.white);
 
         Button changeColor = CreateButton("ChangeColor", mainRect, new Vector2(0f, -72f),
             new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
-        changeColor.onClick.AddListener(ShowColorSelection);
-        RegisterHitTarget(changeColor, false, Color.white);
+        changeColor.onClick.AddListener(ShowWholeKerisColorSelection);
+        RegisterHitTarget(changeColor, false, false, Color.white);
 
         Button vertexSculpt = CreateButton("VertexSculpt", mainRect, new Vector2(0f, -144f),
             new Vector2(PillWidth, PillHeight), "VERTEX SCULPT", PillPink);
@@ -377,22 +390,22 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             vText.color = DarkTextGreen;
         }
         vertexSculpt.onClick.AddListener(ShowVertexSculpt);
-        RegisterHitTarget(vertexSculpt, false, Color.white);
+        RegisterHitTarget(vertexSculpt, false, false, Color.white);
 
         Button finish = CreateButton("Finish", mainRect, new Vector2(0f, -216f),
             new Vector2(PillWidth, PillHeight), "FINISH", DonePink);
         finish.onClick.AddListener(ShowReview);
-        RegisterHitTarget(finish, false, Color.white);
+        RegisterHitTarget(finish, false, false, Color.white);
 
         Button decorate = CreateButton("StampDraw", mainRect, new Vector2(0f, -288f),
             new Vector2(PillWidth, PillHeight), "STAMP & DRAW", ActionPink);
         decorate.onClick.AddListener(ShowDesignSelection);
-        RegisterHitTarget(decorate, false, Color.white);
+        RegisterHitTarget(decorate, false, false, Color.white);
 
         Button shelf = CreateButton("KerisShelf", mainRect, new Vector2(0f, -360f),
             new Vector2(PillWidth, PillHeight), "OPEN SHELF", PillPink);
         shelf.onClick.AddListener(ShowShelf);
-        RegisterHitTarget(shelf, false, Color.white);
+        RegisterHitTarget(shelf, false, false, Color.white);
 
         partGroup = new GameObject("PartSelection", typeof(RectTransform));
         partGroup.transform.SetParent(panelRect, false);
@@ -406,18 +419,18 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 "Part" + i, partRect, new Vector2(0f, -i * 70f),
                 new Vector2(PillWidth, PillHeight), partNames[i], PillPink);
             partButtons[i].onClick.AddListener(() => SelectPart(partIndex));
-            RegisterHitTarget(partButtons[i], false, Color.white);
+            RegisterHitTarget(partButtons[i], false, true, Color.white);
         }
 
         Button partChangeColor = CreateButton("NextColors", partRect, new Vector2(0f, -222f),
             new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
         partChangeColor.onClick.AddListener(ContinueToColorSelection);
-        RegisterHitTarget(partChangeColor, false, Color.white);
+        RegisterHitTarget(partChangeColor, false, false, Color.white);
 
         Button partDone = CreateButton("Done", partRect, new Vector2(0f, -294f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         partDone.onClick.AddListener(ShowMainMenu);
-        RegisterHitTarget(partDone, false, Color.white);
+        RegisterHitTarget(partDone, false, false, Color.white);
 
         BuildVariantGroup(panelRect);
 
@@ -434,18 +447,18 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 new Vector2(-126f + column * 84f, -row * 78f),
                 new Vector2(68f, 68f), string.Empty, color);
             swatch.onClick.AddListener(() => CommitColor(color));
-            RegisterHitTarget(swatch, true, color);
+            RegisterHitTarget(swatch, true, true, color);
         }
 
         Button freeColorPaletteButton = CreateFreeColorPalette(
             colorRect, new Vector2(0f, -168f), new Vector2(PillWidth, 180f));
         freeColorPaletteButton.onClick.AddListener(CommitFreePaletteColor);
-        RegisterHitTarget(freeColorPaletteButton, true, Color.white, true);
+        RegisterHitTarget(freeColorPaletteButton, true, true, Color.white, true);
 
         Button colorDone = CreateButton("Done", colorRect, new Vector2(0f, -368f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         colorDone.onClick.AddListener(OnColorDoneClicked);
-        RegisterHitTarget(colorDone, false, Color.white);
+        RegisterHitTarget(colorDone, false, false, Color.white);
 
         BuildVertexSculptGroup(panelRect);
         BuildHistoryBar(panelRect);
@@ -476,9 +489,16 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             int sizeIdx = s;
             coilSizeButtons[s] = CreateButton("SculptSize" + s, sculptRect,
                 new Vector2(-174f + s * 116f, -40f), new Vector2(114f, 48f),
-                coilSizeLabels[s], PillPink);
+                coilSizeLabels[s], s == selectedCoilSize ? ActionPink : PillPink);
+            TMP_Text sizeText = coilSizeButtons[s].GetComponentInChildren<TMP_Text>();
+            if (sizeText != null)
+            {
+                sizeText.fontSize = 18f;
+                sizeText.fontStyle = FontStyles.Bold;
+                sizeText.color = DarkTextGreen;
+            }
             coilSizeButtons[s].onClick.AddListener(() => SelectCoilSize(sizeIdx));
-            RegisterHitTarget(coilSizeButtons[s], false, Color.white);
+            RegisterHitTarget(coilSizeButtons[s], false, false, Color.white);
         }
 
         TMP_Text strengthTitle = CreateText("BrushStrengthTitle", sculptRect, new Vector2(0f, -108f),
@@ -490,21 +510,36 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             int strengthIdx = s;
             coilHeightButtons[s] = CreateButton("SculptStrength" + s, sculptRect,
                 new Vector2(-174f + s * 116f, -148f), new Vector2(114f, 48f),
-                coilHeightLabels[s], PillPink);
+                coilHeightLabels[s], s == selectedCoilHeight ? ActionPink : PillPink);
+            TMP_Text strengthText = coilHeightButtons[s].GetComponentInChildren<TMP_Text>();
+            if (strengthText != null)
+            {
+                strengthText.fontSize = 16f;
+                strengthText.fontStyle = FontStyles.Bold;
+                strengthText.color = DarkTextGreen;
+            }
             coilHeightButtons[s].onClick.AddListener(() => SelectCoilHeight(strengthIdx));
-            RegisterHitTarget(coilHeightButtons[s], false, Color.white);
+            RegisterHitTarget(coilHeightButtons[s], false, false, Color.white);
         }
 
         Button clayColorBtn = CreateButton("ClayColor", sculptRect, new Vector2(0f, -216f),
             new Vector2(PillWidth, 56f), "CLAY COLOR", ActionPink);
         clayColorBtn.onClick.AddListener(OpenClayColor);
-        RegisterHitTarget(clayColorBtn, false, Color.white);
+        TMP_Text clayColText = clayColorBtn.GetComponentInChildren<TMP_Text>();
+        if (clayColText != null)
+        {
+            clayColText.fontSize = 24f;
+            clayColText.fontStyle = FontStyles.Bold;
+            clayColText.color = DarkTextGreen;
+        }
+        RegisterHitTarget(clayColorBtn, false, false, Color.white);
 
         Image claySwatchFrame = LanguagePageBuilder.CreateRoundedImage(
             "SwatchFrame", clayColorBtn.transform, 10, LanguagePageBuilder.Green);
         RectTransform claySfRect = claySwatchFrame.rectTransform;
         claySfRect.anchorMin = claySfRect.anchorMax = new Vector2(0.88f, 0.5f);
         claySfRect.pivot = new Vector2(0.5f, 0.5f);
+        claySfRect.anchoredPosition = Vector2.zero;
         claySfRect.sizeDelta = new Vector2(52f, 34f);
         claySwatchFrame.raycastTarget = false;
         Image claySwatchFill = LanguagePageBuilder.CreateRoundedImage(
@@ -515,8 +550,15 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
         Button done = CreateButton("Done", sculptRect, new Vector2(0f, -292f),
             new Vector2(PillWidth, 60f), "DONE", DonePink);
+        TMP_Text doneText = done.GetComponentInChildren<TMP_Text>();
+        if (doneText != null)
+        {
+            doneText.fontSize = 26f;
+            doneText.fontStyle = FontStyles.Bold;
+            doneText.color = DarkTextGreen;
+        }
         done.onClick.AddListener(ShowMainMenu);
-        RegisterHitTarget(done, false, Color.white);
+        RegisterHitTarget(done, false, false, Color.white);
         vertexSculptGroup.SetActive(false);
     }
 
@@ -535,13 +577,13 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             new Vector2(230f, 54f), "UNDO", PillPink);
         CenterInBar(undo, -130f);
         undo.onClick.AddListener(UndoClay);
-        RegisterHitTarget(undo, false, Color.white);
+        RegisterHitTarget(undo, false, false, Color.white);
 
         Button reset = CreateButton("Reset", barRect, new Vector2(130f, 0f),
             new Vector2(230f, 54f), "RESET", DonePink);
         CenterInBar(reset, 130f);
         reset.onClick.AddListener(ShowConfirmReset);
-        RegisterHitTarget(reset, false, Color.white);
+        RegisterHitTarget(reset, false, false, Color.white);
     }
 
     private void BuildCursor()
@@ -596,6 +638,18 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             fistRotation.suppressDriving = false;
     }
 
+    // "CHANGE COLOR" from the main menu tints the whole keris. Clear any part
+    // selection left over from a previous part edit so it does not keep
+    // targeting that one part.
+    private void ShowWholeKerisColorSelection()
+    {
+        selectedPart = -1;
+        selectedVariant = -1;
+        selectedVariantLabel = "";
+        RefreshPartButtons();
+        ShowColorSelection();
+    }
+
     private void ShowColorSelection()
     {
         DisableVertexSculpt();
@@ -629,11 +683,20 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         clayTintActive = false;
         mode = ColorMode.VertexSculpt;
         SetPanelHeight(VertexSculptPanelHeight);
-        mainActionGroup.SetActive(false);
+        panel.SetActive(true);
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
         HideExtraGroups();
-        vertexSculptGroup.SetActive(true);
+        HideReviewAndShelf();
+        if (mainActionGroup != null)
+            mainActionGroup.SetActive(false);
+        if (vertexSculptGroup != null)
+            vertexSculptGroup.SetActive(true);
+        if (historyBar != null)
+            historyBar.SetActive(true);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
+        SetSculptGesturesEnabled(false);
         headerText.text = "VERTEX SCULPT";
         SetHeaderBackLabel("← BACK");
         SetHeaderBackVisible(true);
@@ -649,6 +712,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             patternPainter.SetPaintingEnabled(true);
         }
         ResetDwell();
+        SetHoveredTarget(null);
+        BeginVertexSculptCameraZoom();
     }
 
     private void DisableVertexSculpt()
@@ -660,6 +725,157 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         }
         if (vertexSculptGroup != null)
             vertexSculptGroup.SetActive(false);
+        RestoreVertexSculptCamera();
+    }
+
+    private void BeginVertexSculptCameraZoom()
+    {
+        if (vertexSculptCameraZoomed)
+            return;
+
+        Camera cam = ResolveViewCamera();
+        Renderer focusRenderer = kerisRenderer;
+        if (cam == null || focusRenderer == null)
+            return;
+
+        storedSculptCamPos = cam.transform.position;
+        storedSculptCamRot = cam.transform.rotation;
+        storedSculptCamFov = cam.fieldOfView;
+        storedSculptCamNear = cam.nearClipPlane;
+        vertexSculptCameraZoomed = true;
+
+        Vector3 targetPos = sculptCameraPosition;
+        Quaternion targetRot = Quaternion.Euler(sculptCameraRotation);
+        float targetFov = sculptCameraFov;
+        float targetNear = Mathf.Min(storedSculptCamNear, 0.05f);
+        StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.45f);
+    }
+
+    private void RestoreVertexSculptCamera()
+    {
+        if (!vertexSculptCameraZoomed)
+            return;
+
+        if (!isActiveAndEnabled)
+        {
+            SnapRestoreVertexSculptCamera();
+            return;
+        }
+
+        Camera cam = ResolveViewCamera();
+        vertexSculptCameraZoomed = false;
+        if (cam == null)
+            return;
+
+        StartSculptCameraMove(
+            cam,
+            storedSculptCamPos,
+            storedSculptCamRot,
+            storedSculptCamFov,
+            storedSculptCamNear,
+            0.5f);
+    }
+
+    private void SnapRestoreVertexSculptCamera()
+    {
+        if (!vertexSculptCameraZoomed)
+            return;
+
+        vertexSculptCameraZoomed = false;
+        if (sculptCameraMove != null)
+        {
+            StopCoroutine(sculptCameraMove);
+            sculptCameraMove = null;
+        }
+
+        Camera cam = ResolveViewCamera();
+        if (cam == null)
+            return;
+
+        cam.transform.position = storedSculptCamPos;
+        cam.transform.rotation = storedSculptCamRot;
+        cam.fieldOfView = storedSculptCamFov;
+        cam.nearClipPlane = storedSculptCamNear;
+    }
+
+    private void StartSculptCameraMove(
+        Camera cam,
+        Vector3 targetPos,
+        Quaternion targetRot,
+        float targetFov,
+        float targetNear,
+        float duration)
+    {
+        if (sculptCameraMove != null)
+            StopCoroutine(sculptCameraMove);
+        sculptCameraMove = StartCoroutine(
+            MoveSculptCamera(cam, targetPos, targetRot, targetFov, targetNear, duration));
+    }
+
+    private IEnumerator MoveSculptCamera(
+        Camera cam,
+        Vector3 targetPos,
+        Quaternion targetRot,
+        float targetFov,
+        float targetNear,
+        float duration)
+    {
+        Transform camTf = cam.transform;
+        Vector3 startPos = camTf.position;
+        Quaternion startRot = camTf.rotation;
+        float startFov = cam.fieldOfView;
+        float startNear = cam.nearClipPlane;
+        float elapsed = 0f;
+        duration = Mathf.Max(0.05f, duration);
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = t * t * (3f - 2f * t);
+            camTf.position = Vector3.Lerp(startPos, targetPos, eased);
+            camTf.rotation = Quaternion.Slerp(startRot, targetRot, eased);
+            cam.fieldOfView = Mathf.Lerp(startFov, targetFov, eased);
+            cam.nearClipPlane = Mathf.Lerp(startNear, targetNear, eased);
+            yield return null;
+        }
+
+        camTf.position = targetPos;
+        camTf.rotation = targetRot;
+        cam.fieldOfView = targetFov;
+        cam.nearClipPlane = targetNear;
+        sculptCameraMove = null;
+    }
+
+    private Camera ResolveViewCamera()
+    {
+        MainMenuStartTransition transition =
+            FindFirstObjectByType<MainMenuStartTransition>(FindObjectsInactive.Include);
+        if (transition != null && transition.ViewCamera != null)
+            return transition.ViewCamera;
+
+        if (Camera.main != null)
+            return Camera.main;
+
+        GameObject mainCam = GameObject.Find("Main Camera");
+        if (mainCam != null)
+        {
+            Camera namedMain = mainCam.GetComponent<Camera>();
+            if (namedMain != null)
+                return namedMain;
+        }
+
+        Camera[] cameras = FindObjectsByType<Camera>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        if (cameras == null)
+            return null;
+
+        for (int i = 0; i < cameras.Length; i++)
+        {
+            if (cameras[i] != null && cameras[i].enabled && cameras[i].gameObject.name != "MainMenuViewCamera")
+                return cameras[i];
+        }
+
+        return cameras.Length > 0 ? cameras[0] : null;
     }
 
     private void ShowPartSelection()
@@ -806,18 +1022,18 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 new Vector2(PillWidth, PillHeight), GetVariantLabels(PartCarving)[i], PillPink);
             variantButtons[i].onClick.AddListener(() => SelectVariant(variantIndex));
             variantButtonLabels[i] = variantButtons[i].GetComponentInChildren<TMP_Text>();
-            RegisterHitTarget(variantButtons[i], false, Color.white);
+            RegisterHitTarget(variantButtons[i], false, true, Color.white);
         }
 
         Button nextColors = CreateButton("NextColors", variantRect, new Vector2(0f, -152f),
             new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
         nextColors.onClick.AddListener(ContinueToColorSelection);
-        RegisterHitTarget(nextColors, false, Color.white);
+        RegisterHitTarget(nextColors, false, false, Color.white);
 
         Button variantDone = CreateButton("Done", variantRect, new Vector2(0f, -224f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         variantDone.onClick.AddListener(ShowMainMenu);
-        RegisterHitTarget(variantDone, false, Color.white);
+        RegisterHitTarget(variantDone, false, false, Color.white);
         variantGroup.SetActive(false);
     }
 
@@ -939,11 +1155,24 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     {
         if (patternPainter == null)
             return;
-        patternPainter.SetStrokeWidth(coilSizes[selectedCoilSize], false);
+        float size = coilSizes[selectedCoilSize];
+        patternPainter.SetStrokeWidth(size, false);
         patternPainter.SetClayLift(coilHeights[selectedCoilHeight]);
-        patternPainter.SetClayColor(committedClayColor, false);
+        patternPainter.SetMinPointSpacing(size * 0.25f);
+        patternPainter.SetClayColor(committedClayColor, true);
         if (clayColorChip != null)
             clayColorChip.color = committedClayColor;
+    }
+
+    // Live clay tint preview: recolours the drawn coils plus the next-stroke
+    // material so hovering a swatch gives immediate feedback, mirroring how the
+    // keris colour screen previews its swatches.
+    private void PreviewClayColor(Color color)
+    {
+        if (patternPainter != null)
+            patternPainter.SetClayColor(color, true);
+        if (clayColorChip != null)
+            clayColorChip.color = color;
     }
 
     private void RefreshCoilButtons()
@@ -1258,6 +1487,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (patternPainter == null)
             patternPainter = skin.gameObject.AddComponent<TeapotSurfacePatternPainter>();
         patternPainter.Initialize(handRunner, skin);
+        patternPainter.SetStabilization(0.55f);
+        patternPainter.SetPullPixels(12f);
     }
 
     private void EnsureSkinnedForPainter(GameObject kerisRoot)
@@ -1296,11 +1527,20 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         hoveredTarget = target;
         if (hoveredTarget != null && hoveredTarget.Outline != null)
             hoveredTarget.Outline.enabled = true;
-        if (hoveredTarget != null && hoveredTarget.IsColor &&
-            !clayTintActive && !bandTintActive && !designTintActive)
+        if (clayTintActive)
+        {
+            // Clay tinting previews against the drawn coils rather than the keris
+            // materials, so hovering a swatch recolours the clay live.
+            if (hoveredTarget != null && hoveredTarget.IsColor && !hoveredTarget.IsFreeColorPalette)
+                PreviewClayColor(hoveredTarget.PreviewColor);
+            else if (hoveredTarget == null || !hoveredTarget.IsColor)
+                PreviewClayColor(committedClayColor);
+        }
+        else if (hoveredTarget != null && hoveredTarget.IsColor &&
+            !bandTintActive && !designTintActive)
             ApplyKerisColor(hoveredTarget.PreviewColor);
         else if ((hoveredTarget == null || !hoveredTarget.IsColor) &&
-                 !clayTintActive && !bandTintActive && !designTintActive)
+                 !bandTintActive && !designTintActive)
             ApplyKerisColor(committedKerisColor);
     }
 
@@ -1398,7 +1638,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             cursorRect.gameObject.SetActive(visible && mode != ColorMode.Hidden);
     }
 
-    private void RegisterHitTarget(Button button, bool isColor, Color previewColor, bool isFreeColorPalette = false)
+    private void RegisterHitTarget(Button button, bool isColor, bool isPersistentChoice, Color previewColor, bool isFreeColorPalette = false)
     {
         Outline outline = button.gameObject.GetComponent<Outline>();
         if (outline == null)
@@ -1413,6 +1653,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             Rect = button.GetComponent<RectTransform>(),
             Outline = outline,
             IsColor = isColor,
+            IsPersistentChoice = isPersistentChoice,
             IsFreeColorPalette = isFreeColorPalette,
             PreviewColor = previewColor,
             BaseColor = fill != null ? fill.color : Color.white,
@@ -1466,7 +1707,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         rect.pivot = new Vector2(0f, 1f);
         rect.anchoredPosition = new Vector2(16f, -14f);
         button.onClick.AddListener(NavigateBack);
-        RegisterHitTarget(button, false, Color.white);
+        RegisterHitTarget(button, false, false, Color.white);
         return button;
     }
 
