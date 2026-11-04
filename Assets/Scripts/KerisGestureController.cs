@@ -33,8 +33,8 @@ public sealed class KerisGestureController : MonoBehaviour
     [SerializeField, Range(0.015f, 0.12f)] private float carvingTravel = 0.022f;
 
     [Header("Sharpness / Curve - Pinch Lift")]
-    [SerializeField, Range(0.1f, 1.8f)] private float pinchThreshold = 1.45f;
-    [SerializeField, Range(0.2f, 2.2f)] private float pinchReleaseThreshold = 1.95f;
+    [SerializeField, Range(0.1f, 1.8f)] private float pinchThreshold = 0.75f;
+    [SerializeField, Range(0.2f, 2.2f)] private float pinchReleaseThreshold = 1.05f;
     [SerializeField, Range(0.0008f, 0.04f)] private float pinchTravel = 0.0012f;
 
     [Header("Handle - Two Fists Down")]
@@ -1302,7 +1302,7 @@ public sealed class KerisGestureController : MonoBehaviour
 
         // A pinch requires the index finger to be somewhat extended.
         // If it's curled (low angle), it's likely a fist.
-        if (hand.IndexExtensionAngle < 135f)
+        if (hand.IndexExtensionAngle < 115f)
         {
             held = false;
             return false;

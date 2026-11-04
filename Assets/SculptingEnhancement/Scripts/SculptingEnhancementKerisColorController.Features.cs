@@ -58,7 +58,7 @@ public sealed partial class SculptingEnhancementKerisColorController
     private int cachedCarvingSlot = UnresolvedCarvingSlot;
     private Mesh cachedCarvingMesh;
 
-    private const int SelfieTileRows = 5;
+    private const int SelfieTileRows = 4;
     private const float SelfieTileSpanFraction = 0.72f;
     private const float SelfieTileFillFraction = 0.82f;
 
@@ -969,7 +969,22 @@ public sealed partial class SculptingEnhancementKerisColorController
         float spacing = SelfieTileRows > 1 ? span / (SelfieTileRows - 1) : span;
         float tileHeight = spacing * SelfieTileFillFraction;
         float tileWidth = tileHeight * photoAspect;
-        float maxWidth = acrossRange * 0.85f;
+        // Dynamically adjust width based on Curve blend shape to prevent overflow
+            float curveAmount = 0f;
+            if (skin != null && skin.sharedMesh != null)
+            {
+                for (int shapeIdx = 0; shapeIdx < skin.sharedMesh.blendShapeCount; shapeIdx++)
+                {
+                    string shapeName = skin.sharedMesh.GetBlendShapeName(shapeIdx);
+                    if (shapeName.Equals("Curve", System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        curveAmount = skin.GetBlendShapeWeight(shapeIdx) / 100f;
+                        break;
+                    }
+                }
+            }
+            float widthScale = Mathf.Lerp(0.85f, 0.60f, curveAmount);
+            float maxWidth = acrossRange * widthScale;
         if (tileWidth > maxWidth)
         {
             tileHeight *= maxWidth / tileWidth;
@@ -991,30 +1006,74 @@ public sealed partial class SculptingEnhancementKerisColorController
         Vector2[] outUvs = new Vector2[quadCount * 4];
         int[] outTriangles = new int[quadCount * 6];
 
-        float alongStart = alongMin + (alongRange - span) * 0.5f;
-        int v = 0;
-        int t = 0;
-        for (int row = 0; row < SelfieTileRows && row * spacing <= alongRange; row++)
+        // Divide blade into sections and find widest point in each section
+        var widestPoints = new System.Collections.Generic.List<int>();
+        float sectionSize = alongRange / SelfieTileRows;
+        
+        for (int section = 0; section < SelfieTileRows; section++)
         {
-            float alongTarget = alongStart + spacing * row;
-
-            int best = -1;
-            float bestDistance = float.MaxValue;
-            for (int i = 0; i < surfacePoints.Count; i++)
+            float sectionStart = alongMin + section * sectionSize;
+            float sectionEnd = sectionStart + sectionSize;
+            float sectionMid = (sectionStart + sectionEnd) * 0.5f;
+            
+            // Find widest point in this section
+            int widestInSection = -1;
+            float maxWidthInSection = 0f;
+            
+            for (float checkAlong = sectionStart; checkAlong <= sectionEnd; checkAlong += sectionSize * 0.1f)
             {
-                Vector3 point = surfacePoints[i];
-                float dAlong = Vector3.Dot(point, worldLong) - alongTarget;
-                float dAcross = Vector3.Dot(point, worldAcross) - acrossMid;
-                float distance = dAlong * dAlong + dAcross * dAcross;
-                if (distance < bestDistance)
+                float minAcross = float.MaxValue, maxAcross = float.MinValue;
+                
+                for (int i = 0; i < surfacePoints.Count; i++)
                 {
-                    bestDistance = distance;
-                    best = i;
+                    Vector3 point = surfacePoints[i];
+                    float along = Vector3.Dot(point, worldLong);
+                    if (Mathf.Abs(along - checkAlong) > tileHeight * 0.6f) continue;
+                    
+                    float across = Vector3.Dot(point, worldAcross);
+                    if (across < minAcross) minAcross = across;
+                    if (across > maxAcross) maxAcross = across;
+                }
+                
+                float widthHere = maxAcross - minAcross;
+                if (widthHere > maxWidthInSection)
+                {
+                    maxWidthInSection = widthHere;
+                    
+                    // Find center point at this widest location
+                    int bestCenter = -1;
+                    float bestCenterDist = float.MaxValue;
+                    for (int i = 0; i < surfacePoints.Count; i++)
+                    {
+                        Vector3 point = surfacePoints[i];
+                        float dAlong = Vector3.Dot(point, worldLong) - checkAlong;
+                        float dAcross = Vector3.Dot(point, worldAcross) - acrossMid;
+                        float dist = dAlong * dAlong + dAcross * dAcross;
+                        if (dist < bestCenterDist)
+                        {
+                            bestCenterDist = dist;
+                            bestCenter = i;
+                        }
+                    }
+                    widestInSection = bestCenter;
                 }
             }
+            
+            if (widestInSection >= 0)
+                widestPoints.Add(widestInSection);
+        }
+        
+        int v = 0;
+        int t = 0;
+        for (int row = 0; row < widestPoints.Count; row++)
+        {
+            int best = widestPoints[row];
             if (best < 0) break;
 
-            Vector3 centerWorld = surfacePoints[best] + worldThin * clearance;
+            // Get center point from actual baked vertices (follows deformation)
+            Vector3 centerLocal = vertices[best];
+            Vector3 centerWorld = blade.TransformPoint(centerLocal);
+            centerWorld += worldThin * clearance;
 
             Vector3 up = Vector3.ProjectOnPlane(worldLong, worldThin);
             if (up.sqrMagnitude < 0.0001f) up = worldLong;
@@ -1023,13 +1082,47 @@ public sealed partial class SculptingEnhancementKerisColorController
             if (right.sqrMagnitude < 0.0001f) right = worldAcross;
             right.Normalize();
 
+            // Simply reduce width when curve is active - no deformation
+            float adjustedWidth = tileWidth * widthScale;
+            
             Vector3 halfUp = up * (tileHeight * 0.5f);
-            Vector3 halfRight = right * (tileWidth * 0.5f);
+            Vector3 halfRight = right * (adjustedWidth * 0.5f);
+            
+            // Find actual blade vertices for each corner (paste onto surface)
+            Vector3[] corners = new Vector3[4];
+            Vector3[] cornerTargets = new Vector3[4] 
+            {
+                centerWorld - halfUp - halfRight,
+                centerWorld - halfUp + halfRight,
+                centerWorld + halfUp - halfRight,
+                centerWorld + halfUp + halfRight
+            };
+            
+            // For each corner, find closest blade vertex
+            for (int c = 0; c < 4; c++)
+            {
+                int bestCorner = best;
+                float bestCornerDist = float.MaxValue;
+                
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    Vector3 vertWorld = blade.TransformPoint(vertices[i]);
+                    float dist = Vector3.Distance(vertWorld, cornerTargets[c]);
+                    if (dist < bestCornerDist)
+                    {
+                        bestCornerDist = dist;
+                        bestCorner = i;
+                    }
+                }
+                
+                // Use actual blade vertex position (will deform with curve)
+                corners[c] = vertices[bestCorner];
+            }
 
-            outVertices[v + 0] = blade.InverseTransformPoint(centerWorld - halfUp - halfRight);
-            outVertices[v + 1] = blade.InverseTransformPoint(centerWorld - halfUp + halfRight);
-            outVertices[v + 2] = blade.InverseTransformPoint(centerWorld + halfUp - halfRight);
-            outVertices[v + 3] = blade.InverseTransformPoint(centerWorld + halfUp + halfRight);
+            outVertices[v + 0] = corners[0];
+            outVertices[v + 1] = corners[1];
+            outVertices[v + 2] = corners[2];
+            outVertices[v + 3] = corners[3];
 
             Vector3 localNormal = blade.InverseTransformDirection(worldThin).normalized;
             outNormals[v + 0] = localNormal;

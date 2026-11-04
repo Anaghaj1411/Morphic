@@ -185,10 +185,11 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
 
         CreateMorphicButton(cardRect, "Skip", new Vector2(278f, 258f), new Vector2(150f, 48f),
             "SKIP", LanguagePageBuilder.Pink, Skip);
-        CreateMorphicButton(cardRect, "Replay", new Vector2(-150f, -246f), new Vector2(200f, 56f),
+        CreateMorphicButton(cardRect, "Replay", new Vector2(-105f, -246f), new Vector2(140f, 56f),
             "REPLAY", LanguagePageBuilder.Pink, Replay);
-        nextButton = CreateMorphicButton(
-            cardRect, "Next", new Vector2(150f, -246f), new Vector2(200f, 56f),
+        CreateIconButton(cardRect, "Back", new Vector2(-278f, 258f), new Vector2(56f, 56f), 
+            "MorphicBackButton", LanguagePageBuilder.Pink, Back);
+        nextButton = CreateMorphicButton(cardRect, "Next", new Vector2(105f, -246f), new Vector2(140f, 56f),
             "NEXT", new Color32(236, 64, 168, 255), Next);
     }
 
@@ -219,6 +220,14 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         statusText.gameObject.SetActive(true);
         statusText.text = "RECOGNIZED";
         statusText.color = LanguagePageBuilder.Green;
+    }
+
+    private void Back()
+    {
+        if (stepIndex <= 0)
+            return;
+        stepIndex--;
+        ShowStep();
     }
 
     private void Next()
@@ -349,6 +358,52 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         TMP_Text text = CreateLabel(fill.transform, "Label", Vector2.zero, size.x, size.y, fontSize);
         Stretch(text.rectTransform);
         return text;
+    }
+
+    private static Button CreateIconButton(
+        Transform parent,
+        string name,
+        Vector2 position,
+        Vector2 size,
+        string iconPath,
+        Color fillColor,
+        Action onClick)
+    {
+        Image frame = LanguagePageBuilder.CreateRoundedImage(name, parent, 24, LanguagePageBuilder.Green);
+        RectTransform rect = frame.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+        frame.raycastTarget = true;
+        Image fill = LanguagePageBuilder.CreateRoundedImage("Fill", frame.transform, 20, fillColor);
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+        fill.raycastTarget = true;
+        
+        // Add icon using Image and Sprite for crisp rendering
+        GameObject iconObj = new GameObject("Icon");
+        iconObj.transform.SetParent(fill.transform, false);
+        Image icon = iconObj.AddComponent<Image>();
+        RectTransform iconRect = icon.rectTransform;
+        iconRect.anchorMin = iconRect.anchorMax = new Vector2(0.5f, 0.5f);
+        iconRect.pivot = new Vector2(0.5f, 0.5f);
+        iconRect.anchoredPosition = Vector2.zero;
+        iconRect.sizeDelta = new Vector2(size.x * 0.65f, size.y * 0.65f);
+        
+        Texture2D iconTexture = Resources.Load<Texture2D>(iconPath);
+        if (iconTexture != null)
+        {
+            Sprite iconSprite = Sprite.Create(iconTexture, 
+                new Rect(0, 0, iconTexture.width, iconTexture.height),
+                new Vector2(0.5f, 0.5f), 100f);
+            icon.sprite = iconSprite;
+        }
+        
+        Button button = frame.gameObject.AddComponent<Button>();
+        button.targetGraphic = fill;
+        DialogueButtonClickSound.Instance?.RegisterButton(button);
+        button.onClick.AddListener(() => onClick());
+        return button;
     }
 
     private static Button CreateMorphicButton(
