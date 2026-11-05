@@ -67,6 +67,21 @@ public sealed class KerisGestureController : MonoBehaviour
     public bool IsDrivingHandle => currentGesture == GestureMode.HandleDown;
     public bool IsDeformationLocked => deformationLocked;
 
+    public enum PracticeGesture
+    {
+        None,
+        TwoIndex,
+        TwoFists,
+        RightPinch,
+        LeftPinch,
+        TwoV,
+        SingleFist,
+        OpenPalm
+    }
+
+    private bool practiceRightPinchHeld;
+    private bool practiceLeftPinchHeld;
+
     private bool useCarving2;
     private bool useHandle2;
     private bool carvingArmed = true;
@@ -269,6 +284,60 @@ public sealed class KerisGestureController : MonoBehaviour
         if (widthHeightActive || carvingActive || sharpnessLift.active || curveLift.active)
             return;
         ReadBodyWeights();
+    }
+
+    public void CaptureRestState()
+    {
+        ReadBodyWeights();
+        ResetAllTracking();
+        deformationLocked = false;
+        madeDeformation = false;
+        IsDrivingSculpt = false;
+    }
+
+    public PracticeGesture ReadPracticeGesture()
+    {
+        if (handRunner == null)
+            return PracticeGesture.None;
+
+        bool hasTwo = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first, out SculptHandFrame second);
+        if (!hasTwo && !handRunner.TryGetLatestHand(out first))
+            return PracticeGesture.None;
+        if (!hasTwo)
+            second = default;
+
+        bool twoV = hasTwo && IsVSign(first) && IsVSign(second);
+        bool twoFists = !twoV && hasTwo &&
+                        LooksLikeHandleFist(first) && LooksLikeHandleFist(second);
+        bool twoIndex = !twoV && hasTwo &&
+                        IsIndexPointing(first) && IsIndexPointing(second);
+
+        SplitHands(first, second, hasTwo,
+            out SculptHandFrame rightHand, out SculptHandFrame leftHand,
+            out bool hasRightHand, out bool hasLeftHand);
+        bool rightPinch = hasRightHand &&
+            IsPinching(rightHand, true, ref practiceRightPinchHeld);
+        bool leftPinch = hasLeftHand &&
+            IsPinching(leftHand, false, ref practiceLeftPinchHeld);
+
+        if (twoV)
+            return PracticeGesture.TwoV;
+        if (twoIndex)
+            return PracticeGesture.TwoIndex;
+        if (twoFists)
+            return PracticeGesture.TwoFists;
+        if (rightPinch)
+            return PracticeGesture.RightPinch;
+        if (leftPinch)
+            return PracticeGesture.LeftPinch;
+        if (LooksLikeHandleFist(first) && (!hasTwo || !LooksLikeHandleFist(second)))
+            return PracticeGesture.SingleFist;
+        if (hasTwo && LooksLikeHandleFist(second) && !LooksLikeHandleFist(first))
+            return PracticeGesture.SingleFist;
+        if (IsOpenPalm(first) || (hasTwo && IsOpenPalm(second)))
+            return PracticeGesture.OpenPalm;
+        return PracticeGesture.None;
     }
 
     public void RestoreRestState()

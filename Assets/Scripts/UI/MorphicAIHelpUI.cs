@@ -1,16 +1,17 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public class MorphicAIHelpUI : MonoBehaviour
 {
     private Button helpButton;
     private TMP_Text helpText;
+    private TMP_InputField questionInput;
     private GameObject root;
-    private GameObject dialogueBox;
+    private GameObject askCard;
     private MorphicAITriggerEngine trigger;
     private MorphicAIClient client;
-    private string pendingLocalHelp;
 
     public void SetVisible(bool visible)
     {
@@ -20,8 +21,8 @@ public class MorphicAIHelpUI : MonoBehaviour
         root.SetActive(visible);
         if (visible)
             root.transform.SetAsLastSibling();
-        else if (dialogueBox != null)
-            dialogueBox.SetActive(false);
+        else
+            HideAskCard();
     }
 
     private void Awake()
@@ -38,6 +39,9 @@ public class MorphicAIHelpUI : MonoBehaviour
             client.OnFeedbackMessageReceived -= HandleAiMessage;
             client.OnRequestFailed -= HandleAiFailed;
         }
+
+        if (questionInput != null)
+            questionInput.onSubmit.RemoveListener(HandleInputSubmit);
     }
 
     private void EnsureAi()
@@ -85,7 +89,11 @@ public class MorphicAIHelpUI : MonoBehaviour
     private void EnsureUi()
     {
         if (root != null)
+        {
+            if (askCard == null)
+                BuildAskCard(root.transform);
             return;
+        }
 
         Canvas canvas = FindFirstObjectByType<Canvas>();
         if (canvas == null)
@@ -99,19 +107,11 @@ public class MorphicAIHelpUI : MonoBehaviour
             helpButton = existing.Find("AiHelp") != null
                 ? existing.Find("AiHelp").GetComponent<Button>()
                 : existing.GetComponentInChildren<Button>(true);
-            Transform dialogue = existing.Find("LisaDialogue");
-            if (dialogue != null)
-            {
-                dialogueBox = dialogue.gameObject;
-                helpText = dialogue.GetComponentInChildren<TMP_Text>(true);
-            }
-            if (helpButton != null)
-            {
-                helpButton.onClick.RemoveListener(AskForHelp);
-                helpButton.onClick.AddListener(AskForHelp);
-            }
-            if (dialogueBox == null || helpText == null)
-                BuildDialogueBox(root.transform);
+            WireHelpButton();
+            Transform oldDialogue = existing.Find("LisaDialogue");
+            if (oldDialogue != null)
+                oldDialogue.gameObject.SetActive(false);
+            BuildAskCard(root.transform);
             return;
         }
 
@@ -140,25 +140,40 @@ public class MorphicAIHelpUI : MonoBehaviour
 
         helpButton = frame.gameObject.AddComponent<Button>();
         helpButton.targetGraphic = fill;
-        helpButton.onClick.AddListener(AskForHelp);
+        WireHelpButton();
 
         TMP_Text label = CreateLabel(fill.transform, "AI HELP", 20f, TextAlignmentOptions.Center);
         label.fontStyle = FontStyles.Bold;
 
-        BuildDialogueBox(root.transform);
+        BuildAskCard(root.transform);
     }
 
-    private void BuildDialogueBox(Transform parent)
+    private void WireHelpButton()
     {
+        if (helpButton == null)
+            return;
+        helpButton.onClick.RemoveAllListeners();
+        helpButton.onClick.AddListener(OpenAskCard);
+    }
+
+    private void BuildAskCard(Transform parent)
+    {
+        if (askCard != null)
+            return;
+
+        Transform existingAsk = parent.Find("LisaAsk");
+        if (existingAsk != null)
+            Destroy(existingAsk.gameObject);
+
         Image outline = LanguagePageBuilder.CreateRoundedImage(
-            "LisaDialogue", parent, 32, LanguagePageBuilder.Green);
-        dialogueBox = outline.gameObject;
+            "LisaAsk", parent, 32, LanguagePageBuilder.Green);
+        askCard = outline.gameObject;
         RectTransform boxRect = outline.rectTransform;
         boxRect.anchorMin = boxRect.anchorMax = new Vector2(0.5f, 0f);
         boxRect.pivot = new Vector2(0.5f, 0f);
         boxRect.anchoredPosition = new Vector2(0f, 28f);
-        boxRect.sizeDelta = new Vector2(720f, 156f);
-        outline.raycastTarget = false;
+        boxRect.sizeDelta = new Vector2(760f, 108f);
+        outline.raycastTarget = true;
 
         Image cream = LanguagePageBuilder.CreateRoundedImage(
             "Fill", outline.transform, 28, new Color32(255, 239, 214, 255));
@@ -167,20 +182,113 @@ public class MorphicAIHelpUI : MonoBehaviour
         creamRect.anchorMax = Vector2.one;
         creamRect.offsetMin = new Vector2(8f, 8f);
         creamRect.offsetMax = new Vector2(-8f, -8f);
-        cream.raycastTarget = false;
+        cream.raycastTarget = true;
 
         helpText = CreateLabel(
-            cream.transform, "", 26f, TextAlignmentOptions.TopLeft);
+            cream.transform, "", 24f, TextAlignmentOptions.TopLeft);
         helpText.color = new Color32(32, 24, 18, 255);
         helpText.fontStyle = FontStyles.Bold;
         helpText.enableWordWrapping = true;
         helpText.overflowMode = TextOverflowModes.Overflow;
         helpText.lineSpacing = 4f;
         RectTransform textRect = helpText.rectTransform;
-        textRect.offsetMin = new Vector2(24f, 18f);
-        textRect.offsetMax = new Vector2(-24f, -18f);
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.pivot = new Vector2(0.5f, 1f);
+        textRect.offsetMin = new Vector2(16f, 80f);
+        textRect.offsetMax = new Vector2(-16f, -12f);
+        helpText.gameObject.SetActive(false);
 
-        dialogueBox.SetActive(false);
+        Image sendFrame = LanguagePageBuilder.CreateRoundedImage(
+            "Send", cream.transform, 18, LanguagePageBuilder.Green);
+        RectTransform sendRect = sendFrame.rectTransform;
+        sendRect.anchorMin = sendRect.anchorMax = new Vector2(1f, 0f);
+        sendRect.pivot = new Vector2(1f, 0f);
+        sendRect.anchoredPosition = new Vector2(-12f, 12f);
+        sendRect.sizeDelta = new Vector2(118f, 52f);
+        sendFrame.raycastTarget = true;
+
+        Image sendFill = LanguagePageBuilder.CreateRoundedImage(
+            "Fill", sendFrame.transform, 14, new Color32(155, 92, 130, 255));
+        RectTransform sendFillRect = sendFill.rectTransform;
+        sendFillRect.anchorMin = Vector2.zero;
+        sendFillRect.anchorMax = Vector2.one;
+        sendFillRect.offsetMin = new Vector2(4f, 4f);
+        sendFillRect.offsetMax = new Vector2(-4f, -4f);
+        sendFill.raycastTarget = true;
+
+        Button sendButton = sendFrame.gameObject.AddComponent<Button>();
+        sendButton.targetGraphic = sendFill;
+        sendButton.onClick.AddListener(SendQuestion);
+        TMP_Text sendLabel = CreateLabel(sendFill.transform, "SEND", 20f, TextAlignmentOptions.Center);
+        sendLabel.fontStyle = FontStyles.Bold;
+
+        questionInput = CreateQuestionInput(cream.transform);
+        askCard.SetActive(false);
+    }
+
+    private TMP_InputField CreateQuestionInput(Transform parent)
+    {
+        GameObject inputRoot = new GameObject("QuestionInput", typeof(RectTransform), typeof(Image));
+        inputRoot.transform.SetParent(parent, false);
+
+        Image inputBg = inputRoot.GetComponent<Image>();
+        LanguagePageBuilder.ApplyRoundedSprite(inputBg, 14);
+        inputBg.color = Color.white;
+        inputBg.raycastTarget = true;
+
+        RectTransform inputRect = inputRoot.GetComponent<RectTransform>();
+        inputRect.anchorMin = new Vector2(0f, 0f);
+        inputRect.anchorMax = new Vector2(1f, 0f);
+        inputRect.pivot = new Vector2(0.5f, 0f);
+        inputRect.offsetMin = new Vector2(12f, 12f);
+        inputRect.offsetMax = new Vector2(-142f, 64f);
+
+        GameObject textArea = new GameObject("Text Area", typeof(RectTransform));
+        textArea.transform.SetParent(inputRoot.transform, false);
+        RectTransform areaRect = textArea.GetComponent<RectTransform>();
+        areaRect.anchorMin = Vector2.zero;
+        areaRect.anchorMax = Vector2.one;
+        areaRect.offsetMin = new Vector2(14f, 8f);
+        areaRect.offsetMax = new Vector2(-14f, -8f);
+        textArea.AddComponent<RectMask2D>();
+
+        TextMeshProUGUI placeholder = CreateInputText(
+            textArea.transform, "Placeholder", "Ask Lisa anything...");
+        placeholder.fontStyle = FontStyles.Italic;
+        placeholder.color = new Color(0.4f, 0.35f, 0.3f, 0.65f);
+
+        TextMeshProUGUI inputText = CreateInputText(
+            textArea.transform, "Text", "");
+        inputText.color = new Color32(32, 24, 18, 255);
+
+        TMP_InputField field = inputRoot.AddComponent<TMP_InputField>();
+        field.textViewport = areaRect;
+        field.textComponent = inputText;
+        field.placeholder = placeholder;
+        field.fontAsset = inputText.font;
+        field.pointSize = 22f;
+        field.lineType = TMP_InputField.LineType.SingleLine;
+        field.customCaretColor = true;
+        field.caretColor = new Color32(32, 24, 18, 255);
+        field.onSubmit.AddListener(HandleInputSubmit);
+        return field;
+    }
+
+    private static TextMeshProUGUI CreateInputText(
+        Transform parent,
+        string name,
+        string text)
+    {
+        GameObject go = new GameObject(name, typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+        TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
+        tmp.text = text;
+        tmp.fontSize = 22f;
+        tmp.alignment = TextAlignmentOptions.MidlineLeft;
+        tmp.raycastTarget = false;
+        StretchFull(tmp.rectTransform);
+        return tmp;
     }
 
     private static void StretchFull(RectTransform rect)
@@ -218,87 +326,116 @@ public class MorphicAIHelpUI : MonoBehaviour
         return tmp;
     }
 
-    private void AskForHelp()
+    private void OpenAskCard()
     {
-        MorphicCraftHelpState state = BuildHelpState();
-        pendingLocalHelp = LocalHelpFromState(state);
-        ShowMessage("LISA: Asking...");
+        EnsureUi();
+        if (askCard == null)
+            return;
 
+        askCard.SetActive(true);
+        askCard.transform.SetAsLastSibling();
+        if (helpText != null)
+        {
+            helpText.text = "";
+            helpText.gameObject.SetActive(false);
+        }
+
+        UpdateAskCardHeight();
+        if (questionInput != null)
+        {
+            questionInput.text = "";
+            questionInput.ActivateInputField();
+            if (EventSystem.current != null)
+                EventSystem.current.SetSelectedGameObject(questionInput.gameObject);
+        }
+    }
+
+    private void HideAskCard()
+    {
+        if (askCard != null)
+            askCard.SetActive(false);
+        if (questionInput != null)
+            questionInput.text = "";
+    }
+
+    private void HandleInputSubmit(string _)
+    {
+        SendQuestion();
+    }
+
+    private void SendQuestion()
+    {
+        string question = questionInput != null ? questionInput.text.Trim() : "";
+        if (string.IsNullOrEmpty(question))
+        {
+            ShowMessage("LISA: Type a question first.");
+            return;
+        }
+
+        ShowMessage("LISA: Asking...");
+        MorphicCraftHelpState state = BuildHelpState();
+        state.userQuestion = question;
         EnsureAi();
         if (trigger == null || !trigger.RequestSculptHelp(state))
-            ShowMessage(pendingLocalHelp);
+            ShowMessage("LISA: Could not reach help. Try again.");
     }
 
     private MorphicCraftHelpState BuildHelpState()
     {
-        MorphicCraftHelpState state = new MorphicCraftHelpState
-        {
-            userQuestion = "Next sculpt step?",
-            currentStage = "sculpt",
-            currentTool = "lantern"
-        };
+        MorphicCraftHelpState state = new MorphicCraftHelpState();
 
         SculptingEnhancementTeapotColorController teapotColors =
             FindFirstObjectByType<SculptingEnhancementTeapotColorController>(
                 FindObjectsInactive.Include);
         TeapotGestureController teapotGestures =
             FindFirstObjectByType<TeapotGestureController>(FindObjectsInactive.Include);
-        bool teapotActive = teapotColors != null &&
-            teapotColors.isActiveAndEnabled &&
-            teapotColors.gameObject.activeInHierarchy;
-
-        if (teapotActive)
+        if (IsLive(teapotColors) || IsLive(teapotGestures))
         {
             if (teapotGestures != null)
                 teapotGestures.WriteHelpWeights(state);
-            teapotColors.WriteHelpDecor(state);
+            if (teapotColors != null)
+                teapotColors.WriteHelpDecor(state);
+            else
+                state.currentTool = "teapot";
             return state;
         }
 
-        TaiwanLanternGestureController gestures =
-            FindFirstObjectByType<TaiwanLanternGestureController>(FindObjectsInactive.Include);
-        if (gestures != null)
-            gestures.WriteHelpWeights(state);
+        SculptingEnhancementKerisColorController kerisColors =
+            FindFirstObjectByType<SculptingEnhancementKerisColorController>(
+                FindObjectsInactive.Include);
+        KerisGestureController kerisGestures =
+            FindFirstObjectByType<KerisGestureController>(FindObjectsInactive.Include);
+        if (IsLive(kerisColors) || IsLive(kerisGestures))
+        {
+            if (kerisGestures != null)
+                kerisGestures.WriteHelpWeights(state);
+            if (kerisColors != null)
+                kerisColors.WriteHelpDecor(state);
+            else
+                state.currentTool = "keris";
+            return state;
+        }
 
-        SculptingEnhancementLanternColorController colors =
+        TaiwanLanternGestureController lanternGestures =
+            FindFirstObjectByType<TaiwanLanternGestureController>(FindObjectsInactive.Include);
+        SculptingEnhancementLanternColorController lanternColors =
             FindFirstObjectByType<SculptingEnhancementLanternColorController>(
                 FindObjectsInactive.Include);
-        if (colors != null)
-            colors.WriteHelpDecor(state);
+        if (lanternGestures != null)
+            lanternGestures.WriteHelpWeights(state);
+        if (lanternColors != null)
+            lanternColors.WriteHelpDecor(state);
+        else
+            state.currentTool = "lantern";
 
         return state;
     }
 
-    private static string LocalHelpFromState(MorphicCraftHelpState state)
+    private static bool IsLive(Behaviour behaviour)
     {
-        if (state == null)
-            return "LISA: Try a gesture, then ask again.";
-        if (state.currentTool == "teapot")
-        {
-            if (state.tassel < 20)
-                return "LISA: Two fists, pull down to bring the handle out.";
-            if (state.height < 40)
-                return "LISA: Point both index fingers and lift to make it taller.";
-            if (state.bamboo < 20)
-                return "LISA: Two V shapes, spread them to shape the middle.";
-            if (state.hasStamp == 0 && state.hasSelfie == 0)
-                return "LISA: Add a stamp or a selfie on the teapot body.";
-            if (state.width < 20)
-                return "LISA: Spread both index fingers to give it more width.";
-            return "LISA: This looks ready. Open Finish when you are done.";
-        }
-
-        if (state.tassel < 20)
-            return "LISA: Two fists, pull down to bring the tassels out.";
-        if (state.height < 40)
-            return "LISA: Point both index fingers and lift to make it taller.";
-        if (state.bamboo < 20)
-            return "LISA: Two V shapes, spread them to pop the bamboo.";
-        if (state.hasStamp == 0 && state.hasSelfie == 0)
-            return "LISA: Add a stamp or a selfie on the body.";
-        if (state.width < 20)
-            return "LISA: Spread both index fingers to give it more width.";
-        return "LISA: This looks ready. Open Review and put it on the shelf.";
+        return behaviour != null &&
+            behaviour.isActiveAndEnabled &&
+            behaviour.gameObject.activeInHierarchy;
     }
 
     private void HandleAiMessage(string message)
@@ -310,18 +447,19 @@ public class MorphicAIHelpUI : MonoBehaviour
 
     private void HandleAiFailed()
     {
-        if (!string.IsNullOrEmpty(pendingLocalHelp))
-            ShowMessage(pendingLocalHelp);
+        ShowMessage("LISA: Could not reach help. Try again.");
     }
 
     private void ShowMessage(string message)
     {
-        if (dialogueBox != null)
-            dialogueBox.SetActive(!string.IsNullOrWhiteSpace(message));
+        if (askCard != null)
+            askCard.SetActive(true);
         if (helpText != null)
         {
+            bool hasText = !string.IsNullOrWhiteSpace(message);
+            helpText.gameObject.SetActive(hasText);
             helpText.text = message;
-            UpdateDialogueBoxHeight();
+            UpdateAskCardHeight();
         }
 
         MorphicAIFeedbackUI feedback =
@@ -330,27 +468,27 @@ public class MorphicAIHelpUI : MonoBehaviour
             feedback.ShowHint(message);
     }
 
-    private void UpdateDialogueBoxHeight()
+    private void UpdateAskCardHeight()
     {
-        if (dialogueBox == null || helpText == null)
+        if (askCard == null)
             return;
 
-        RectTransform boxRect = dialogueBox.GetComponent<RectTransform>();
+        RectTransform boxRect = askCard.GetComponent<RectTransform>();
         if (boxRect == null)
             return;
 
-        // Force layout update to calculate text height
-        helpText.ForceMeshUpdate();
+        float inputRow = 84f;
+        float answerHeight = 0f;
+        if (helpText != null && helpText.gameObject.activeSelf &&
+            !string.IsNullOrWhiteSpace(helpText.text))
+        {
+            helpText.ForceMeshUpdate();
+            answerHeight = Mathf.Clamp(helpText.preferredHeight + 20f, 36f, 200f);
+            RectTransform textRect = helpText.rectTransform;
+            textRect.offsetMin = new Vector2(16f, inputRow);
+            textRect.offsetMax = new Vector2(-16f, -12f);
+        }
 
-        // Calculate the preferred height of the text
-        float textHeight = helpText.preferredHeight;
-        float padding = 36f; // 18f top + 18f bottom padding from textRect
-        float minHeight = 100f; // Minimum height for short messages
-        float maxHeight = 400f; // Maximum height to prevent it from getting too tall
-
-        float targetHeight = Mathf.Clamp(textHeight + padding, minHeight, maxHeight);
-
-        // Update the box height
-        boxRect.sizeDelta = new Vector2(boxRect.sizeDelta.x, targetHeight);
+        boxRect.sizeDelta = new Vector2(760f, inputRow + answerHeight);
     }
 }

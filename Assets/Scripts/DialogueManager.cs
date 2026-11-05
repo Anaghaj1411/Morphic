@@ -1406,6 +1406,17 @@ public class DialogueManager : MonoBehaviour
                     ActivateSharedStudioTracking();
                     BindKerisFistRotation();
                     BindKerisCustomize();
+                    if (kerisColorController != null)
+                    {
+                        kerisColorController.SetPaletteAvailable(false);
+                        kerisColorController.SetTutorialSculptLock(true);
+                    }
+                    KerisGestureController kerisGestures =
+                        indonesiaKeris.GetComponentInChildren<KerisGestureController>(true);
+                    if (kerisGestures != null)
+                        kerisGestures.suppressDriving = true;
+                    ShowAiHelp();
+                    StartKerisGestureTutorial();
                 }
                 else
                 {
@@ -1718,7 +1729,7 @@ public class DialogueManager : MonoBehaviour
             kerisColorController = indonesiaKeris.AddComponent<SculptingEnhancementKerisColorController>();
 
         kerisColorController.BindFrom(ResolveConfiguredHandRunner(), indonesiaKeris);
-        kerisColorController.SetPaletteAvailable(true);
+        kerisColorController.SetPaletteAvailable(false);
     }
 
     private void HideKerisPalette()
@@ -1918,6 +1929,11 @@ public class DialogueManager : MonoBehaviour
         if (teapotTutorial != null)
             teapotTutorial.Hide();
 
+        KerisGestureTutorial kerisTutorial =
+            GetComponent<KerisGestureTutorial>();
+        if (kerisTutorial != null)
+            kerisTutorial.Hide();
+
         if (lanternColorController != null)
             lanternColorController.SetPaletteAvailable(false);
 
@@ -1934,6 +1950,12 @@ public class DialogueManager : MonoBehaviour
             : null;
         if (teapotGestures != null)
             teapotGestures.suppressDriving = true;
+
+        KerisGestureController kerisGestures = indonesiaKeris != null
+            ? indonesiaKeris.GetComponentInChildren<KerisGestureController>(true)
+            : null;
+        if (kerisGestures != null)
+            kerisGestures.suppressDriving = true;
 
         if (indiaTeapot != null)
             indiaTeapot.SetActive(false);
@@ -1953,6 +1975,39 @@ public class DialogueManager : MonoBehaviour
             dialoguePanel.SetActive(true);
 
         ShowNode(10);
+    }
+
+    private void StartKerisGestureTutorial()
+    {
+        KerisGestureTutorial tutorial = GetComponent<KerisGestureTutorial>();
+        if (tutorial == null)
+            tutorial = gameObject.AddComponent<KerisGestureTutorial>();
+
+        KerisGestureController kerisGestures = indonesiaKeris != null
+            ? indonesiaKeris.GetComponentInChildren<KerisGestureController>(true)
+            : FindFirstObjectByType<KerisGestureController>(FindObjectsInactive.Include);
+
+        tutorial.Begin(kerisGestures, FinishKerisGestureTutorial);
+    }
+
+    private void FinishKerisGestureTutorial()
+    {
+        if (kerisColorController == null && indonesiaKeris != null)
+            kerisColorController = indonesiaKeris.GetComponentInChildren<SculptingEnhancementKerisColorController>(true);
+
+        KerisGestureController kerisGestures = indonesiaKeris != null
+            ? indonesiaKeris.GetComponentInChildren<KerisGestureController>(true)
+            : null;
+        if (kerisGestures != null)
+            kerisGestures.suppressDriving = false;
+
+        if (kerisColorController != null)
+        {
+            kerisColorController.SetTutorialSculptLock(false);
+            kerisColorController.SetPaletteAvailable(true);
+        }
+
+        ShowAiHelp();
     }
 
     private void StartLanternGestureTutorial()

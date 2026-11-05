@@ -548,6 +548,20 @@ public class VertexSculptController : MonoBehaviour
         strokeChanged = false;
     }
 
+    public void ResetMesh()
+    {
+        if (!isInitialized || currentVertices == null || originalVertices == null)
+            return;
+
+        System.Array.Copy(originalVertices, currentVertices, originalVertices.Length);
+        undoHistory.Clear();
+        strokeStartPositions = null;
+        strokeChanged = false;
+        isSculptPinching = false;
+        pinchHoldDuration = 0f;
+        ApplyMeshChanges();
+    }
+
     public bool UndoLastStroke()
     {
         if (currentVertices == null || !HasUndo)

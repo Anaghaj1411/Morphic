@@ -34,6 +34,9 @@ public sealed partial class SculptingEnhancementKerisColorController
     private Material designSurfaceMaterial;
     private Material designHiddenMaterial;
     private Transform selfieSurfaceRoot;
+    private const int SelfieCircleCount = 1;
+    private readonly Transform[] selfieCircleRoots = new Transform[SelfieCircleCount];
+    private readonly Renderer[] selfieCircleRenderers = new Renderer[SelfieCircleCount];
     private Mesh selfieOverlayMesh;
     private Mesh selfieBoundsMesh;
     private float selfieWarnTimer;
@@ -52,15 +55,36 @@ public sealed partial class SculptingEnhancementKerisColorController
     private Vector2 lastColorSampleScreen;
     private Texture2D freeColorTexture;
     private Texture2D[] kerisStamps;
+    private Texture2D[] kerisBands;
+    private Texture2D lastBandMotif;
+    private Texture2D appliedBandTexture;
+    private Texture2D stampAlphaTexture;
+    private Texture2D stampAlphaSource;
+    private Mesh stampOverlayMesh;
+    private bool returnToBandDrawing;
+    private int selectedBandSizeIndex = 1;
+    private Button targetingSizeBtn;
+    private Button targetingColorBtn;
+    private readonly Button[] bandButtons = new Button[8];
+    private readonly RawImage[] bandPreviews = new RawImage[8];
+    private readonly Button[] bandSizeButtons = new Button[4];
+    private readonly string[] bandSizeLabels = { "SLIM", "MEDIUM", "BOLD", "WIDE" };
+    private readonly float[] bandSizes = { 0.0006f, 0.0012f, 0.0022f, 0.0035f };
+    private const int StampTileRows = 3;
+    private const float StampTileSpanFraction = 0.78f;
+    private const float StampTileFillFraction = 0.92f;
     private readonly Button[] shelfSlotButtons = new Button[KerisCollectionStore.MaxCount];
     private Color[] savedPartColors = { new Color(0.80f, 0.58f, 0.22f, 1f), Color.white, Color.white };
     private const int UnresolvedCarvingSlot = -2;
     private int cachedCarvingSlot = UnresolvedCarvingSlot;
     private Mesh cachedCarvingMesh;
 
-    private const int SelfieTileRows = 4;
-    private const float SelfieTileSpanFraction = 0.72f;
-    private const float SelfieTileFillFraction = 0.82f;
+    private const float SelfieCircleFill = 0.92f;
+    private const float SelfieAlongFill = 2.6f;
+    private const float SelfieAcrossFill = 0.78f;
+    private const int SelfieCircleSegments = 36;
+    private const float SelfieFrontDot = 0.22f;
+    private const int SelfieStripRows = 32;
 
     private void BuildConfirmReset(RectTransform parent)
     {
@@ -133,8 +157,17 @@ public sealed partial class SculptingEnhancementKerisColorController
             : Color.Lerp(Color.black, hue, y * 2f);
         lastColorSampleScreen = screenPosition;
         if (clayTintActive) PreviewClayColor(freePalettePreviewColor);
-        else if (designTintActive) committedDesignTint = freePalettePreviewColor;
-        else if (bandTintActive) committedBandColor = freePalettePreviewColor;
+        else if (designTintActive)
+        {
+            committedDesignTint = freePalettePreviewColor;
+            ApplyDesignTint(freePalettePreviewColor);
+        }
+        else if (bandTintActive)
+        {
+            committedBandColor = freePalettePreviewColor;
+            if (patternPainter != null)
+                patternPainter.SetStrokeColor(freePalettePreviewColor, true);
+        }
         else ApplyKerisColor(freePalettePreviewColor);
     }
 
@@ -144,8 +177,27 @@ public sealed partial class SculptingEnhancementKerisColorController
     {
         if (clayTintActive) { clayTintActive = false; ShowVertexSculpt(); return; }
         if (designTintActive) { designTintActive = false; ShowDesignSelection(); return; }
-        if (bandTintActive) { bandTintActive = false; ResumeBandDrawing(); return; }
-        if (selectedPart >= 0 && PartNeedsVariant(selectedPart) && selectedVariant >= 0)
+        if (bandTintActive)
+        {
+            bandTintActive = false;
+            if (returnToBandDrawing)
+            {
+                returnToBandDrawing = false;
+                colorBackToBands = false;
+                ResumeBandDrawing();
+            }
+            else if (colorBackToBands)
+            {
+                colorBackToBands = false;
+                ShowBandSelection();
+            }
+            else
+                ResumeBandDrawing();
+            return;
+        }
+        if (selectedPart == PartBody)
+            ShowBodyActions();
+        else if (selectedPart >= 0 && PartNeedsVariant(selectedPart) && selectedVariant >= 0)
             ShowVariantSelection(selectedPart);
         else if (selectedPart >= 0) ShowPartSelection();
         else ShowMainMenu();
@@ -170,14 +222,6 @@ public sealed partial class SculptingEnhancementKerisColorController
             new Vector2(PillWidth, 56f), "DONE", DonePink);
         done.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(done, false, false, Color.white);
-        Button decorate = CreateButton("ReviewDecorate", rect, new Vector2(0f, -228f),
-            new Vector2(PillWidth, 54f), "STAMP & DRAW", PillPink);
-        decorate.onClick.AddListener(ShowDesignSelection);
-        RegisterHitTarget(decorate, false, false, Color.white);
-        Button openShelf = CreateButton("ReviewShelf", rect, new Vector2(0f, -292f),
-            new Vector2(PillWidth, 54f), "OPEN SHELF", ActionPink);
-        openShelf.onClick.AddListener(ShowShelf);
-        RegisterHitTarget(openShelf, false, false, Color.white);
         reviewGroup.SetActive(false);
 
         shelfGroup = new GameObject("KerisShelf", typeof(RectTransform));
@@ -359,86 +403,566 @@ public sealed partial class SculptingEnhancementKerisColorController
 
     private void ShowBodyActions()
     {
+        DisableVertexSculpt();
         selectedPart = PartBody;
-        ShowColorSelection();
+        designTintActive = false;
+        bandTintActive = false;
+        EnsureBodyActionGroup();
+        mode = ColorMode.SelectBodyActions;
+        SetPanelHeight(BodyActionsPanelHeight);
+        panel.SetActive(true);
+        mainActionGroup.SetActive(false);
+        HideExtraGroups();
+        HideReviewAndShelf();
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        if (historyBar != null)
+            historyBar.SetActive(true);
+        if (bodyActionGroup != null)
+            bodyActionGroup.SetActive(true);
+        headerText.text = "KERIS BODY";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = appliedDesignTexture != null
+            ? "Change the blade color, add another stamp, or draw a band."
+            : "Change the blade color, add a stamped design, or draw a band.";
+        SetHeaderBackLabel("← PARTS");
+        SetHeaderBackVisible(true);
+        SetTitleBurstsVisible(false);
+        SetSculptGesturesEnabled(true);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void EnsureBodyActionGroup()
+    {
+        if (bodyActionGroup != null || panel == null)
+            return;
+
+        bodyActionGroup = new GameObject("BodyActions", typeof(RectTransform));
+        bodyActionGroup.transform.SetParent(panel.transform, false);
+        RectTransform bodyRect = bodyActionGroup.GetComponent<RectTransform>();
+        DockTop(bodyRect, -124f, 310f);
+
+        Button changeColor = CreateButton(
+            "ChangeColor", bodyRect, new Vector2(0f, 0f),
+            new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
+        changeColor.onClick.AddListener(OpenBodyPaperColor);
+        RegisterHitTarget(changeColor, false, false, Color.white);
+
+        Button addDesign = CreateButton(
+            "AddDesign", bodyRect, new Vector2(0f, -74f),
+            new Vector2(PillWidth, PillHeight), "ADD DESIGN", PillPink);
+        addDesign.onClick.AddListener(ShowDesignSelection);
+        RegisterHitTarget(addDesign, false, false, Color.white);
+
+        Button drawBand = CreateButton(
+            "DrawBand", bodyRect, new Vector2(0f, -148f),
+            new Vector2(PillWidth, PillHeight), "DRAW BAND", PillPink);
+        drawBand.onClick.AddListener(ShowBandSelection);
+        RegisterHitTarget(drawBand, false, false, Color.white);
+
+        Button done = CreateButton(
+            "Done", bodyRect, new Vector2(0f, -222f),
+            new Vector2(PillWidth, PillHeight), "DONE", DonePink);
+        done.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(done, false, false, Color.white);
+        bodyActionGroup.SetActive(false);
+    }
+
+    private void OpenBodyPaperColor()
+    {
+        designTintActive = false;
+        bandTintActive = false;
+        clayTintActive = false;
+        selectedPart = PartBody;
+        ContinueToColorSelection();
     }
 
     private void ShowDesignSelection()
     {
+        DisableVertexSculpt();
         designTintActive = false;
+        selectedPart = PartBody;
+        EnsureDesignGroup();
         mode = ColorMode.SelectDesign;
-        ShowMainMenu();
-        mode = ColorMode.SelectDesign;
-        mainActionGroup.SetActive(false);
-        instructionText.gameObject.SetActive(true);
-        instructionText.text = "Choose a stamp, then draw it on the Keris.";
-        SetHeaderBackVisible(true);
-        SetHeaderBackLabel("← BACK");
         SetPanelHeight(DesignSelectionPanelHeight);
+        panel.SetActive(true);
+        mainActionGroup.SetActive(false);
         HideExtraGroups();
-        if (designGroup == null)
+        HideReviewAndShelf();
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        if (designGroup != null)
+            designGroup.SetActive(true);
+        headerText.text = "ADD DESIGN";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = kerisStamps == null || kerisStamps.Length == 0
+            ? "No stamps found in StampPatterns."
+            : "Choose a stamp. Then tint it with Change Color.";
+        SetHeaderBackLabel("← BODY");
+        SetHeaderBackVisible(true);
+        SetTitleBurstsVisible(false);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void EnsureDesignGroup()
+    {
+        if (designGroup != null || panel == null)
+            return;
+
+        designGroup = new GameObject("KerisStamps", typeof(RectTransform));
+        designGroup.transform.SetParent(panel.transform, false);
+        DockTop(designGroup.GetComponent<RectTransform>(), -124f, 420f);
+        kerisStamps = MorphicPatternCatalog.Stamps();
+        if (kerisStamps == null)
+            kerisStamps = Array.Empty<Texture2D>();
+        int count = Mathf.Min(kerisStamps.Length, 6);
+        for (int i = 0; i < count; i++)
         {
-            designGroup = new GameObject("KerisStamps", typeof(RectTransform));
-            designGroup.transform.SetParent(panel.transform, false);
-            DockTop(designGroup.GetComponent<RectTransform>(), -124f, 370f);
-            kerisStamps = Resources.LoadAll<Texture2D>("StampPatterns");
-            if (kerisStamps == null || kerisStamps.Length == 0)
-                kerisStamps = new Texture2D[0];
-            int count = Mathf.Min(kerisStamps.Length, 6);
-            for (int i = 0; i < count; i++)
-            {
-                Texture2D stamp = kerisStamps[i];
-                Button button = CreateButton("Stamp" + i, designGroup.transform,
-                    new Vector2(-125f + (i % 3) * 125f, -(i / 3) * 82f),
-                    new Vector2(110f, 64f), "STAMP " + (i + 1), PillPink);
-                button.onClick.AddListener(() => SelectStamp(stamp));
-                RegisterHitTarget(button, false, false, Color.white);
-            }
-            Button draw = CreateButton("DrawDesign", designGroup.transform, new Vector2(0f, -210f),
-                new Vector2(PillWidth, 58f), "FREE DRAW", ActionPink);
-            draw.onClick.AddListener(ResumeBandDrawing);
-            RegisterHitTarget(draw, false, false, Color.white);
-            Button tint = CreateButton("StampColor", designGroup.transform, new Vector2(0f, -278f),
-                new Vector2(PillWidth, 54f), "STAMP COLOR", PillPink);
-            tint.onClick.AddListener(() => { designTintActive = true; ShowColorSelection(); });
-            RegisterHitTarget(tint, false, false, Color.white);
+            Texture2D stamp = kerisStamps[i];
+            Button button = CreateButton("Stamp" + i, designGroup.transform,
+                new Vector2(-125f + (i % 3) * 125f, -(i / 3) * 100f),
+                new Vector2(110f, 88f), PatternLabel(stamp), PillPink);
+            DecoratePatternButton(button, stamp, PatternLabel(stamp));
+            button.onClick.AddListener(() => SelectStamp(stamp));
+            RegisterHitTarget(button, false, false, Color.white);
         }
-        designGroup.SetActive(true);
+
+        Button tint = CreateButton("StampColor", designGroup.transform, new Vector2(0f, -228f),
+            new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
+        tint.onClick.AddListener(() => { designTintActive = true; ShowColorSelection(); });
+        RegisterHitTarget(tint, false, false, Color.white);
+
+        Button clear = CreateButton("ClearDesign", designGroup.transform, new Vector2(0f, -300f),
+            new Vector2(PillWidth, PillHeight), "CLEAR DESIGN", PillPink);
+        clear.onClick.AddListener(ClearKerisDesign);
+        RegisterHitTarget(clear, false, false, Color.white);
+
+        Button done = CreateButton("Done", designGroup.transform, new Vector2(0f, -372f),
+            new Vector2(PillWidth, PillHeight), "DONE", DonePink);
+        done.onClick.AddListener(ShowBodyActions);
+        RegisterHitTarget(done, false, false, Color.white);
+        designGroup.SetActive(false);
+    }
+
+    private void ClearKerisDesign()
+    {
+        appliedDesignTexture = null;
+        designTintActive = false;
+        committedDesignTint = Color.white;
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = false;
+        if (designSurfaceRoot != null)
+            designSurfaceRoot.gameObject.SetActive(false);
+        instructionText.text = "Design cleared.";
     }
 
     private void SelectStamp(Texture2D stamp)
     {
-        EnsurePainter();
-        appliedDesignTexture = stamp;
-        if (patternPainter != null)
+        if (stamp == null)
         {
-            patternPainter.SetPatternTexture(stamp);
-            patternPainter.SetStrokeColor(committedDesignTint, true);
-            patternPainter.SetPaintingEnabled(true);
+            instructionText.text = "That stamp is missing.";
+            return;
         }
-        mode = ColorMode.DrawBandTargeting;
-        if (designGroup != null) designGroup.SetActive(false);
-        instructionText.text = "Draw on the Keris surface to place the stamp.";
+
+        ApplyKerisStamp(stamp, committedDesignTint);
+        instructionText.text = PatternLabel(stamp) + " applied. Change Color tints the stamp.";
+    }
+
+    private void ApplyKerisStamp(Texture2D stamp, Color tint)
+    {
+        appliedDesignTexture = stamp;
+        committedDesignTint = tint;
+        EnsureDesignOverlay();
+        ConfigureDesignSurfaceMaterial(stamp);
+        ApplyDesignTint(tint);
+        if (designSurfaceRoot != null)
+            designSurfaceRoot.gameObject.SetActive(true);
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = true;
     }
 
     private void ShowBandSelection()
     {
-        ShowDesignSelection();
+        DisableVertexSculpt();
+        designTintActive = false;
+        bandTintActive = false;
+        returnToBandDrawing = false;
+        selectedPart = PartBody;
+        EnsureBandGroup();
+        RefreshBandButtons();
+        RefreshBandSizeButtons();
+        if (patternPainter != null)
+            patternPainter.SetPaintingEnabled(false);
+        if (bandColorChip != null)
+            bandColorChip.color = committedBandColor;
+        mode = ColorMode.SelectDrawMotif;
+        SetPanelHeight(BandSelectionPanelHeight);
+        panel.SetActive(true);
+        mainActionGroup.SetActive(false);
+        HideExtraGroups();
+        HideReviewAndShelf();
+        if (selfiePanel != null)
+            selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        if (historyBar != null)
+            historyBar.SetActive(true);
+        if (bandGroup != null)
+            bandGroup.SetActive(true);
+        headerText.text = "DRAW BAND";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Select a motif, adjust size & color, then trace on the keris.";
+        SetHeaderBackLabel("← BODY");
+        SetHeaderBackVisible(true);
+        SetTitleBurstsVisible(false);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void EnsureBandGroup()
+    {
+        if (bandGroup != null || panel == null)
+            return;
+
+        bandGroup = new GameObject("BandSelection", typeof(RectTransform));
+        bandGroup.transform.SetParent(panel.transform, false);
+        RectTransform bandRect = bandGroup.GetComponent<RectTransform>();
+        DockTop(bandRect, -120f, 720f);
+        kerisBands = MorphicPatternCatalog.Bands();
+        if (kerisBands == null)
+            kerisBands = Array.Empty<Texture2D>();
+
+        for (int i = 0; i < bandButtons.Length; i++)
+        {
+            int bandIndex = i;
+            int column = i % 2;
+            int row = i / 2;
+            float posX = column == 0 ? -129f : 129f;
+            float posY = -row * 100f;
+
+            Image frame = LanguagePageBuilder.CreateRoundedImage("Band" + i, bandRect, 20, LanguagePageBuilder.Green);
+            RectTransform rect = frame.rectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(posX, posY);
+            rect.sizeDelta = new Vector2(232f, 90f);
+            frame.raycastTarget = true;
+
+            Image fill = LanguagePageBuilder.CreateRoundedImage("Fill", frame.transform, 16, PillPink);
+            LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(4f, 4f));
+            fill.raycastTarget = true;
+
+            GameObject previewObj = new GameObject("Preview", typeof(RectTransform), typeof(RawImage));
+            previewObj.transform.SetParent(fill.transform, false);
+            RectTransform prevRect = previewObj.GetComponent<RectTransform>();
+            prevRect.anchorMin = new Vector2(0.04f, 0.38f);
+            prevRect.anchorMax = new Vector2(0.96f, 0.94f);
+            prevRect.offsetMin = Vector2.zero;
+            prevRect.offsetMax = Vector2.zero;
+            RawImage prevImg = previewObj.GetComponent<RawImage>();
+            prevImg.color = Color.white;
+            prevImg.raycastTarget = false;
+            bandPreviews[i] = prevImg;
+
+            GameObject labelObj = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            labelObj.transform.SetParent(fill.transform, false);
+            RectTransform labelRect = labelObj.GetComponent<RectTransform>();
+            labelRect.anchorMin = new Vector2(0f, 0.02f);
+            labelRect.anchorMax = new Vector2(1f, 0.38f);
+            labelRect.offsetMin = Vector2.zero;
+            labelRect.offsetMax = Vector2.zero;
+            TextMeshProUGUI labelText = labelObj.GetComponent<TextMeshProUGUI>();
+            labelText.text = "BAND " + (i + 1);
+            labelText.fontSize = 18f;
+            labelText.fontStyle = FontStyles.Bold;
+            labelText.alignment = TextAlignmentOptions.Center;
+            labelText.color = DarkTextGreen;
+            labelText.raycastTarget = false;
+
+            Button btn = frame.gameObject.AddComponent<Button>();
+            btn.targetGraphic = fill;
+            btn.onClick.AddListener(() => SelectBandMotif(bandIndex));
+            RegisterHitTarget(btn, false, true, Color.white);
+            bandButtons[i] = btn;
+        }
+
+        TMP_Text widthTitle = CreateText(
+            "WidthTitle", bandRect, new Vector2(0f, -406f),
+            new Vector2(PillWidth, 24f), "BAND WIDTH", 19f,
+            TextAlignmentOptions.Center, FontStyles.Bold);
+        widthTitle.color = DarkTextGreen;
+        RectTransform widthRect = widthTitle.rectTransform;
+        widthRect.anchorMin = widthRect.anchorMax = new Vector2(0.5f, 1f);
+        widthRect.pivot = new Vector2(0.5f, 1f);
+        widthRect.anchoredPosition = new Vector2(0f, -406f);
+
+        for (int s = 0; s < bandSizeButtons.Length; s++)
+        {
+            int sizeIdx = s;
+            float posX = -174f + s * 116f;
+            bandSizeButtons[s] = CreateButton(
+                "BandSize" + s, bandRect, new Vector2(posX, -438f),
+                new Vector2(114f, 48f), bandSizeLabels[s],
+                s == selectedBandSizeIndex ? ActionPink : PillPink);
+            TMP_Text sizeText = bandSizeButtons[s].GetComponentInChildren<TMP_Text>();
+            if (sizeText != null)
+            {
+                sizeText.fontSize = 18f;
+                sizeText.fontStyle = FontStyles.Bold;
+                sizeText.color = DarkTextGreen;
+            }
+            bandSizeButtons[s].onClick.AddListener(() => SelectBandSize(sizeIdx));
+            RegisterHitTarget(bandSizeButtons[s], false, false, Color.white);
+        }
+
+        Button bandColorBtn = CreateButton(
+            "BandColor", bandRect, new Vector2(0f, -502f),
+            new Vector2(PillWidth, 56f), "BAND COLOR", ActionPink);
+        bandColorBtn.onClick.AddListener(OpenBandColorSelection);
+        TMP_Text bColText = bandColorBtn.GetComponentInChildren<TMP_Text>();
+        if (bColText != null)
+        {
+            bColText.fontSize = 24f;
+            bColText.fontStyle = FontStyles.Bold;
+            bColText.color = DarkTextGreen;
+        }
+        RegisterHitTarget(bandColorBtn, false, false, Color.white);
+
+        Image swatchFrame = LanguagePageBuilder.CreateRoundedImage("SwatchFrame", bandColorBtn.transform, 10, LanguagePageBuilder.Green);
+        RectTransform sfRect = swatchFrame.rectTransform;
+        sfRect.anchorMin = sfRect.anchorMax = new Vector2(0.88f, 0.5f);
+        sfRect.pivot = new Vector2(0.5f, 0.5f);
+        sfRect.anchoredPosition = Vector2.zero;
+        sfRect.sizeDelta = new Vector2(52f, 34f);
+        swatchFrame.raycastTarget = false;
+
+        Image swatchFill = LanguagePageBuilder.CreateRoundedImage("SwatchFill", swatchFrame.transform, 8, committedBandColor);
+        LanguagePageBuilder.Stretch(swatchFill.rectTransform, new Vector2(3f, 3f));
+        swatchFill.raycastTarget = false;
+        bandColorChip = swatchFill;
+
+        Button clearStrokes = CreateButton(
+            "ClearStrokes", bandRect, new Vector2(0f, -570f),
+            new Vector2(PillWidth, 52f), "CLEAR DRAWINGS", PillPink);
+        TMP_Text clearText = clearStrokes.GetComponentInChildren<TMP_Text>();
+        if (clearText != null)
+        {
+            clearText.fontSize = 22f;
+            clearText.fontStyle = FontStyles.Bold;
+            clearText.color = DarkTextGreen;
+        }
+        clearStrokes.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.ClearAllStrokes();
+            instructionText.text = "All drawings cleared.";
+        });
+        RegisterHitTarget(clearStrokes, false, false, Color.white);
+
+        Button done = CreateButton(
+            "Done", bandRect, new Vector2(0f, -634f),
+            new Vector2(PillWidth, 60f), "DONE", DonePink);
+        done.onClick.AddListener(ShowBodyActions);
+        RegisterHitTarget(done, false, false, Color.white);
+        bandGroup.SetActive(false);
+    }
+
+    private void SelectBandMotif(int index)
+    {
+        if (kerisBands == null || index < 0 || index >= kerisBands.Length)
+            return;
+
+        Texture2D motif = kerisBands[index];
+        if (motif == null)
+            return;
+
+        lastBandMotif = motif;
+        appliedBandTexture = motif;
+        PrepareBandPainter(motif);
+        BeginBandDrawing(PatternLabel(motif));
+    }
+
+    private void SelectBandMotif(Texture2D motif)
+    {
+        lastBandMotif = motif;
+        appliedBandTexture = motif;
+        PrepareBandPainter(motif);
+        BeginBandDrawing(PatternLabel(motif));
     }
 
     private void ResumeBandDrawing()
     {
+        PrepareBandPainter(lastBandMotif);
+        bandTintActive = false;
+        BeginBandDrawing(lastBandMotif != null ? PatternLabel(lastBandMotif) : "BAND");
+    }
+
+    private void PrepareBandPainter(Texture2D motif)
+    {
         EnsurePainter();
-        appliedDesignTexture = null;
+        if (patternPainter == null)
+            return;
+
+        float width = bandSizes[Mathf.Clamp(selectedBandSizeIndex, 0, bandSizes.Length - 1)];
+        patternPainter.SetClayCoilMode(false);
+        patternPainter.SetPatternTexture(motif);
+        patternPainter.SetStrokeColor(committedBandColor, true);
+        patternPainter.SetStrokeWidth(width, false);
+        patternPainter.SetMinPointSpacing(width * 0.25f);
+        patternPainter.SetDrawingLocked(false);
+        patternPainter.SetPaintingEnabled(true);
+    }
+
+    private void BeginBandDrawing(string motifName)
+    {
+        mode = ColorMode.DrawBandTargeting;
+        HideExtraGroups();
+        HideReviewAndShelf();
+        EnsureBandTargetingBar();
+        RefreshBandSizeButtons();
+        if (bandTargetingBar != null)
+            bandTargetingBar.SetActive(true);
+        if (historyBar != null)
+            historyBar.SetActive(false);
+        SetPanelHeight(330f);
+        headerText.text = "DRAW: " + motifName.ToUpperInvariant();
+        SetHeaderBackLabel("← MOTIFS");
+        SetHeaderBackVisible(true);
+        instructionText.gameObject.SetActive(true);
+        instructionText.fontSize = 20f;
+        instructionText.fontStyle = FontStyles.Bold;
+        instructionText.color = DarkTextGreen;
+        instructionText.text = "Trace index finger across the keris to draw. Open palm to lock.";
+        ResetDwell();
+        SetHoveredTarget(null);
+        BeginVertexSculptCameraZoom();
+    }
+
+    private void SelectBandSize(int sizeIdx)
+    {
+        selectedBandSizeIndex = Mathf.Clamp(sizeIdx, 0, bandSizes.Length - 1);
+        float width = bandSizes[selectedBandSizeIndex];
         if (patternPainter != null)
         {
-            patternPainter.SetPatternTexture(null);
-            patternPainter.SetPaintingEnabled(true);
+            patternPainter.SetStrokeWidth(width, true);
+            patternPainter.SetMinPointSpacing(width * 0.25f);
         }
-        mode = ColorMode.DrawBandTargeting;
-        if (designGroup != null) designGroup.SetActive(false);
-        if (bandTintActive) bandTintActive = false;
-        instructionText.text = "Point at the Keris and draw to add a surface pattern.";
+
+        RefreshBandSizeButtons();
+        instructionText.text = "Band width: " + bandSizeLabels[selectedBandSizeIndex] + ".";
+    }
+
+    private void RefreshBandSizeButtons()
+    {
+        for (int s = 0; s < bandSizeButtons.Length; s++)
+        {
+            if (bandSizeButtons[s] == null)
+                continue;
+            Image fill = GetButtonFill(bandSizeButtons[s]);
+            if (fill != null)
+                fill.color = s == selectedBandSizeIndex ? ActionPink : PillPink;
+        }
+
+        if (targetingSizeBtn != null)
+        {
+            TMP_Text label = targetingSizeBtn.GetComponentInChildren<TMP_Text>();
+            if (label != null)
+                label.text = "SIZE: " + bandSizeLabels[selectedBandSizeIndex];
+        }
+    }
+
+    private void RefreshBandButtons()
+    {
+        if (kerisBands == null)
+            kerisBands = MorphicPatternCatalog.Bands();
+        int bandCount = kerisBands != null ? kerisBands.Length : 0;
+        for (int i = 0; i < bandButtons.Length; i++)
+        {
+            bool visible = i < bandCount && kerisBands[i] != null;
+            if (bandButtons[i] != null)
+                bandButtons[i].gameObject.SetActive(visible);
+            if (!visible)
+                continue;
+
+            if (bandPreviews[i] != null)
+                bandPreviews[i].texture = kerisBands[i];
+            TMP_Text label = bandButtons[i].GetComponentInChildren<TMP_Text>();
+            if (label != null)
+                label.text = PatternLabel(kerisBands[i]);
+        }
+    }
+
+    private void OpenBandColorSelection()
+    {
+        colorBackToBands = !returnToBandDrawing;
+        bandTintActive = true;
+        clayTintActive = false;
+        designTintActive = false;
+        selectedPart = PartBody;
+        ShowColorSelection();
+        headerText.text = "BAND COLOR";
+        SetHeaderBackLabel(returnToBandDrawing ? "← DRAW" : "← MOTIFS");
+        instructionText.text = "Point and hold on a color to tint the band designs.";
+    }
+
+    private void EnsureBandTargetingBar()
+    {
+        if (bandTargetingBar != null || panel == null)
+            return;
+
+        bandTargetingBar = new GameObject("BandTargetingBar", typeof(RectTransform));
+        bandTargetingBar.transform.SetParent(panel.transform, false);
+        RectTransform barRect = bandTargetingBar.GetComponent<RectTransform>();
+        DockTop(barRect, -116f, 56f);
+
+        targetingSizeBtn = CreateButton(
+            "TargetingSize", barRect, new Vector2(-171f, 0f),
+            new Vector2(126f, 48f),
+            "SIZE: " + bandSizeLabels[selectedBandSizeIndex], PillPink);
+        targetingSizeBtn.onClick.AddListener(() =>
+        {
+            SelectBandSize((selectedBandSizeIndex + 1) % bandSizes.Length);
+        });
+        RegisterHitTarget(targetingSizeBtn, false, false, Color.white);
+
+        targetingColorBtn = CreateButton(
+            "TargetingColor", barRect, new Vector2(-57f, 0f),
+            new Vector2(108f, 48f), "COLOR", ActionPink);
+        targetingColorBtn.onClick.AddListener(() =>
+        {
+            returnToBandDrawing = true;
+            OpenBandColorSelection();
+        });
+        RegisterHitTarget(targetingColorBtn, false, false, Color.white);
+
+        Button undoBtn = CreateButton(
+            "TargetingUndo", barRect, new Vector2(57f, 0f),
+            new Vector2(108f, 48f), "UNDO", PillPink);
+        undoBtn.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.UndoLastStroke();
+            instructionText.text = "Last stroke undone.";
+        });
+        RegisterHitTarget(undoBtn, false, false, Color.white);
+
+        Button clearBtn = CreateButton(
+            "TargetingClear", barRect, new Vector2(171f, 0f),
+            new Vector2(108f, 48f), "CLEAR", PillPink);
+        clearBtn.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.ClearAllStrokes();
+            instructionText.text = "All drawings cleared.";
+        });
+        RegisterHitTarget(clearBtn, false, false, Color.white);
+        bandTargetingBar.SetActive(false);
     }
 
     private void DriveBandDrawing(Vector2 screenPosition, bool hasHand, HitTarget target)
@@ -658,12 +1182,15 @@ public sealed partial class SculptingEnhancementKerisColorController
         }
         if (record.StampVisible && !string.IsNullOrEmpty(record.StampName))
         {
-            appliedDesignTexture = Resources.Load<Texture2D>("StampPatterns/" + record.StampName);
-            if (patternPainter != null && appliedDesignTexture != null)
-            {
-                patternPainter.SetPatternTexture(appliedDesignTexture);
-                patternPainter.SetStrokeColor(record.StampTint, true);
-            }
+            Texture2D stamp = Resources.Load<Texture2D>("StampPatterns/" + record.StampName);
+            if (stamp == null)
+                stamp = FindStampByName(record.StampName);
+            if (stamp != null)
+                ApplyKerisStamp(stamp, record.StampTint);
+        }
+        else
+        {
+            ClearKerisDesign();
         }
         kerisSaved = true;
         ShowMainMenu();
@@ -689,16 +1216,61 @@ public sealed partial class SculptingEnhancementKerisColorController
         capturedSelfieTexture = null;
         appliedSelfieTexture = null;
         appliedDesignTexture = null;
-        if (selfieSurfaceRoot != null) selfieSurfaceRoot.gameObject.SetActive(false);
-        if (patternPainter != null) patternPainter.ClearAllStrokes();
+        SetSelfieCirclesVisible(false);
+        if (designSurfaceRenderer != null) designSurfaceRenderer.enabled = false;
+        if (designSurfaceRoot != null) designSurfaceRoot.gameObject.SetActive(false);
+        if (patternPainter != null)
+        {
+            patternPainter.ClearAllStrokes();
+            patternPainter.ClearClayCoils();
+        }
     }
 
     private void ApplyDesignTint(Color color)
     {
-        if (patternPainter != null) patternPainter.SetStrokeColor(color, true);
+        if (designSurfaceMaterial == null)
+            return;
+        if (designSurfaceMaterial.HasProperty("_DesignColor"))
+            designSurfaceMaterial.SetColor("_DesignColor", color);
+        if (designSurfaceMaterial.HasProperty("_Color"))
+            designSurfaceMaterial.SetColor("_Color", color);
+        if (designSurfaceMaterial.HasProperty("_BaseColor"))
+            designSurfaceMaterial.SetColor("_BaseColor", color);
     }
 
-    private void SyncDesignSurfaceRenderer() { }
+    private void SyncDesignSurfaceRenderer()
+    {
+        if (appliedDesignTexture == null)
+            return;
+
+        if (kerisRenderer == null)
+        {
+            if (kerisSkin == null)
+                kerisSkin = GetComponentInChildren<SkinnedMeshRenderer>(true);
+            kerisRenderer = kerisSkin != null ? kerisSkin : GetComponentInChildren<Renderer>(true);
+        }
+        if (kerisRenderer == null)
+            return;
+
+        EnsureDesignOverlay();
+        if (designSurfaceRoot == null)
+            return;
+
+        if (designSurfaceRoot.parent != kerisRenderer.transform)
+        {
+            designSurfaceRoot.SetParent(kerisRenderer.transform, false);
+            designSurfaceRoot.localPosition = Vector3.zero;
+            designSurfaceRoot.localRotation = Quaternion.identity;
+            designSurfaceRoot.localScale = Vector3.one;
+        }
+
+        designSurfaceRoot.gameObject.layer = kerisRenderer.gameObject.layer;
+        designSurfaceRoot.gameObject.SetActive(true);
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = true;
+
+        BuildStampTileMesh();
+    }
 
     private void SyncSelfieSurfaceRenderer()
     {
@@ -714,68 +1286,88 @@ public sealed partial class SculptingEnhancementKerisColorController
         }
         if (kerisRenderer == null) return;
 
-        if (selfieSurfaceRoot == null)
-        {
-            GameObject root = new GameObject("KerisSelfieOverlay");
-            selfieSurfaceRoot = root.transform;
-            selfieSurfaceRoot.SetParent(kerisRenderer.transform, false);
-            selfieSurfaceRoot.localPosition = Vector3.zero;
-            selfieSurfaceRoot.localRotation = Quaternion.identity;
-            selfieSurfaceRoot.localScale = Vector3.one;
-
-            MeshFilter filter = root.AddComponent<MeshFilter>();
-            MeshRenderer meshRenderer = root.AddComponent<MeshRenderer>();
-            meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            meshRenderer.receiveShadows = false;
-            meshRenderer.allowOcclusionWhenDynamic = false;
-            meshRenderer.sortingOrder = 30;
-            selfieSurfaceRenderer = meshRenderer;
-
-            selfieOverlayMesh = new Mesh { name = "KerisSelfieTiles" };
-            selfieOverlayMesh.MarkDynamic();
-            filter.sharedMesh = selfieOverlayMesh;
-            lastSelfieTileLog = -1;
-        }
-
-        // Self-heal the overlay every frame: it always ends up parented to the
-        // blade transform with a valid filter/renderer/mesh, so attachment can
-        // never silently break.
-        if (selfieSurfaceRoot.parent != kerisRenderer.transform)
-        {
-            selfieSurfaceRoot.SetParent(kerisRenderer.transform, false);
-            selfieSurfaceRoot.localPosition = Vector3.zero;
-            selfieSurfaceRoot.localRotation = Quaternion.identity;
-            selfieSurfaceRoot.localScale = Vector3.one;
-        }
-
-        MeshFilter overlayFilter = selfieSurfaceRoot.GetComponent<MeshFilter>();
-        if (overlayFilter == null)
-            overlayFilter = selfieSurfaceRoot.gameObject.AddComponent<MeshFilter>();
-
-        if (selfieOverlayMesh == null)
-        {
-            selfieOverlayMesh = new Mesh { name = "KerisSelfieTiles" };
-            selfieOverlayMesh.MarkDynamic();
-        }
-        if (overlayFilter.sharedMesh != selfieOverlayMesh)
-            overlayFilter.sharedMesh = selfieOverlayMesh;
-
-        if (selfieSurfaceRenderer == null)
-        {
-            selfieSurfaceRenderer = selfieSurfaceRoot.GetComponent<MeshRenderer>();
-            if (selfieSurfaceRenderer == null)
-                selfieSurfaceRenderer = selfieSurfaceRoot.gameObject.AddComponent<MeshRenderer>();
-            selfieSurfaceRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            selfieSurfaceRenderer.receiveShadows = false;
-            selfieSurfaceRenderer.allowOcclusionWhenDynamic = false;
-            selfieSurfaceRenderer.sortingOrder = 30;
-        }
-
-        selfieSurfaceRoot.gameObject.layer = kerisRenderer.gameObject.layer;
-        selfieSurfaceRoot.gameObject.SetActive(true);
-        selfieSurfaceRenderer.enabled = true;
-
+        EnsureSelfieCircles();
         BuildSelfieTileMesh();
+    }
+
+    private void EnsureSelfieCircles()
+    {
+        if (selfieOverlayMesh == null)
+            selfieOverlayMesh = CreateSelfieCircleMesh();
+
+        for (int i = 0; i < SelfieCircleCount; i++)
+        {
+            if (selfieCircleRoots[i] == null)
+            {
+                GameObject root = new GameObject("KerisSelfieCircle" + i);
+                selfieCircleRoots[i] = root.transform;
+                MeshFilter filter = root.AddComponent<MeshFilter>();
+                MeshRenderer meshRenderer = root.AddComponent<MeshRenderer>();
+                meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                meshRenderer.receiveShadows = false;
+                meshRenderer.allowOcclusionWhenDynamic = false;
+                meshRenderer.sortingOrder = 40;
+                meshRenderer.forceRenderingOff = false;
+                filter.sharedMesh = selfieOverlayMesh;
+                selfieCircleRenderers[i] = meshRenderer;
+            }
+
+            if (selfieCircleRoots[i].parent != null)
+                selfieCircleRoots[i].SetParent(null, true);
+            if (kerisRenderer != null)
+                selfieCircleRoots[i].gameObject.layer = kerisRenderer.gameObject.layer;
+            selfieCircleRoots[i].gameObject.SetActive(true);
+            if (selfieCircleRenderers[i] != null)
+                selfieCircleRenderers[i].enabled = true;
+        }
+
+        selfieSurfaceRoot = selfieCircleRoots[0];
+        selfieSurfaceRenderer = selfieCircleRenderers[0];
+        DestroyExtraSelfieCircles();
+    }
+
+    private void SetSelfieCirclesVisible(bool visible)
+    {
+        for (int i = 0; i < SelfieCircleCount; i++)
+        {
+            if (selfieCircleRoots[i] != null)
+                selfieCircleRoots[i].gameObject.SetActive(visible);
+        }
+        if (selfieSurfaceRoot != null)
+            selfieSurfaceRoot.gameObject.SetActive(visible);
+    }
+
+    private void DestroySelfieCircles()
+    {
+        for (int i = 0; i < SelfieCircleCount; i++)
+        {
+            if (selfieCircleRoots[i] != null)
+                Destroy(selfieCircleRoots[i].gameObject);
+            selfieCircleRoots[i] = null;
+            selfieCircleRenderers[i] = null;
+        }
+        DestroyExtraSelfieCircles();
+        selfieSurfaceRoot = null;
+        selfieSurfaceRenderer = null;
+    }
+
+    private static void DestroyExtraSelfieCircles()
+    {
+        Transform[] transforms = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            Transform t = transforms[i];
+            if (t == null || !t.name.StartsWith("KerisSelfieCircle", StringComparison.Ordinal))
+                continue;
+            string suffix = t.name.Substring("KerisSelfieCircle".Length);
+            int index;
+            if (!int.TryParse(suffix, out index) || index < SelfieCircleCount)
+                continue;
+            if (Application.isPlaying)
+                UnityEngine.Object.Destroy(t.gameObject);
+            else
+                UnityEngine.Object.DestroyImmediate(t.gameObject);
+        }
     }
 
     // The blade length is the model's longest world-space axis and its thickness
@@ -844,14 +1436,227 @@ public sealed partial class SculptingEnhancementKerisColorController
         Debug.LogWarning("MORPHIC: " + message, this);
     }
 
-    // Builds a short column of small upright selfie tiles that hug the blade's
-    // front surface and run along its length (tip to hilt). Everything is
-    // sampled in world space and converted back to the skin's local space, so
-    // the tiles land on the blade regardless of the imported transform's
-    // rotation, scale or the blade's wavy silhouette.
+    private static Mesh CreateSelfieCircleMesh()
+    {
+        const int segments = SelfieCircleSegments;
+        var mesh = new Mesh { name = "KerisSelfieCircle" };
+        var vertices = new Vector3[segments + 1];
+        var normals = new Vector3[segments + 1];
+        var uvs = new Vector2[segments + 1];
+        var triangles = new int[segments * 3];
+
+        vertices[0] = Vector3.zero;
+        normals[0] = Vector3.forward;
+        uvs[0] = new Vector2(0.5f, 0.5f);
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = (i / (float)segments) * Mathf.PI * 2f;
+            float x = Mathf.Cos(angle) * 0.5f;
+            float y = Mathf.Sin(angle) * 0.5f;
+            vertices[i + 1] = new Vector3(x, y, 0f);
+            normals[i + 1] = Vector3.forward;
+            uvs[i + 1] = new Vector2(x + 0.5f, y + 0.5f);
+            triangles[i * 3 + 0] = 0;
+            triangles[i * 3 + 1] = i + 1;
+            triangles[i * 3 + 2] = i + 2 <= segments ? i + 2 : 1;
+        }
+
+        mesh.vertices = vertices;
+        mesh.normals = normals;
+        mesh.uv = uvs;
+        mesh.triangles = triangles;
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    // Places a rigid circular selfie at the current mid-blade spot. The disc
+    // stays circular when the keris curves; only its position follows the metal.
+    private bool BuildSelfieStripMesh()
+    {
+
+        SkinnedMeshRenderer skin = kerisSkin != null ? kerisSkin : kerisRenderer as SkinnedMeshRenderer;
+        Transform blade = skin != null ? skin.transform : (kerisRenderer != null ? kerisRenderer.transform : null);
+        if (blade == null)
+            return false;
+
+        Vector3[] vertices = null;
+        if (skin != null)
+        {
+            if (selfieBoundsMesh == null)
+                selfieBoundsMesh = new Mesh { name = "KerisSelfieBake" };
+            selfieBoundsMesh.Clear();
+            skin.BakeMesh(selfieBoundsMesh);
+            if (selfieBoundsMesh.vertexCount > 0)
+                vertices = selfieBoundsMesh.vertices;
+        }
+        if (vertices == null || vertices.Length < 8)
+        {
+            Mesh source = skin != null ? skin.sharedMesh : null;
+            if (source == null && kerisRenderer != null)
+            {
+                MeshFilter filter = kerisRenderer.GetComponent<MeshFilter>();
+                source = filter != null ? filter.sharedMesh : null;
+            }
+            if (source != null)
+                vertices = source.vertices;
+        }
+        if (vertices == null || vertices.Length < 8)
+            return false;
+
+        Mesh boundsSource = skin != null && skin.sharedMesh != null
+            ? skin.sharedMesh
+            : selfieBoundsMesh;
+        ChooseBladeAxes(blade, boundsSource != null ? boundsSource.bounds : new Bounds(Vector3.zero, Vector3.one),
+            out Vector3 worldLong, out Vector3 worldThin);
+        Vector3 view = SelfieViewDirection(blade, vertices);
+        if (Vector3.Dot(worldThin, view) < 0f)
+            worldThin = -worldThin;
+        Vector3 worldAcross = Vector3.Cross(worldThin, worldLong);
+        if (worldAcross.sqrMagnitude < 0.0001f)
+            return false;
+        worldAcross.Normalize();
+
+        Camera camera = ResolveSelfieCamera();
+        Vector3 up = worldLong;
+        if (camera != null && Vector3.Dot(up, camera.transform.up) < 0f)
+            up = -up;
+
+        float alongMin = float.MaxValue, alongMax = float.MinValue;
+        float thinMin = float.MaxValue, thinMax = float.MinValue;
+        var alongAt = new float[vertices.Length];
+        var acrossAt = new float[vertices.Length];
+        var thinAt = new float[vertices.Length];
+        var worldPoints = new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 worldPoint = blade.TransformPoint(vertices[i]);
+            worldPoints[i] = worldPoint;
+            alongAt[i] = Vector3.Dot(worldPoint, worldLong);
+            acrossAt[i] = Vector3.Dot(worldPoint, worldAcross);
+            thinAt[i] = Vector3.Dot(worldPoint, worldThin);
+            if (alongAt[i] < alongMin) alongMin = alongAt[i];
+            if (alongAt[i] > alongMax) alongMax = alongAt[i];
+            if (thinAt[i] < thinMin) thinMin = thinAt[i];
+            if (thinAt[i] > thinMax) thinMax = thinAt[i];
+        }
+
+        float alongRange = alongMax - alongMin;
+        if (alongRange < 0.0001f)
+            return false;
+
+        float thinMid = (thinMin + thinMax) * 0.5f;
+        float targetAlong = alongMin + alongRange * 0.48f;
+        float window = alongRange * 0.06f;
+
+        Vector3 sum = Vector3.zero;
+        int hits = 0;
+        float acrossMin = float.MaxValue;
+        float acrossMax = float.MinValue;
+        float front = thinMin;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            if (thinAt[i] < thinMid)
+                continue;
+            if (Mathf.Abs(alongAt[i] - targetAlong) > window)
+                continue;
+            sum += worldPoints[i];
+            hits++;
+            if (acrossAt[i] < acrossMin) acrossMin = acrossAt[i];
+            if (acrossAt[i] > acrossMax) acrossMax = acrossAt[i];
+            if (thinAt[i] > front) front = thinAt[i];
+        }
+
+        if (hits < 3)
+        {
+            window = alongRange * 0.12f;
+            sum = Vector3.zero;
+            hits = 0;
+            acrossMin = float.MaxValue;
+            acrossMax = float.MinValue;
+            front = thinMin;
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                if (thinAt[i] < thinMid)
+                    continue;
+                if (Mathf.Abs(alongAt[i] - targetAlong) > window)
+                    continue;
+                sum += worldPoints[i];
+                hits++;
+                if (acrossAt[i] < acrossMin) acrossMin = acrossAt[i];
+                if (acrossAt[i] > acrossMax) acrossMax = acrossAt[i];
+                if (thinAt[i] > front) front = thinAt[i];
+            }
+        }
+
+        if (hits < 1)
+            return false;
+
+        float localWidth = Mathf.Max(0.0004f, acrossMax - acrossMin);
+        float width = localWidth * SelfieCircleFill;
+        float height = Mathf.Min(alongRange * 0.28f, Mathf.Max(width * SelfieAlongFill, alongRange * 0.18f));
+        float thinSpan = Mathf.Max(0.0001f, thinMax - thinMin);
+        float worldPush = Mathf.Max(0.003f, thinSpan * 0.45f);
+        Vector3 center = sum / hits;
+        Vector3 attach = center + worldThin * worldPush;
+
+        EnsureSelfieCircles();
+        Transform circle = selfieCircleRoots[0];
+        if (circle == null)
+            return false;
+        circle.SetParent(null, true);
+        circle.position = attach;
+        circle.rotation = Quaternion.LookRotation(worldThin, up);
+        circle.localScale = new Vector3(width, height, width);
+        circle.gameObject.SetActive(true);
+
+        if (lastSelfieTileLog != SelfieCircleCount)
+        {
+            lastSelfieTileLog = SelfieCircleCount;
+            Debug.Log("MORPHIC: Keris selfie attached as " + SelfieCircleCount + " circles on the blade curves.", this);
+        }
+        return true;
+    }
+
+    private static int NearestFilledRow(int row, int first, int last, int[] rowCount, float[] rowMin, float[] rowMax)
+    {
+        if (row >= first && row <= last && rowCount[row] > 0 && rowMin[row] < rowMax[row])
+            return row;
+        for (int s = 1; s <= last - first; s++)
+        {
+            int left = row - s;
+            int right = row + s;
+            if (left >= first && rowCount[left] > 0 && rowMin[left] < rowMax[left])
+                return left;
+            if (right <= last && rowCount[right] > 0 && rowMin[right] < rowMax[right])
+                return right;
+        }
+        return Mathf.Clamp(row, first, last);
+    }
+
+    private static float ReadKerisCurveAmount(SkinnedMeshRenderer skin)
+    {
+        if (skin == null || skin.sharedMesh == null)
+            return 0f;
+        float amount = 0f;
+        Mesh mesh = skin.sharedMesh;
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            string name = mesh.GetBlendShapeName(i);
+            if (string.IsNullOrEmpty(name) || name.IndexOf("curve", StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            amount = Mathf.Max(amount, Mathf.Clamp01(skin.GetBlendShapeWeight(i) / 100f));
+        }
+        return amount;
+    }
+
     private void BuildSelfieTileMesh()
     {
         if (selfieOverlayMesh == null) return;
+        if (BuildSelfieStripMesh())
+            return;
+        selfieOverlayMesh.Clear();
+        WarnSelfie("Keris selfie could not be placed on the blade.");
+        return;
 
         SkinnedMeshRenderer skin = kerisSkin != null ? kerisSkin : kerisRenderer as SkinnedMeshRenderer;
         Mesh source = null;
@@ -903,7 +1708,6 @@ public sealed partial class SculptingEnhancementKerisColorController
             vertexNormals = null;
 
         ChooseBladeAxes(blade, source.bounds, out Vector3 worldLong, out Vector3 worldThin);
-
         Vector3 view = SelfieViewDirection(blade, vertices);
         if (Vector3.Dot(worldThin, view) < 0f)
             worldThin = -worldThin;
@@ -917,9 +1721,15 @@ public sealed partial class SculptingEnhancementKerisColorController
         }
         worldAcross.Normalize();
 
-        // Keep only the blade's front-facing surface so the tiles follow the
-        // wavy edge instead of the model's raw bounding box.
-        var surfacePoints = new List<Vector3>(vertices.Length);
+        int[] sourceTriangles = source.subMeshCount > BladeMaterialSlot
+            ? source.GetTriangles(BladeMaterialSlot)
+            : source.triangles;
+        if (sourceTriangles == null || sourceTriangles.Length < 3)
+            sourceTriangles = source.triangles;
+
+        var frontMarks = new bool[vertices.Length];
+        var alongAt = new float[vertices.Length];
+        var acrossAt = new float[vertices.Length];
         float alongMin = float.MaxValue, alongMax = float.MinValue;
         float acrossMin = float.MaxValue, acrossMax = float.MinValue;
         float thinMin = float.MaxValue, thinMax = float.MinValue;
@@ -930,15 +1740,533 @@ public sealed partial class SculptingEnhancementKerisColorController
             float thin = Vector3.Dot(worldPoint, worldThin);
             if (thin < thinMin) thinMin = thin;
             if (thin > thinMax) thinMax = thin;
+            alongAt[i] = Vector3.Dot(worldPoint, worldLong);
+            acrossAt[i] = Vector3.Dot(worldPoint, worldAcross);
+        }
 
+        for (int i = 0; i < sourceTriangles.Length; i += 3)
+        {
+            int a = sourceTriangles[i];
+            int b = sourceTriangles[i + 1];
+            int c = sourceTriangles[i + 2];
+            if (a < 0 || b < 0 || c < 0 || a >= vertices.Length || b >= vertices.Length || c >= vertices.Length)
+                continue;
+
+            Vector3 worldA = blade.TransformPoint(vertices[a]);
+            Vector3 worldB = blade.TransformPoint(vertices[b]);
+            Vector3 worldC = blade.TransformPoint(vertices[c]);
+            Vector3 faceNormal = Vector3.Cross(worldB - worldA, worldC - worldA);
+            if (faceNormal.sqrMagnitude < 0.0000001f)
+                continue;
+            faceNormal.Normalize();
+            if (Vector3.Dot(faceNormal, worldThin) < SelfieFrontDot)
+                continue;
+
+            frontMarks[a] = frontMarks[b] = frontMarks[c] = true;
+            if (alongAt[a] < alongMin) alongMin = alongAt[a];
+            if (alongAt[b] < alongMin) alongMin = alongAt[b];
+            if (alongAt[c] < alongMin) alongMin = alongAt[c];
+            if (alongAt[a] > alongMax) alongMax = alongAt[a];
+            if (alongAt[b] > alongMax) alongMax = alongAt[b];
+            if (alongAt[c] > alongMax) alongMax = alongAt[c];
+            if (acrossAt[a] < acrossMin) acrossMin = acrossAt[a];
+            if (acrossAt[b] < acrossMin) acrossMin = acrossAt[b];
+            if (acrossAt[c] < acrossMin) acrossMin = acrossAt[c];
+            if (acrossAt[a] > acrossMax) acrossMax = acrossAt[a];
+            if (acrossAt[b] > acrossMax) acrossMax = acrossAt[b];
+            if (acrossAt[c] > acrossMax) acrossMax = acrossAt[c];
+        }
+
+        float alongRange = alongMax - alongMin;
+        float acrossRange = acrossMax - acrossMin;
+        if (alongRange < 0.0001f || acrossRange < 0.0001f)
+        {
+            if (sourceTriangles != source.triangles)
+            {
+                sourceTriangles = source.triangles;
+                Array.Clear(frontMarks, 0, frontMarks.Length);
+                alongMin = acrossMin = thinMin = float.MaxValue;
+                alongMax = acrossMax = thinMax = float.MinValue;
+                for (int i = 0; i < sourceTriangles.Length; i += 3)
+                {
+                    int a = sourceTriangles[i];
+                    int b = sourceTriangles[i + 1];
+                    int c = sourceTriangles[i + 2];
+                    if (a < 0 || b < 0 || c < 0 || a >= vertices.Length || b >= vertices.Length || c >= vertices.Length)
+                        continue;
+                    Vector3 worldA = blade.TransformPoint(vertices[a]);
+                    Vector3 worldB = blade.TransformPoint(vertices[b]);
+                    Vector3 worldC = blade.TransformPoint(vertices[c]);
+                    Vector3 faceNormal = Vector3.Cross(worldB - worldA, worldC - worldA);
+                    if (faceNormal.sqrMagnitude < 0.0000001f)
+                        continue;
+                    faceNormal.Normalize();
+                    if (Vector3.Dot(faceNormal, worldThin) < SelfieFrontDot)
+                        continue;
+                    frontMarks[a] = frontMarks[b] = frontMarks[c] = true;
+                    if (alongAt[a] < alongMin) alongMin = alongAt[a];
+                    if (alongAt[b] < alongMin) alongMin = alongAt[b];
+                    if (alongAt[c] < alongMin) alongMin = alongAt[c];
+                    if (alongAt[a] > alongMax) alongMax = alongAt[a];
+                    if (alongAt[b] > alongMax) alongMax = alongAt[b];
+                    if (alongAt[c] > alongMax) alongMax = alongAt[c];
+                    if (acrossAt[a] < acrossMin) acrossMin = acrossAt[a];
+                    if (acrossAt[b] < acrossMin) acrossMin = acrossAt[b];
+                    if (acrossAt[c] < acrossMin) acrossMin = acrossAt[c];
+                    if (acrossAt[a] > acrossMax) acrossMax = acrossAt[a];
+                    if (acrossAt[b] > acrossMax) acrossMax = acrossAt[b];
+                    if (acrossAt[c] > acrossMax) acrossMax = acrossAt[c];
+                }
+                alongRange = alongMax - alongMin;
+                acrossRange = acrossMax - acrossMin;
+            }
+        }
+        if (alongRange < 0.0001f || acrossRange < 0.0001f)
+        {
+            selfieOverlayMesh.Clear();
+            WarnSelfie("Keris blade surface could not be found for the selfie.");
+            return;
+        }
+
+        float alongMid = (alongMin + alongMax) * 0.5f;
+        BuildBladeWidthProfile(alongAt, acrossAt, frontMarks, alongMin, alongRange,
+            out float[] binMid, out float[] binWidth);
+        float midWidth = SampleProfile(binWidth, alongMid, alongMin, alongRange);
+        float usableAcross = Mathf.Max(0.0001f, midWidth * SelfieAcrossFill);
+        float usableAlong = alongRange * SelfieAlongFill;
+        float photoAspect = appliedSelfieTexture != null && appliedSelfieTexture.height > 0
+            ? appliedSelfieTexture.width / (float)appliedSelfieTexture.height
+            : 0.75f;
+        if (photoAspect <= 0.01f)
+            photoAspect = 0.75f;
+
+        float windowAlong = usableAlong;
+        float windowAcross = windowAlong * photoAspect;
+        if (windowAcross > usableAcross)
+        {
+            windowAcross = usableAcross;
+            windowAlong = windowAcross / photoAspect;
+        }
+        windowAlong = Mathf.Max(windowAlong, alongRange * 0.12f);
+        windowAcross = Mathf.Max(windowAcross, acrossRange * 0.12f);
+
+        Camera camera = ResolveSelfieCamera();
+        bool flipVertically = camera != null && Vector3.Dot(worldLong, camera.transform.up) < 0f;
+        float thinSpan = Mathf.Max(0.0001f, thinMax - thinMin);
+        float worldPush = Mathf.Max(0.0012f, thinSpan * 0.12f);
+        Vector3 localThin = blade.InverseTransformDirection(worldThin).normalized;
+
+        int maxVerts = sourceTriangles.Length;
+        var outVertices = new Vector3[maxVerts];
+        var outNormals = new Vector3[maxVerts];
+        var outUvs = new Vector2[maxVerts];
+        var outTriangles = new int[maxVerts];
+        int v = 0;
+        int t = 0;
+
+        for (int i = 0; i < sourceTriangles.Length; i += 3)
+        {
+            int ia = sourceTriangles[i];
+            int ib = sourceTriangles[i + 1];
+            int ic = sourceTriangles[i + 2];
+            if (ia < 0 || ib < 0 || ic < 0 || ia >= vertices.Length || ib >= vertices.Length || ic >= vertices.Length)
+                continue;
+            if (!frontMarks[ia] || !frontMarks[ib] || !frontMarks[ic])
+                continue;
+
+            Vector2 uvA = SelfieUv(alongAt[ia], acrossAt[ia], alongMid,
+                SampleProfile(binMid, alongAt[ia], alongMin, alongRange),
+                windowAlong, windowAcross, flipVertically);
+            Vector2 uvB = SelfieUv(alongAt[ib], acrossAt[ib], alongMid,
+                SampleProfile(binMid, alongAt[ib], alongMin, alongRange),
+                windowAlong, windowAcross, flipVertically);
+            Vector2 uvC = SelfieUv(alongAt[ic], acrossAt[ic], alongMid,
+                SampleProfile(binMid, alongAt[ic], alongMin, alongRange),
+                windowAlong, windowAcross, flipVertically);
+            if (!SelfieTriangleInsideBladePhoto(uvA, uvB, uvC))
+                continue;
+
+            Vector3 nA = SelfieLocalPushNormal(blade, localThin, vertexNormals, ia);
+            Vector3 nB = SelfieLocalPushNormal(blade, localThin, vertexNormals, ib);
+            Vector3 nC = SelfieLocalPushNormal(blade, localThin, vertexNormals, ic);
+            Vector3 pushA = blade.InverseTransformVector(blade.TransformDirection(nA).normalized * worldPush);
+            Vector3 pushB = blade.InverseTransformVector(blade.TransformDirection(nB).normalized * worldPush);
+            Vector3 pushC = blade.InverseTransformVector(blade.TransformDirection(nC).normalized * worldPush);
+
+            outVertices[v + 0] = vertices[ia] + pushA;
+            outVertices[v + 1] = vertices[ib] + pushB;
+            outVertices[v + 2] = vertices[ic] + pushC;
+            outNormals[v + 0] = nA;
+            outNormals[v + 1] = nB;
+            outNormals[v + 2] = nC;
+            outUvs[v + 0] = uvA;
+            outUvs[v + 1] = uvB;
+            outUvs[v + 2] = uvC;
+            outTriangles[t + 0] = v + 0;
+            outTriangles[t + 1] = v + 1;
+            outTriangles[t + 2] = v + 2;
+            v += 3;
+            t += 3;
+        }
+
+        if (t == 0)
+        {
+            selfieOverlayMesh.Clear();
+            WarnSelfie("Keris selfie could not be placed on the blade.");
+            return;
+        }
+
+        Array.Resize(ref outVertices, v);
+        Array.Resize(ref outNormals, v);
+        Array.Resize(ref outUvs, v);
+        Array.Resize(ref outTriangles, t);
+
+        selfieOverlayMesh.Clear();
+        selfieOverlayMesh.vertices = outVertices;
+        selfieOverlayMesh.normals = outNormals;
+        selfieOverlayMesh.uv = outUvs;
+        selfieOverlayMesh.triangles = outTriangles;
+        selfieOverlayMesh.RecalculateBounds();
+
+        int pieces = t / 3;
+        if (pieces != lastSelfieTileLog)
+        {
+            lastSelfieTileLog = pieces;
+            Debug.Log("MORPHIC: Keris selfie pasted onto " + pieces + " blade triangle(s).", this);
+        }
+    }
+
+    private static Vector2 SelfieUv(
+        float along, float across, float alongMid, float acrossMid,
+        float windowAlong, float windowAcross, bool flipVertically)
+    {
+        float u = (across - acrossMid) / Mathf.Max(0.0001f, windowAcross) + 0.5f;
+        float v = (along - alongMid) / Mathf.Max(0.0001f, windowAlong) + 0.5f;
+        if (flipVertically)
+            v = 1f - v;
+        return new Vector2(u, v);
+    }
+
+    private static bool SelfieTriangleInsideBladePhoto(Vector2 a, Vector2 b, Vector2 c)
+    {
+        return SelfieUvOnPhoto(a) && SelfieUvOnPhoto(b) && SelfieUvOnPhoto(c);
+    }
+
+    private static bool SelfieUvOnPhoto(Vector2 uv)
+    {
+        return uv.x >= 0f && uv.x <= 1f && uv.y >= 0f && uv.y <= 1f;
+    }
+
+    private static Vector3 SelfieLocalPushNormal(
+        Transform blade, Vector3 fallback, Vector3[] vertexNormals, int index)
+    {
+        if (vertexNormals == null || index < 0 || index >= vertexNormals.Length)
+            return fallback;
+        Vector3 local = vertexNormals[index];
+        if (local.sqrMagnitude < 0.0001f)
+            return fallback;
+        if (Vector3.Dot(blade.TransformDirection(local), blade.TransformDirection(fallback)) < 0f)
+            local = -local;
+        return local.normalized;
+    }
+
+    private const int SelfieWidthBins = 28;
+
+    private static void BuildBladeWidthProfile(
+        float[] alongAt, float[] acrossAt, bool[] frontMarks,
+        float alongMin, float alongRange, out float[] binMid, out float[] binWidth)
+    {
+        binMid = new float[SelfieWidthBins];
+        binWidth = new float[SelfieWidthBins];
+        var binMin = new float[SelfieWidthBins];
+        var binMax = new float[SelfieWidthBins];
+        for (int i = 0; i < SelfieWidthBins; i++)
+        {
+            binMin[i] = float.MaxValue;
+            binMax[i] = float.MinValue;
+        }
+
+        for (int i = 0; i < alongAt.Length; i++)
+        {
+            if (!frontMarks[i])
+                continue;
+            int bin = Mathf.Clamp(
+                Mathf.FloorToInt(((alongAt[i] - alongMin) / Mathf.Max(0.0001f, alongRange)) * SelfieWidthBins),
+                0, SelfieWidthBins - 1);
+            if (acrossAt[i] < binMin[bin]) binMin[bin] = acrossAt[i];
+            if (acrossAt[i] > binMax[bin]) binMax[bin] = acrossAt[i];
+        }
+
+        float lastMid = 0f;
+        float lastWidth = 0.0001f;
+        for (int i = 0; i < SelfieWidthBins; i++)
+        {
+            if (binMin[i] < binMax[i])
+            {
+                lastMid = (binMin[i] + binMax[i]) * 0.5f;
+                lastWidth = binMax[i] - binMin[i];
+            }
+            binMid[i] = lastMid;
+            binWidth[i] = Mathf.Max(0.0001f, lastWidth);
+        }
+
+        for (int i = SelfieWidthBins - 1; i >= 0; i--)
+        {
+            if (binMin[i] < binMax[i])
+            {
+                lastMid = (binMin[i] + binMax[i]) * 0.5f;
+                lastWidth = Mathf.Max(0.0001f, binMax[i] - binMin[i]);
+            }
+            if (binMin[i] >= binMax[i])
+            {
+                binMid[i] = lastMid;
+                binWidth[i] = lastWidth;
+            }
+        }
+    }
+
+    private static float SampleProfile(float[] bins, float along, float alongMin, float alongRange)
+    {
+        if (bins == null || bins.Length == 0)
+            return 0f;
+        float t = (along - alongMin) / Mathf.Max(0.0001f, alongRange);
+        float scaled = Mathf.Clamp01(t) * (bins.Length - 1);
+        int i = Mathf.Clamp(Mathf.FloorToInt(scaled), 0, bins.Length - 2);
+        return Mathf.Lerp(bins[i], bins[i + 1], scaled - i);
+    }
+
+    private void ConfigureDesignSurfaceMaterial(Texture texture)
+    {
+        if (designSurfaceRenderer == null || texture == null)
+            return;
+
+        Texture2D stamp = texture as Texture2D;
+        Texture2D ink = stamp != null ? GetStampAlphaTexture(stamp) : null;
+        Texture useTexture = ink != null ? ink : texture;
+
+        if (designSurfaceMaterial == null)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null) shader = Shader.Find("Unlit/Transparent");
+            if (shader == null) shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                return;
+            designSurfaceMaterial = new Material(shader)
+            {
+                name = "Morphic Keris Stamp Material",
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20
+            };
+        }
+
+        Material material = designSurfaceMaterial;
+        if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+        if (material.HasProperty("_AlphaClip")) material.SetFloat("_AlphaClip", 0f);
+        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.DisableKeyword("_ALPHATEST_ON");
+        if (material.HasProperty("_ZWrite")) material.SetInt("_ZWrite", 0);
+        if (material.HasProperty("_SrcBlend"))
+            material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        if (material.HasProperty("_DstBlend"))
+            material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        if (material.HasProperty("_Cull")) material.SetFloat("_Cull", 0f);
+        if (material.HasProperty("_CullMode")) material.SetFloat("_CullMode", 0f);
+        material.SetOverrideTag("RenderType", "Transparent");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20;
+        if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", useTexture);
+        if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", useTexture);
+        material.mainTexture = useTexture;
+        ApplyDesignTint(committedDesignTint);
+        designSurfaceRenderer.sharedMaterial = material;
+        designSurfaceRenderer.enabled = true;
+    }
+
+    private void EnsureDesignOverlay()
+    {
+        ResolveKerisSkin();
+        if (kerisRenderer == null)
+        {
+            kerisRenderer = kerisSkin != null ? kerisSkin : GetComponentInChildren<Renderer>(true);
+        }
+        if (kerisRenderer == null)
+            return;
+
+        if (designSurfaceRoot != null && designSurfaceRoot.GetComponent<SkinnedMeshRenderer>() != null)
+        {
+            Destroy(designSurfaceRoot.gameObject);
+            designSurfaceRoot = null;
+            designSurfaceRenderer = null;
+        }
+
+        if (designSurfaceRoot == null)
+        {
+            GameObject overlayObject = new GameObject("KerisStampOverlay");
+            designSurfaceRoot = overlayObject.transform;
+            designSurfaceRoot.SetParent(kerisRenderer.transform, false);
+            designSurfaceRoot.localPosition = Vector3.zero;
+            designSurfaceRoot.localRotation = Quaternion.identity;
+            designSurfaceRoot.localScale = Vector3.one;
+
+            MeshFilter filter = overlayObject.AddComponent<MeshFilter>();
+            MeshRenderer meshRenderer = overlayObject.AddComponent<MeshRenderer>();
+            meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            meshRenderer.receiveShadows = false;
+            meshRenderer.allowOcclusionWhenDynamic = false;
+            meshRenderer.sortingOrder = 20;
+            designSurfaceRenderer = meshRenderer;
+
+            stampOverlayMesh = new Mesh { name = "KerisStampTiles" };
+            stampOverlayMesh.MarkDynamic();
+            filter.sharedMesh = stampOverlayMesh;
+        }
+
+        MeshFilter overlayFilter = designSurfaceRoot.GetComponent<MeshFilter>();
+        if (overlayFilter == null)
+            overlayFilter = designSurfaceRoot.gameObject.AddComponent<MeshFilter>();
+        if (stampOverlayMesh == null)
+        {
+            stampOverlayMesh = new Mesh { name = "KerisStampTiles" };
+            stampOverlayMesh.MarkDynamic();
+        }
+        if (overlayFilter.sharedMesh != stampOverlayMesh)
+            overlayFilter.sharedMesh = stampOverlayMesh;
+
+        if (designSurfaceRenderer == null)
+        {
+            designSurfaceRenderer = designSurfaceRoot.GetComponent<MeshRenderer>();
+            if (designSurfaceRenderer == null)
+                designSurfaceRenderer = designSurfaceRoot.gameObject.AddComponent<MeshRenderer>();
+        }
+
+        designSurfaceRoot.gameObject.layer = kerisRenderer.gameObject.layer;
+        designSurfaceRoot.gameObject.SetActive(true);
+    }
+
+    private Texture2D GetStampAlphaTexture(Texture2D stamp)
+    {
+        if (stamp == null)
+            return null;
+        if (stampAlphaTexture != null && stampAlphaSource == stamp)
+            return stampAlphaTexture;
+
+        DestroyRuntime(stampAlphaTexture);
+        stampAlphaSource = stamp;
+        stampAlphaTexture = BuildInkCutout(stamp);
+        return stampAlphaTexture;
+    }
+
+    private static Texture2D BuildInkCutout(Texture2D stamp)
+    {
+        if (stamp == null)
+            return null;
+
+        Texture2D source = stamp.isReadable ? stamp : MorphicOverlayShaders.CaptureWebcamFrame(stamp);
+        if (source == null)
+            return null;
+
+        Texture2D ink = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false)
+        {
+            name = stamp.name + "_Ink",
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        Color[] pixels = source.GetPixels();
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Color c = pixels[i];
+            float luma = c.r * 0.299f + c.g * 0.587f + c.b * 0.114f;
+            float alpha = c.a < 0.98f ? c.a : Mathf.Clamp01((0.68f - luma) * 5f);
+            pixels[i] = new Color(1f, 1f, 1f, alpha);
+        }
+        ink.SetPixels(pixels);
+        ink.Apply(false, false);
+        if (source != stamp)
+            Destroy(source);
+        return ink;
+    }
+
+    private void BuildStampTileMesh()
+    {
+        if (stampOverlayMesh == null)
+            return;
+
+        SkinnedMeshRenderer skin = kerisSkin != null ? kerisSkin : kerisRenderer as SkinnedMeshRenderer;
+        Mesh source = null;
+        Transform blade = null;
+        if (skin != null)
+        {
+            source = skin.sharedMesh;
+            blade = skin.transform;
+        }
+        else if (kerisRenderer != null)
+        {
+            MeshFilter filter = kerisRenderer.GetComponent<MeshFilter>();
+            source = filter != null ? filter.sharedMesh : null;
+            blade = kerisRenderer.transform;
+        }
+
+        if (source == null || blade == null)
+        {
+            stampOverlayMesh.Clear();
+            return;
+        }
+
+        Vector3[] vertices;
+        Vector3[] vertexNormals;
+        if (skin != null)
+        {
+            if (selfieBoundsMesh == null)
+                selfieBoundsMesh = new Mesh { name = "KerisStampBake" };
+            selfieBoundsMesh.Clear();
+            skin.BakeMesh(selfieBoundsMesh);
+            bool baked = selfieBoundsMesh.vertexCount == source.vertexCount;
+            vertices = baked ? selfieBoundsMesh.vertices : source.vertices;
+            vertexNormals = baked ? selfieBoundsMesh.normals : source.normals;
+        }
+        else
+        {
+            vertices = source.vertices;
+            vertexNormals = source.normals;
+        }
+
+        if (vertices == null || vertices.Length < 8)
+        {
+            stampOverlayMesh.Clear();
+            return;
+        }
+        if (vertexNormals == null || vertexNormals.Length != vertices.Length)
+            vertexNormals = null;
+
+        ChooseBladeAxes(blade, source.bounds, out Vector3 worldLong, out Vector3 worldThin);
+        Vector3 view = SelfieViewDirection(blade, vertices);
+        if (Vector3.Dot(worldThin, view) < 0f)
+            worldThin = -worldThin;
+        Vector3 worldAcross = Vector3.Cross(worldThin, worldLong);
+        if (worldAcross.sqrMagnitude < 0.0001f)
+        {
+            stampOverlayMesh.Clear();
+            return;
+        }
+        worldAcross.Normalize();
+
+        var surfacePoints = new List<Vector3>(vertices.Length);
+        float alongMin = float.MaxValue, alongMax = float.MinValue;
+        float acrossMin = float.MaxValue, acrossMax = float.MinValue;
+        float thinMin = float.MaxValue, thinMax = float.MinValue;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 worldPoint = blade.TransformPoint(vertices[i]);
+            float thin = Vector3.Dot(worldPoint, worldThin);
+            if (thin < thinMin) thinMin = thin;
+            if (thin > thinMax) thinMax = thin;
             if (vertexNormals != null)
             {
                 Vector3 worldNormal = blade.TransformDirection(vertexNormals[i]);
-                if (worldNormal.sqrMagnitude < 0.0001f) continue;
+                if (worldNormal.sqrMagnitude < 0.0001f)
+                    continue;
                 worldNormal.Normalize();
-                if (Vector3.Dot(worldNormal, worldThin) < 0.45f) continue;
+                if (Vector3.Dot(worldNormal, worldThin) < 0.35f)
+                    continue;
             }
-
             surfacePoints.Add(worldPoint);
             float along = Vector3.Dot(worldPoint, worldLong);
             float across = Vector3.Dot(worldPoint, worldAcross);
@@ -951,130 +2279,51 @@ public sealed partial class SculptingEnhancementKerisColorController
         float alongRange = alongMax - alongMin;
         if (surfacePoints.Count < 3 || alongRange < 0.0001f)
         {
-            selfieOverlayMesh.Clear();
-            WarnSelfie("Keris blade surface could not be found for the selfie.");
+            stampOverlayMesh.Clear();
             return;
         }
 
         float acrossRange = Mathf.Max(0.0001f, acrossMax - acrossMin);
         float acrossMid = (acrossMin + acrossMax) * 0.5f;
         float thinSpan = Mathf.Max(0.0001f, thinMax - thinMin);
-
-        float photoAspect = appliedSelfieTexture != null && appliedSelfieTexture.height > 0
-            ? appliedSelfieTexture.width / (float)appliedSelfieTexture.height
+        float aspect = appliedDesignTexture != null && appliedDesignTexture.height > 0
+            ? appliedDesignTexture.width / (float)appliedDesignTexture.height
             : 0.75f;
-        if (photoAspect <= 0.01f) photoAspect = 0.75f;
 
-        float span = alongRange * SelfieTileSpanFraction;
-        float spacing = SelfieTileRows > 1 ? span / (SelfieTileRows - 1) : span;
-        float tileHeight = spacing * SelfieTileFillFraction;
-        float tileWidth = tileHeight * photoAspect;
-        // Dynamically adjust width based on Curve blend shape to prevent overflow
-            float curveAmount = 0f;
-            if (skin != null && skin.sharedMesh != null)
-            {
-                for (int shapeIdx = 0; shapeIdx < skin.sharedMesh.blendShapeCount; shapeIdx++)
-                {
-                    string shapeName = skin.sharedMesh.GetBlendShapeName(shapeIdx);
-                    if (shapeName.Equals("Curve", System.StringComparison.OrdinalIgnoreCase))
-                    {
-                        curveAmount = skin.GetBlendShapeWeight(shapeIdx) / 100f;
-                        break;
-                    }
-                }
-            }
-            float widthScale = Mathf.Lerp(0.85f, 0.60f, curveAmount);
-            float maxWidth = acrossRange * widthScale;
-        if (tileWidth > maxWidth)
-        {
-            tileHeight *= maxWidth / tileWidth;
-            tileWidth = maxWidth;
-        }
-        tileWidth = Mathf.Max(tileWidth, 0.0005f);
-        tileHeight = Mathf.Max(tileHeight, 0.0005f);
+        float span = alongRange * StampTileSpanFraction;
+        float spacing = StampTileRows > 1 ? span / (StampTileRows - 1) : span;
+        float tileHeight = Mathf.Max(0.0005f, spacing * StampTileFillFraction);
+        float tileWidth = Mathf.Max(0.0005f, Mathf.Min(tileHeight * aspect, acrossRange * 0.86f));
+        float clearance = Mathf.Max(tileWidth * 0.12f, thinSpan * 0.55f);
+        float startAlong = alongMin + (alongRange - span) * 0.5f;
 
-        // Nudge the pieces clear of the blade so the opaque blade can never
-        // swallow them.
-        float clearance = Mathf.Max(tileWidth * 0.15f, thinSpan * 0.6f);
-
-        Camera camera = ResolveSelfieCamera();
-        bool flipVertically = camera != null && Vector3.Dot(worldLong, camera.transform.up) < 0f;
-
-        int quadCount = SelfieTileRows;
-        Vector3[] outVertices = new Vector3[quadCount * 4];
-        Vector3[] outNormals = new Vector3[quadCount * 4];
-        Vector2[] outUvs = new Vector2[quadCount * 4];
-        int[] outTriangles = new int[quadCount * 6];
-
-        // Divide blade into sections and find widest point in each section
-        var widestPoints = new System.Collections.Generic.List<int>();
-        float sectionSize = alongRange / SelfieTileRows;
-        
-        for (int section = 0; section < SelfieTileRows; section++)
-        {
-            float sectionStart = alongMin + section * sectionSize;
-            float sectionEnd = sectionStart + sectionSize;
-            float sectionMid = (sectionStart + sectionEnd) * 0.5f;
-            
-            // Find widest point in this section
-            int widestInSection = -1;
-            float maxWidthInSection = 0f;
-            
-            for (float checkAlong = sectionStart; checkAlong <= sectionEnd; checkAlong += sectionSize * 0.1f)
-            {
-                float minAcross = float.MaxValue, maxAcross = float.MinValue;
-                
-                for (int i = 0; i < surfacePoints.Count; i++)
-                {
-                    Vector3 point = surfacePoints[i];
-                    float along = Vector3.Dot(point, worldLong);
-                    if (Mathf.Abs(along - checkAlong) > tileHeight * 0.6f) continue;
-                    
-                    float across = Vector3.Dot(point, worldAcross);
-                    if (across < minAcross) minAcross = across;
-                    if (across > maxAcross) maxAcross = across;
-                }
-                
-                float widthHere = maxAcross - minAcross;
-                if (widthHere > maxWidthInSection)
-                {
-                    maxWidthInSection = widthHere;
-                    
-                    // Find center point at this widest location
-                    int bestCenter = -1;
-                    float bestCenterDist = float.MaxValue;
-                    for (int i = 0; i < surfacePoints.Count; i++)
-                    {
-                        Vector3 point = surfacePoints[i];
-                        float dAlong = Vector3.Dot(point, worldLong) - checkAlong;
-                        float dAcross = Vector3.Dot(point, worldAcross) - acrossMid;
-                        float dist = dAlong * dAlong + dAcross * dAcross;
-                        if (dist < bestCenterDist)
-                        {
-                            bestCenterDist = dist;
-                            bestCenter = i;
-                        }
-                    }
-                    widestInSection = bestCenter;
-                }
-            }
-            
-            if (widestInSection >= 0)
-                widestPoints.Add(widestInSection);
-        }
-        
+        Vector3[] outVertices = new Vector3[StampTileRows * 4];
+        Vector3[] outNormals = new Vector3[StampTileRows * 4];
+        Vector2[] outUvs = new Vector2[StampTileRows * 4];
+        int[] outTriangles = new int[StampTileRows * 6];
         int v = 0;
         int t = 0;
-        for (int row = 0; row < widestPoints.Count; row++)
+
+        for (int row = 0; row < StampTileRows; row++)
         {
-            int best = widestPoints[row];
-            if (best < 0) break;
+            float targetAlong = startAlong + spacing * row;
+            int best = -1;
+            float bestScore = float.MaxValue;
+            for (int i = 0; i < surfacePoints.Count; i++)
+            {
+                float dAlong = Vector3.Dot(surfacePoints[i], worldLong) - targetAlong;
+                float dAcross = Vector3.Dot(surfacePoints[i], worldAcross) - acrossMid;
+                float score = dAlong * dAlong + dAcross * dAcross;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = i;
+                }
+            }
+            if (best < 0)
+                continue;
 
-            // Get center point from actual baked vertices (follows deformation)
-            Vector3 centerLocal = vertices[best];
-            Vector3 centerWorld = blade.TransformPoint(centerLocal);
-            centerWorld += worldThin * clearance;
-
+            Vector3 centerWorld = surfacePoints[best] + worldThin * clearance;
             Vector3 up = Vector3.ProjectOnPlane(worldLong, worldThin);
             if (up.sqrMagnitude < 0.0001f) up = worldLong;
             up.Normalize();
@@ -1082,84 +2331,31 @@ public sealed partial class SculptingEnhancementKerisColorController
             if (right.sqrMagnitude < 0.0001f) right = worldAcross;
             right.Normalize();
 
-            // Simply reduce width when curve is active - no deformation
-            float adjustedWidth = tileWidth * widthScale;
-            
             Vector3 halfUp = up * (tileHeight * 0.5f);
-            Vector3 halfRight = right * (adjustedWidth * 0.5f);
-            
-            // Find actual blade vertices for each corner (paste onto surface)
-            Vector3[] corners = new Vector3[4];
-            Vector3[] cornerTargets = new Vector3[4] 
-            {
-                centerWorld - halfUp - halfRight,
-                centerWorld - halfUp + halfRight,
-                centerWorld + halfUp - halfRight,
-                centerWorld + halfUp + halfRight
-            };
-            
-            // For each corner, find closest blade vertex
-            for (int c = 0; c < 4; c++)
-            {
-                int bestCorner = best;
-                float bestCornerDist = float.MaxValue;
-                
-                for (int i = 0; i < vertices.Length; i++)
-                {
-                    Vector3 vertWorld = blade.TransformPoint(vertices[i]);
-                    float dist = Vector3.Distance(vertWorld, cornerTargets[c]);
-                    if (dist < bestCornerDist)
-                    {
-                        bestCornerDist = dist;
-                        bestCorner = i;
-                    }
-                }
-                
-                // Use actual blade vertex position (will deform with curve)
-                corners[c] = vertices[bestCorner];
-            }
-
-            outVertices[v + 0] = corners[0];
-            outVertices[v + 1] = corners[1];
-            outVertices[v + 2] = corners[2];
-            outVertices[v + 3] = corners[3];
-
+            Vector3 halfRight = right * (tileWidth * 0.5f);
             Vector3 localNormal = blade.InverseTransformDirection(worldThin).normalized;
-            outNormals[v + 0] = localNormal;
-            outNormals[v + 1] = localNormal;
-            outNormals[v + 2] = localNormal;
-            outNormals[v + 3] = localNormal;
-
-            if (flipVertically)
-            {
-                outUvs[v + 0] = new Vector2(0f, 1f);
-                outUvs[v + 1] = new Vector2(1f, 1f);
-                outUvs[v + 2] = new Vector2(0f, 0f);
-                outUvs[v + 3] = new Vector2(1f, 0f);
-            }
-            else
-            {
-                outUvs[v + 0] = new Vector2(0f, 0f);
-                outUvs[v + 1] = new Vector2(1f, 0f);
-                outUvs[v + 2] = new Vector2(0f, 1f);
-                outUvs[v + 3] = new Vector2(1f, 1f);
-            }
-
+            outVertices[v + 0] = blade.InverseTransformPoint(centerWorld - halfUp - halfRight);
+            outVertices[v + 1] = blade.InverseTransformPoint(centerWorld - halfUp + halfRight);
+            outVertices[v + 2] = blade.InverseTransformPoint(centerWorld + halfUp - halfRight);
+            outVertices[v + 3] = blade.InverseTransformPoint(centerWorld + halfUp + halfRight);
+            outNormals[v + 0] = outNormals[v + 1] = outNormals[v + 2] = outNormals[v + 3] = localNormal;
+            outUvs[v + 0] = new Vector2(0f, 0f);
+            outUvs[v + 1] = new Vector2(1f, 0f);
+            outUvs[v + 2] = new Vector2(0f, 1f);
+            outUvs[v + 3] = new Vector2(1f, 1f);
             outTriangles[t + 0] = v + 0;
             outTriangles[t + 1] = v + 2;
             outTriangles[t + 2] = v + 1;
             outTriangles[t + 3] = v + 1;
             outTriangles[t + 4] = v + 2;
             outTriangles[t + 5] = v + 3;
-
             v += 4;
             t += 6;
         }
 
         if (t == 0)
         {
-            selfieOverlayMesh.Clear();
-            WarnSelfie("Keris selfie tiles could not be placed on the blade.");
+            stampOverlayMesh.Clear();
             return;
         }
 
@@ -1171,28 +2367,88 @@ public sealed partial class SculptingEnhancementKerisColorController
             Array.Resize(ref outTriangles, t);
         }
 
-        selfieOverlayMesh.Clear();
-        selfieOverlayMesh.vertices = outVertices;
-        selfieOverlayMesh.normals = outNormals;
-        selfieOverlayMesh.uv = outUvs;
-        selfieOverlayMesh.triangles = outTriangles;
-        selfieOverlayMesh.RecalculateBounds();
-
-        int tiles = t / 6;
-        if (tiles != lastSelfieTileLog)
-        {
-            lastSelfieTileLog = tiles;
-            Debug.Log("MORPHIC: Keris selfie attached as " + tiles + " vertical tile piece(s).", this);
-        }
+        stampOverlayMesh.Clear();
+        stampOverlayMesh.vertices = outVertices;
+        stampOverlayMesh.normals = outNormals;
+        stampOverlayMesh.uv = outUvs;
+        stampOverlayMesh.triangles = outTriangles;
+        stampOverlayMesh.RecalculateBounds();
     }
 
-    private void ConfigureDesignSurfaceMaterial(Texture texture) { }
+    private Texture2D FindStampByName(string stampName)
+    {
+        if (kerisStamps == null)
+            kerisStamps = MorphicPatternCatalog.Stamps();
+        if (kerisStamps == null)
+            return null;
+        for (int i = 0; i < kerisStamps.Length; i++)
+        {
+            if (kerisStamps[i] != null && kerisStamps[i].name == stampName)
+                return kerisStamps[i];
+        }
+        return null;
+    }
+
+    private static string PatternLabel(Texture2D texture)
+    {
+        return PatternLabel(texture != null ? texture.name : null);
+    }
+
+    private static string PatternLabel(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return "PATTERN";
+        return name.Replace("Band_", "").Replace('_', ' ').ToUpperInvariant();
+    }
+
+    private static void DecoratePatternButton(Button button, Texture2D texture, string label)
+    {
+        if (button == null)
+            return;
+
+        Image fill = null;
+        Transform fillTransform = button.transform.Find("Fill");
+        if (fillTransform != null)
+            fill = fillTransform.GetComponent<Image>();
+        Transform parent = fill != null ? fill.transform : button.transform;
+
+        RawImage preview = parent.GetComponentInChildren<RawImage>();
+        if (preview == null)
+        {
+            GameObject previewObject = new GameObject("Preview", typeof(RectTransform), typeof(RawImage));
+            previewObject.transform.SetParent(parent, false);
+            RectTransform rect = previewObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.12f, 0.32f);
+            rect.anchorMax = new Vector2(0.88f, 0.92f);
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            preview = previewObject.GetComponent<RawImage>();
+            preview.raycastTarget = false;
+        }
+
+        preview.texture = texture;
+        preview.color = Color.white;
+
+        TMP_Text text = button.GetComponentInChildren<TMP_Text>();
+        if (text == null)
+            return;
+
+        text.text = label;
+        text.fontSize = 16f;
+        RectTransform labelRect = text.rectTransform;
+        labelRect.anchorMin = new Vector2(0f, 0f);
+        labelRect.anchorMax = new Vector2(1f, 0.30f);
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = Vector2.zero;
+    }
 
     // Matches the coded keris overlays: an opaque, double-sided URP material so
     // the pieces always draw over the blade and can never be swallowed by it.
     private void ConfigureSelfieSurfaceMaterial(Texture texture)
     {
-        if (selfieSurfaceRenderer == null || texture == null) return;
+        if (texture == null) return;
+        EnsureSelfieCircles();
+        if (selfieSurfaceRenderer == null) return;
         if (selfieSurfaceMaterial == null)
         {
             Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
@@ -1207,6 +2463,10 @@ public sealed partial class SculptingEnhancementKerisColorController
 
             selfieSurfaceMaterial = new Material(shader) { name = "KerisSelfieOverlayMaterial" };
         }
+
+        Texture2D selfieTex = texture as Texture2D;
+        if (selfieTex != null)
+            selfieTex.wrapMode = TextureWrapMode.Clamp;
 
         Material material = selfieSurfaceMaterial;
         if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 0f);
@@ -1223,16 +2483,28 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.12f);
         if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
         material.SetOverrideTag("RenderType", "Opaque");
-        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 40;
+        if (material.HasProperty("_ZTest"))
+            material.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.LessEqual);
 
         if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", texture);
         if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", texture);
         if (material.HasProperty("_Color")) material.SetColor("_Color", Color.white);
         if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", Color.white);
         material.mainTexture = texture;
+        if (material.mainTexture != null)
+            material.mainTexture.wrapMode = TextureWrapMode.Clamp;
 
-        selfieSurfaceRenderer.sharedMaterial = material;
-        selfieSurfaceRenderer.enabled = true;
+        for (int i = 0; i < SelfieCircleCount; i++)
+        {
+            Renderer renderer = selfieCircleRenderers[i] != null
+                ? selfieCircleRenderers[i]
+                : (i == 0 ? selfieSurfaceRenderer : null);
+            if (renderer == null)
+                continue;
+            renderer.sharedMaterial = material;
+            renderer.enabled = true;
+        }
     }
 
     private void ApplyKerisColorToSelectedPart(Color color)
@@ -1242,7 +2514,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         {
             savedPartColors[0] = savedPartColors[1] = savedPartColors[2] = color;
             SetRendererColor(kerisRenderer, color);
-            SetRendererColor(FindOverlayRenderer("KerisFlowers"), color);
+            TintKerisFlowers(color);
             SetRendererColor(FindOverlayRenderer("KerisHandle"), color);
             return;
         }
@@ -1255,12 +2527,34 @@ public sealed partial class SculptingEnhancementKerisColorController
             if (selectedVariant == 1)
                 SetRendererSlotColor(kerisRenderer, ResolveCarvingSlot(), color);
             else
-                SetRendererColor(FindOverlayRenderer("KerisFlowers"), color);
+                TintKerisFlowers(color);
             return;
         }
 
         Renderer target = part == PartBody ? kerisRenderer : FindOverlayRenderer("KerisHandle");
         SetRendererColor(target, color);
+    }
+
+    private void TintKerisFlowers(Color color)
+    {
+        KerisFlowerOverlay overlay = kerisSkin != null
+            ? kerisSkin.GetComponent<KerisFlowerOverlay>()
+            : GetComponent<KerisFlowerOverlay>();
+        if (overlay == null && kerisRenderer != null)
+            overlay = kerisRenderer.GetComponent<KerisFlowerOverlay>();
+        if (overlay != null)
+        {
+            overlay.SetColor(color);
+            return;
+        }
+
+        Transform root = kerisSkin != null ? kerisSkin.transform : transform;
+        Transform flowers = root.Find("KerisFlowers");
+        if (flowers == null)
+            return;
+        MeshRenderer[] renderers = flowers.GetComponentsInChildren<MeshRenderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+            SetRendererColor(renderers[i], color);
     }
 
     private Renderer FindOverlayRenderer(string childName)

@@ -24,6 +24,12 @@ internal static class MorphicOverlayShaders
         return bodyDesign;
     }
 
+    public static Shader KerisBodyDesign()
+    {
+        Shader keris = Shader.Find("Morphic/Keris Body Design Overlay");
+        return keris != null ? keris : BodyDesign();
+    }
+
     public static Shader PatternRibbon()
     {
         if (patternRibbon == null)

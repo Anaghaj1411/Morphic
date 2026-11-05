@@ -325,8 +325,10 @@ public sealed class KerisHandleOverlay : MonoBehaviour
             return;
         SkinnedMeshRenderer skin = GetComponent<SkinnedMeshRenderer>();
         float curve = skin != null ? Mathf.Clamp01(ReadFollowWeight(skin, "Curve") / 100f) : 0f;
-        extraFollow = HeightWidthLocalDelta();
-        handleRoot.localPosition = Vector3.Lerp(HandlePosStraight, HandlePosCurved, curve) + extraFollow;
+        if (handleRoot.parent != transform)
+            handleRoot.SetParent(transform, false);
+        extraFollow = Vector3.zero;
+        handleRoot.localPosition = Vector3.Lerp(HandlePosStraight, HandlePosCurved, curve);
         handleRoot.localEulerAngles = HandleLocalEuler;
         handleRoot.localScale = HandleLocalScale;
         handleRoot.gameObject.SetActive(true);

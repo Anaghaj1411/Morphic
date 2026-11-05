@@ -32,6 +32,9 @@ public class MorphicAITriggerEngine : MonoBehaviour
         public int lidBottom;
         public int bamboo;
         public int tassel;
+        public int kerisHandle1;
+        public int kerisHandle2;
+        public int kerisUseHandle2;
         public int hasStamp;
         public int hasSelfie;
         public int locked;
@@ -128,9 +131,7 @@ public class MorphicAITriggerEngine : MonoBehaviour
 
         SculptContext context = new SculptContext
         {
-            userQuestion = string.IsNullOrEmpty(state.userQuestion)
-                ? "Next sculpt step?"
-                : state.userQuestion,
+            userQuestion = state.userQuestion,
             currentStage = state.currentStage,
             currentTool = state.currentTool,
             width = state.width,
@@ -141,6 +142,9 @@ public class MorphicAITriggerEngine : MonoBehaviour
             lidBottom = state.lidBottom,
             bamboo = state.bamboo,
             tassel = state.tassel,
+            kerisHandle1 = state.kerisHandle1,
+            kerisHandle2 = state.kerisHandle2,
+            kerisUseHandle2 = state.kerisUseHandle2,
             hasStamp = state.hasStamp,
             hasSelfie = state.hasSelfie,
             locked = state.locked

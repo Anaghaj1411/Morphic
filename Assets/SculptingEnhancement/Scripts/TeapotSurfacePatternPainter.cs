@@ -361,6 +361,16 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
                 Destroy(clayStrokes[i].strokeObject);
         }
         clayStrokes.Clear();
+
+        if (clayContainer != null)
+        {
+            for (int i = clayContainer.transform.childCount - 1; i >= 0; i--)
+            {
+                Transform child = clayContainer.transform.GetChild(i);
+                if (child != null)
+                    Destroy(child.gameObject);
+            }
+        }
     }
 
     public void SetStrokesVisible(bool visible)
