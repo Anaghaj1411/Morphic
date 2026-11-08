@@ -458,12 +458,11 @@ public sealed class TeapotGestureController : MonoBehaviour
         if (handRunner == null || teapotRenderer == null || suppressDriving)
             return;
 
-        if (externalFistRotationActive)
-            return;
-
         bool hasTwoHands = handRunner.TryGetLatestTwoHands(
             out SculptHandFrame first,
             out SculptHandFrame second);
+        if (externalFistRotationActive && !hasTwoHands)
+            return;
 
         bool hasAnyHand = hasTwoHands || handRunner.TryGetLatestHand(out first);
         if (!hasAnyHand)
@@ -601,20 +600,19 @@ public sealed class TeapotGestureController : MonoBehaviour
             else
                 EndGesture("TEAPOT: READY");
         }
-
-        float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
-        width = Mathf.Lerp(width, targetWidth, blend);
-        height = Mathf.Lerp(height, targetHeight, blend);
-        middle = Mathf.Lerp(middle, targetMiddle, blend);
     }
 
     private void LateUpdate()
     {
-        if (currentGesture == GestureMode.None)
+        if (suppressDriving || teapotRenderer == null)
             return;
 
-        SetBlendShapeWeight("Width", width);
-        SetBlendShapeWeight("Height", height);
+        if (ownWidthHeight)
+        {
+            SetBlendShapeWeight("Width", width);
+            SetBlendShapeWeight("Height", height);
+        }
+
         SetBlendShapeWeight("Middle", middle);
     }
 
@@ -666,6 +664,8 @@ public sealed class TeapotGestureController : MonoBehaviour
         {
             int index = mesh.GetBlendShapeIndex(shapeName);
             if (index < 0)
+                index = FindBlendShapeIndex(mesh, shapeName);
+            if (index < 0)
             {
                 missingCount++;
                 Debug.LogWarning(
@@ -675,7 +675,7 @@ public sealed class TeapotGestureController : MonoBehaviour
                 continue;
             }
 
-            blendShapeIndices.Add(shapeName, index);
+            blendShapeIndices[shapeName] = index;
         }
 
         SetStatus(missingCount == 0
@@ -686,6 +686,41 @@ public sealed class TeapotGestureController : MonoBehaviour
             $"TeapotGestureController: resolved {blendShapeIndices.Count}/{RequiredBlendShapeNames.Length} " +
             $"Teapot blend shapes on '{mesh.name}'.",
             this);
+    }
+
+    private static int FindBlendShapeIndex(Mesh mesh, string shapeName)
+    {
+        if (mesh == null || string.IsNullOrEmpty(shapeName))
+            return -1;
+
+        string wanted = CompactBlendShapeName(shapeName);
+        for (int i = 0; i < mesh.blendShapeCount; i++)
+        {
+            if (CompactBlendShapeName(mesh.GetBlendShapeName(i)) == wanted)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static string CompactBlendShapeName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        int dot = value.LastIndexOf('.');
+        if (dot >= 0 && dot < value.Length - 1)
+            value = value.Substring(dot + 1);
+
+        char[] chars = value.ToCharArray();
+        int count = 0;
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (char.IsLetterOrDigit(chars[i]))
+                chars[count++] = char.ToUpperInvariant(chars[i]);
+        }
+
+        return new string(chars, 0, count);
     }
 
     private void ReadBodyWeights()
@@ -704,65 +739,38 @@ public sealed class TeapotGestureController : MonoBehaviour
     private void BeginWidthHeight(SculptHandFrame first, SculptHandFrame second)
     {
         currentGesture = GestureMode.WidthHeight;
-        widthHeightBaselineX = Mathf.Abs(first.IndexTip.x - second.IndexTip.x);
-        widthHeightBaselineY = Mathf.Abs(first.IndexTip.y - second.IndexTip.y);
-        widthHeightStart = 0f;
-        lockedWidthHeightAxis = 0;
-        targetWidth = width;
-        targetHeight = height;
+        DriveWidthHeight(first, second);
     }
 
     private void DriveWidthHeight(SculptHandFrame first, SculptHandFrame second)
     {
-        float horizontalChange = ApplyDeadZone(
-            Mathf.Abs(first.IndexTip.x - second.IndexTip.x) - widthHeightBaselineX);
-        float verticalChange = ApplyDeadZone(
-            Mathf.Abs(first.IndexTip.y - second.IndexTip.y) - widthHeightBaselineY);
-
-        if (lockedWidthHeightAxis == 0)
-        {
-            float horizontal = Mathf.Abs(horizontalChange);
-            float vertical = Mathf.Abs(verticalChange);
-            if (horizontal > 0f && horizontal >= vertical * exclusiveAxisRatio)
-                lockedWidthHeightAxis = 1;
-            else if (vertical > 0f && vertical >= horizontal * exclusiveAxisRatio)
-                lockedWidthHeightAxis = 2;
-
-            if (lockedWidthHeightAxis == 0)
-                return;
-
-            widthHeightStart = lockedWidthHeightAxis == 1 ? width : height;
-        }
-
-        if (lockedWidthHeightAxis == 1)
-        {
-            targetWidth = Mathf.Clamp(
-                widthHeightStart + horizontalChange * widthSensitivity, 0f, 100f);
-            targetHeight = height;
-        }
-        else
-        {
-            targetWidth = width;
-            targetHeight = Mathf.Clamp(
-                widthHeightStart + verticalChange * heightSensitivity, 0f, 100f);
-        }
+        float spanX = Mathf.Abs(first.IndexTip.x - second.IndexTip.x);
+        float spanY = Mathf.Abs(first.IndexTip.y - second.IndexTip.y);
+        targetWidth = Mathf.Clamp01(Mathf.InverseLerp(0.06f, 0.52f, spanX)) * 100f;
+        targetHeight = Mathf.Clamp01(Mathf.InverseLerp(0.04f, 0.42f, spanY)) * 100f;
+        float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
+        width = Mathf.Lerp(width, targetWidth, blend);
+        height = Mathf.Lerp(height, targetHeight, blend);
+        SetBlendShapeWeight("Width", width);
+        SetBlendShapeWeight("Height", height);
     }
 
     private void BeginMiddle(SculptHandFrame first, SculptHandFrame second)
     {
         currentGesture = GestureMode.Middle;
-        middleBaseline = VSignSpread(first, second);
-        middleStart = middle;
-        targetMiddle = middle;
+        DriveMiddle(first, second);
     }
 
     private void DriveMiddle(SculptHandFrame first, SculptHandFrame second)
     {
-        float spreadChange = VSignSpread(first, second) - middleBaseline;
+        float spread = VSignSpread(first, second);
         targetMiddle = Mathf.Clamp(
-            middleStart + ApplyDeadZone(spreadChange) * middleSensitivity,
+            Mathf.InverseLerp(0.06f, 0.50f, spread) * middleMaximumWeight,
             0f,
             middleMaximumWeight);
+        float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
+        middle = Mathf.Lerp(middle, targetMiddle, blend);
+        SetBlendShapeWeight("Middle", middle);
     }
 
     private bool DrivePinchUp(SculptHandFrame hand, bool physicalRight)
@@ -1041,20 +1049,20 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     private bool IsIndexPointing(SculptHandFrame hand)
     {
-        return hand.IndexExtensionAngle >= minimumIndexAngle &&
-               hand.IndexTipPalmRatio >= minimumIndexTipExtension &&
-               hand.OtherFingersCurlRatio <= maximumOtherFingerExtension &&
-               hand.MiddleTipPalmRatio <= 1.02f &&
-               hand.PinchDistance >= hand.PalmWidth * minimumThumbIndexSeparation;
+        return hand.IndexExtensionAngle >= 110f &&
+               hand.IndexTipPalmRatio >= 1.05f &&
+               hand.MiddleTipPalmRatio < 1.45f &&
+               hand.PinchDistance >= hand.PalmWidth * 0.28f &&
+               !LooksLikeFist(hand);
     }
 
     private static bool IsVSign(SculptHandFrame hand)
     {
-        return hand.IndexTipPalmRatio >= 1.02f &&
-               hand.MiddleTipPalmRatio >= 1.02f &&
-               hand.RingTipPalmRatio < 1.00f &&
-               hand.PinkyTipPalmRatio < 1.00f &&
-               hand.PinchDistance >= hand.PalmWidth * 0.38f;
+        return hand.IndexTipPalmRatio >= 1.05f &&
+               hand.MiddleTipPalmRatio >= 1.45f &&
+               hand.RingTipPalmRatio < 1.35f &&
+               hand.PinkyTipPalmRatio < 1.35f &&
+               hand.PinchDistance >= hand.PalmWidth * 0.28f;
     }
 
     private static float VSignSpread(SculptHandFrame first, SculptHandFrame second)

@@ -35,11 +35,11 @@ public sealed class KerisGestureController : MonoBehaviour
     [Header("Sharpness / Curve - Pinch Lift")]
     [SerializeField, Range(0.1f, 1.8f)] private float pinchThreshold = 0.75f;
     [SerializeField, Range(0.2f, 2.2f)] private float pinchReleaseThreshold = 1.05f;
-    [SerializeField, Range(0.0008f, 0.04f)] private float pinchTravel = 0.0012f;
+    [SerializeField, Range(0.0008f, 0.04f)] private float pinchTravel = 0.012f;
 
     [Header("Handle - Two Fists Down")]
-    [SerializeField, Min(1f)] private float handleDownSensitivity = 900f;
-    [SerializeField, Min(1f)] private float handleEase = 34f;
+    [SerializeField, Min(1f)] private float handleDownSensitivity = 420f;
+    [SerializeField, Min(1f)] private float handleEase = 22f;
 
     [Header("Body Width / Height - Two Index")]
     [SerializeField, Range(0.015f, 0.12f)] private float fullTravel = 0.022f;
@@ -106,8 +106,14 @@ public sealed class KerisGestureController : MonoBehaviour
     private float filteredFistY;
     private float filteredFistDy;
     private bool fistYSeeded;
-    private const float HandleGraceDuration = 0.2f;
-    private const float HandleDeadZone = 0.0024f;
+    private const float HandleGraceDuration = 0.35f;
+    private const float HandleDeadZone = 0.005f;
+    private float heldSharpness;
+    private float heldCurve;
+    private float heldWidth;
+    private float heldHeight;
+    private float heldCarving;
+    private bool holdBodyShapes;
     private const float TwoHandPinchCommit = 1.05f;
     private const float MinFistSeparation = 0.10f;
     private float width;
@@ -446,10 +452,12 @@ public sealed class KerisGestureController : MonoBehaviour
         else
             handleDownGrace -= Time.deltaTime;
 
-        bool rightPinching = hasRightHand && IsPinching(rightHand, true, ref sharpnessLift.held);
-        bool leftPinching = hasLeftHand && IsPinching(leftHand, false, ref curveLift.held);
+        bool rightPinching = !twoFistsNow && hasRightHand &&
+                             IsPinching(rightHand, true, ref sharpnessLift.held);
+        bool leftPinching = !twoFistsNow && hasLeftHand &&
+                            IsPinching(leftHand, false, ref curveLift.held);
         IsolateOneHandPinch(hasTwoHands, rightHand, leftHand, ref rightPinching, ref leftPinching);
-        bool pinching = rightPinching || leftPinching;
+        bool pinching = !twoFistsNow && (rightPinching || leftPinching);
         bool sculptGesture = twoIndex || twoVNow || twoFistsNow || pinching;
 
         // --- STRICT GESTURE ISOLATION ---
@@ -487,10 +495,11 @@ public sealed class KerisGestureController : MonoBehaviour
 
                 case GestureMode.HandleDown:
                     keepCurrent = twoFistsNow || (handleDownArmed && handleDownGrace > 0f);
-                    if (keepCurrent && hasTwoHands && !pinching && !twoVNow && !twoIndex)
+                    if (keepCurrent && hasTwoHands && !twoVNow && !twoIndex)
                     {
                         FreezeOtherDeformations();
                         DriveHandleDown(first, second);
+                        RestoreHeldBodyShapes();
                         madeDeformation = true;
                         IsDrivingSculpt = true;
                         return;
@@ -568,6 +577,7 @@ public sealed class KerisGestureController : MonoBehaviour
             currentGesture = GestureMode.HandleDown;
             FreezeOtherDeformations();
             DriveHandleDown(first, second);
+            RestoreHeldBodyShapes();
             madeDeformation = true;
             IsDrivingSculpt = true;
             return;
@@ -617,6 +627,8 @@ public sealed class KerisGestureController : MonoBehaviour
     {
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         bool holdOthers = currentGesture == GestureMode.HandleDown;
+        if (holdOthers)
+            RestoreHeldBodyShapes();
         ApplySmoothedShape(
             ref width,
             ref targetWidth,
@@ -638,7 +650,7 @@ public sealed class KerisGestureController : MonoBehaviour
             "Sharpness",
             sharpnessLift.active && !holdOthers,
             dt,
-            0.045f);
+            0.12f);
         ApplySmoothedShape(
             ref curveLift.current,
             ref curveLift.target,
@@ -646,7 +658,7 @@ public sealed class KerisGestureController : MonoBehaviour
             "Curve",
             curveLift.active && !holdOthers,
             dt,
-            0.045f);
+            0.12f);
         ApplySmoothedShape(
             ref carving,
             ref targetCarving,
@@ -1183,6 +1195,7 @@ public sealed class KerisGestureController : MonoBehaviour
             fistYSeeded = true;
             handleDownStartY = rawY;
             handleStartWeight = ReadHandleAmount();
+            CaptureHeldBodyShapes();
         }
         else if (!fistYSeeded)
         {
@@ -1370,8 +1383,8 @@ public sealed class KerisGestureController : MonoBehaviour
         }
 
         // A pinch requires the index finger to be somewhat extended.
-        // If it's curled (low angle), it's likely a fist.
-        if (hand.IndexExtensionAngle < 115f)
+        // If it's curled (low angle), it's a fist and must not drive curve/sharpness.
+        if (LooksLikeHandleFist(hand) || hand.IndexExtensionAngle < 130f)
         {
             held = false;
             return false;
@@ -1468,12 +1481,49 @@ public sealed class KerisGestureController : MonoBehaviour
         PausePinchLift(curveLift);
     }
 
+    private void CaptureHeldBodyShapes()
+    {
+        heldSharpness = ReadShape("Sharpness");
+        heldCurve = ReadShape("Curve");
+        heldWidth = ReadShape("Width");
+        heldHeight = ReadShape("Height");
+        heldCarving = ReadShape(ActiveCarvingName);
+        holdBodyShapes = true;
+        sharpnessLift.current = sharpnessLift.target = heldSharpness;
+        curveLift.current = curveLift.target = heldCurve;
+        width = targetWidth = heldWidth;
+        height = targetHeight = heldHeight;
+        carving = targetCarving = heldCarving;
+    }
+
+    private void RestoreHeldBodyShapes()
+    {
+        if (!holdBodyShapes)
+            CaptureHeldBodyShapes();
+        SetBlendShapeWeight("Sharpness", heldSharpness);
+        SetBlendShapeWeight("Curve", heldCurve);
+        SetBlendShapeWeight("Width", heldWidth);
+        SetBlendShapeWeight("Height", heldHeight);
+        SetBlendShapeWeight(ActiveCarvingName, heldCarving);
+        sharpnessLift.current = sharpnessLift.target = heldSharpness;
+        curveLift.current = curveLift.target = heldCurve;
+        width = targetWidth = heldWidth;
+        height = targetHeight = heldHeight;
+        carving = targetCarving = heldCarving;
+        sharpnessLift.velocity = 0f;
+        curveLift.velocity = 0f;
+        widthVelocity = 0f;
+        heightVelocity = 0f;
+        carvingVelocity = 0f;
+    }
+
     private void ResetHandleDownTracking()
     {
         handleDownArmed = false;
         handleDownGrace = 0f;
         fistYSeeded = false;
         filteredFistDy = 0f;
+        holdBodyShapes = false;
     }
 
     private void ResetWidthHeightTracking()

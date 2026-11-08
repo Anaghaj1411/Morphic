@@ -71,4 +71,76 @@ internal static class MorphicOverlayShaders
         RenderTexture.ReleaseTemporary(temporary);
         return readable;
     }
+
+    public static Texture2D BakeInkTint(
+        Texture source,
+        Color tint,
+        Texture2D reuse,
+        TextureWrapMode wrapU,
+        TextureWrapMode wrapV)
+    {
+        if (source == null)
+            return reuse;
+
+        Texture2D readable = source as Texture2D;
+        bool copied = false;
+        if (readable == null || !readable.isReadable)
+        {
+            readable = CaptureWebcamFrame(source);
+            copied = readable != source;
+        }
+
+        if (readable == null)
+            return reuse;
+
+        int width = readable.width;
+        int height = readable.height;
+        if (reuse == null || reuse.width != width || reuse.height != height)
+        {
+            if (reuse != null)
+            {
+                if (Application.isPlaying)
+                    UnityEngine.Object.Destroy(reuse);
+                else
+                    UnityEngine.Object.DestroyImmediate(reuse);
+            }
+
+            reuse = new Texture2D(width, height, TextureFormat.RGBA32, false)
+            {
+                name = source.name + "_TintedInk",
+                filterMode = FilterMode.Bilinear,
+                wrapModeU = wrapU,
+                wrapModeV = wrapV
+            };
+        }
+        else
+        {
+            reuse.wrapModeU = wrapU;
+            reuse.wrapModeV = wrapV;
+        }
+
+        tint.a = 1f;
+        Color[] pixels = readable.GetPixels();
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Color pixel = pixels[i];
+            float luma = pixel.r * 0.299f + pixel.g * 0.587f + pixel.b * 0.114f;
+            float lightInk = Mathf.Clamp01((luma - 0.32f) * 5f);
+            float darkInk = Mathf.Clamp01((0.68f - luma) * 5f);
+            float ink = pixel.a < 0.98f ? pixel.a : Mathf.Max(lightInk, darkInk);
+            pixels[i] = new Color(tint.r, tint.g, tint.b, ink);
+        }
+
+        reuse.SetPixels(pixels);
+        reuse.Apply(false, false);
+        if (copied && readable != reuse)
+        {
+            if (Application.isPlaying)
+                UnityEngine.Object.Destroy(readable);
+            else
+                UnityEngine.Object.DestroyImmediate(readable);
+        }
+
+        return reuse;
+    }
 }

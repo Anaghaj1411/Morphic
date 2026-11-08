@@ -3,13 +3,14 @@ Shader "Morphic/Keris Body Design Overlay"
     Properties
     {
         _DesignTex ("Design", 2D) = "white" {}
-        _DesignColor ("Design Color", Color) = (1, 1, 1, 1)
+        [MainColor] _DesignColor ("Design Color", Color) = (1, 1, 1, 1)
         _Opacity ("Opacity", Range(0, 1)) = 1
         _RepeatCount ("Repeat Count", Range(1, 12)) = 2
         _PatchHalfAngle ("Patch Half Angle", Range(0.05, 1.2)) = 0.52
         _VerticalHalfFraction ("Vertical Half Fraction", Range(0.05, 0.95)) = 0.62
         _ObjectCenter ("Object Center", Vector) = (0, 0, 0, 0)
         _ObjectExtents ("Object Extents", Vector) = (1, 1, 1, 0)
+        _UseMeshUV ("Use Mesh UV", Float) = 1
     }
 
     SubShader
@@ -17,8 +18,9 @@ Shader "Morphic/Keris Body Design Overlay"
         Tags
         {
             "RenderPipeline" = "UniversalPipeline"
-            "Queue" = "Transparent+15"
+            "Queue" = "Transparent+20"
             "RenderType" = "Transparent"
+            "DisableBatching" = "True"
         }
 
         Pass
@@ -28,15 +30,14 @@ Shader "Morphic/Keris Body Design Overlay"
 
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
-            ZTest LEqual
+            ZTest Always
             Cull Off
-            Offset -1, -1
+            Offset -2, -2
 
             HLSLPROGRAM
             #pragma target 3.0
             #pragma vertex Vert
             #pragma fragment Frag
-            #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -52,18 +53,20 @@ Shader "Morphic/Keris Body Design Overlay"
                 float _RepeatCount;
                 float _PatchHalfAngle;
                 float _VerticalHalfFraction;
+                float _UseMeshUV;
             CBUFFER_END
 
             struct Attributes
             {
                 float4 positionOS : POSITION;
+                float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float3 positionOS : TEXCOORD0;
+                float2 uv : TEXCOORD0;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -72,51 +75,16 @@ Shader "Morphic/Keris Body Design Overlay"
                 UNITY_SETUP_INSTANCE_ID(input);
                 Varyings output;
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
-                output.positionOS = input.positionOS.xyz;
+                output.uv = input.uv;
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
                 return output;
             }
 
             half4 Frag(Varyings input) : SV_Target
             {
-                float3 pos = input.positionOS - _ObjectCenter.xyz;
-                float3 ext = max(_ObjectExtents.xyz, float3(0.00001, 0.00001, 0.00001));
-
-                float2 radial;
-                float vertical;
-                if (ext.z >= ext.x && ext.z >= ext.y)
-                {
-                    radial = pos.xy;
-                    vertical = pos.z / ext.z;
-                }
-                else if (ext.y >= ext.x)
-                {
-                    radial = pos.xz;
-                    vertical = pos.y / ext.y;
-                }
-                else
-                {
-                    radial = pos.yz;
-                    vertical = pos.x / ext.x;
-                }
-
-                float angle = atan2(radial.y, radial.x);
-                float repeats = max(_RepeatCount, 1.0);
-                float sector = 6.28318530718 / repeats;
-                float wrappedAngle = frac(angle / sector + 0.5) * sector - sector * 0.5;
-                clip(_PatchHalfAngle - abs(wrappedAngle));
-                clip(_VerticalHalfFraction - abs(vertical));
-
-                float2 uv = float2(
-                    wrappedAngle / (2.0 * _PatchHalfAngle) + 0.5,
-                    vertical / (2.0 * _VerticalHalfFraction) + 0.5);
-
-                half4 tex = SAMPLE_TEXTURE2D(_DesignTex, sampler_DesignTex, uv);
-                half luma = dot(tex.rgb, half3(0.299, 0.587, 0.114));
-                half cutout = tex.a < 0.98 ? 1.0 : saturate((0.68 - luma) * 5.0);
-                half3 rgb = tex.a < 0.98 ? tex.rgb * _DesignColor.rgb : _DesignColor.rgb;
-                half4 color = half4(rgb, tex.a * cutout * _DesignColor.a * _Opacity);
-                clip(color.a - 0.001);
+                half4 tex = SAMPLE_TEXTURE2D(_DesignTex, sampler_DesignTex, input.uv);
+                half4 color = half4(tex.rgb, tex.a * _Opacity);
+                clip(color.a - 0.02);
                 return color;
             }
             ENDHLSL

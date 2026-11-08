@@ -33,6 +33,7 @@ public sealed class SculptingEnhancementTeapotIndexGestureController : MonoBehav
     private float targetWidth;
     private float targetHeight;
     private float activationTimer;
+    private float trackingLostTimer;
     private bool gestureActive;
     private bool gesturePaused;
     private int lockedWidthHeightAxis;
@@ -73,6 +74,7 @@ public sealed class SculptingEnhancementTeapotIndexGestureController : MonoBehav
         gestureActive = false;
         gesturePaused = false;
         activationTimer = 0f;
+        trackingLostTimer = 0f;
         ReadCurrentWeights();
     }
 
@@ -85,7 +87,14 @@ public sealed class SculptingEnhancementTeapotIndexGestureController : MonoBehav
 
         bool hasTwo = handRunner.TryGetLatestTwoHands(
             out SculptHandFrame first, out SculptHandFrame second);
-        if (hasTwo && IsOpenPalm(first))
+        bool hasOne = hasTwo || handRunner.TryGetLatestHand(out first);
+        int openPalms = 0;
+        if (hasOne && IsOpenPalm(first))
+            openPalms++;
+        if (hasTwo && IsOpenPalm(second))
+            openPalms++;
+
+        if (openPalms >= 1 && gestureActive)
         {
             PauseGesture();
             EndGesture();
@@ -114,14 +123,18 @@ public sealed class SculptingEnhancementTeapotIndexGestureController : MonoBehav
             BeginGesture(first, second);
         }
 
-        if (!(IsIndexPointing(first, true) && IsIndexPointing(second, true)))
+        bool stillPointing = IsIndexPointing(first, true) && IsIndexPointing(second, true);
+        if (stillPointing)
+        {
+            if (gesturePaused)
+                RebaseGesture(first, second);
+            trackingLostTimer = 0f;
+        }
+        else
         {
             PauseGesture();
             return;
         }
-
-        if (gesturePaused)
-            RebaseGesture(first, second);
 
         UpdateTargets(first, second);
         float factor = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
@@ -155,10 +168,10 @@ public sealed class SculptingEnhancementTeapotIndexGestureController : MonoBehav
         Mesh mesh = teapotRenderer.sharedMesh;
         for (int i = 0; i < mesh.blendShapeCount; i++)
         {
-            string name = mesh.GetBlendShapeName(i);
-            if (string.Equals(name, "Width", StringComparison.OrdinalIgnoreCase))
+            string name = CompactName(mesh.GetBlendShapeName(i));
+            if (name == "WIDTH")
                 widthIndex = i;
-            else if (string.Equals(name, "Height", StringComparison.OrdinalIgnoreCase))
+            else if (name == "HEIGHT")
                 heightIndex = i;
         }
     }
@@ -186,16 +199,17 @@ public sealed class SculptingEnhancementTeapotIndexGestureController : MonoBehav
         startingHeight = currentHeight;
         targetWidth = currentWidth;
         targetHeight = currentHeight;
-        baselineHorizontal = Mathf.Abs(first.IndexTip.x - second.IndexTip.x);
-        baselineVertical = Mathf.Abs(first.IndexTip.y - second.IndexTip.y);
+        baselineHorizontal = Mathf.Abs(ToPoint(first.IndexTip).x - ToPoint(second.IndexTip).x);
+        baselineVertical = Mathf.Abs(ToPoint(first.IndexTip).y - ToPoint(second.IndexTip).y);
         lockedWidthHeightAxis = 0;
         gesturePaused = false;
+        trackingLostTimer = 0f;
     }
 
     private void UpdateTargets(SculptHandFrame first, SculptHandFrame second)
     {
-        float horizontal = Mathf.Abs(first.IndexTip.x - second.IndexTip.x);
-        float vertical = Mathf.Abs(first.IndexTip.y - second.IndexTip.y);
+        float horizontal = Mathf.Abs(ToPoint(first.IndexTip).x - ToPoint(second.IndexTip).x);
+        float vertical = Mathf.Abs(ToPoint(first.IndexTip).y - ToPoint(second.IndexTip).y);
         float horizontalChange = ApplyDeadZone(horizontal - baselineHorizontal);
         float verticalChange = ApplyDeadZone(vertical - baselineVertical);
         if (!TryLockAxis(horizontalChange, verticalChange))
@@ -274,9 +288,35 @@ public sealed class SculptingEnhancementTeapotIndexGestureController : MonoBehav
         gestureActive = false;
         gesturePaused = false;
         activationTimer = 0f;
+        trackingLostTimer = 0f;
         targetWidth = currentWidth;
         targetHeight = currentHeight;
         lockedWidthHeightAxis = 0;
+    }
+
+    private static Vector2 ToPoint(Vector3 point)
+    {
+        return new Vector2(point.x, point.y);
+    }
+
+    private static string CompactName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        int dot = value.LastIndexOf('.');
+        if (dot >= 0 && dot < value.Length - 1)
+            value = value.Substring(dot + 1);
+
+        char[] chars = value.ToCharArray();
+        int count = 0;
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (char.IsLetterOrDigit(chars[i]))
+                chars[count++] = char.ToUpperInvariant(chars[i]);
+        }
+
+        return new string(chars, 0, count);
     }
 
     private void PauseGesture()

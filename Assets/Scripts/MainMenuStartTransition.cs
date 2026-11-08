@@ -44,6 +44,8 @@ public class MainMenuStartTransition : MonoBehaviour
 [SerializeField] private float potteryLookAtHeight = 1.2f;
 
 private bool isMovingToPotteryStudio;
+private float potteryStudioFov;
+private bool hasPotteryStudioFov;
 
     public event Action PotteryStudioTransitionCompleted;
     [Header("Restaurant Camera")]
@@ -562,6 +564,8 @@ public event Action RestaurantTransitionCompleted;
         targetRotation;
 
     viewCamera.nearClipPlane = targetNearClip;
+    potteryStudioFov = viewCamera.fieldOfView;
+    hasPotteryStudioFov = true;
 
     // ---------------------------------------------------------
     // FINISHED
@@ -571,6 +575,28 @@ public event Action RestaurantTransitionCompleted;
 
     PotteryStudioTransitionCompleted?.Invoke();
 }
+
+    public bool SnapViewToPotteryStudio()
+    {
+        if (!EnsureCamera())
+            return false;
+
+        Transform target = potteryStudioCameraTarget != null
+            ? potteryStudioCameraTarget
+            : potteryReferenceCamera;
+        if (target == null)
+            return false;
+
+        isMovingToPotteryStudio = false;
+        viewCamera.transform.SetPositionAndRotation(target.position, target.rotation);
+        Camera refCam = target.GetComponent<Camera>();
+        if (refCam != null)
+            viewCamera.fieldOfView = refCam.fieldOfView;
+        else if (hasPotteryStudioFov)
+            viewCamera.fieldOfView = potteryStudioFov;
+        viewCamera.nearClipPlane = 0.01f;
+        return true;
+    }
 
 
 public void EnterRestaurant()

@@ -3,7 +3,7 @@ Shader "Morphic/Lantern Body Design Overlay"
     Properties
     {
         _DesignTex ("Design", 2D) = "white" {}
-        _DesignColor ("Design Color", Color) = (1, 1, 1, 1)
+        [MainColor] _DesignColor ("Design Color", Color) = (1, 1, 1, 1)
         _Opacity ("Opacity", Range(0, 1)) = 1
         _RepeatCount ("Repeat Count", Range(3, 12)) = 6
         _PatchHalfAngle ("Patch Half Angle", Range(0.05, 0.6)) = 0.22
@@ -19,6 +19,7 @@ Shader "Morphic/Lantern Body Design Overlay"
             "RenderPipeline" = "UniversalPipeline"
             "Queue" = "Transparent+15"
             "RenderType" = "Transparent"
+            "DisableBatching" = "True"
         }
 
         Pass
@@ -36,7 +37,6 @@ Shader "Morphic/Lantern Body Design Overlay"
             #pragma target 3.0
             #pragma vertex Vert
             #pragma fragment Frag
-            #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -46,12 +46,12 @@ Shader "Morphic/Lantern Body Design Overlay"
             CBUFFER_START(UnityPerMaterial)
                 float4 _DesignTex_ST;
                 float4 _DesignColor;
-                float4 _ObjectCenter;
-                float4 _ObjectExtents;
                 float _Opacity;
                 float _RepeatCount;
                 float _PatchHalfAngle;
                 float _VerticalHalfFraction;
+                float4 _ObjectCenter;
+                float4 _ObjectExtents;
             CBUFFER_END
 
             struct Attributes
@@ -95,12 +95,7 @@ Shader "Morphic/Lantern Body Design Overlay"
                     vertical / (2.0 * _VerticalHalfFraction) + 0.5);
 
                 half4 tex = SAMPLE_TEXTURE2D(_DesignTex, sampler_DesignTex, uv);
-                half luma = dot(tex.rgb, half3(0.299, 0.587, 0.114));
-                // Cutout stamps keep their authored alpha. Opaque black-on-white
-                // stamps treat dark ink as the design and drop the paper.
-                half cutout = tex.a < 0.98 ? 1.0 : saturate((0.68 - luma) * 5.0);
-                half3 rgb = tex.a < 0.98 ? tex.rgb * _DesignColor.rgb : _DesignColor.rgb;
-                half4 color = half4(rgb, tex.a * cutout * _DesignColor.a * _Opacity);
+                half4 color = half4(tex.rgb, tex.a * _Opacity);
                 clip(color.a - 0.001);
                 return color;
             }

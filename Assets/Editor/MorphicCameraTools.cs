@@ -2,8 +2,28 @@ using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 
+[InitializeOnLoad]
 public static class MorphicCameraTools
 {
+    static MorphicCameraTools()
+    {
+        ClearForcedPlayScene();
+        EditorApplication.delayCall += ClearForcedPlayScene;
+        EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+    }
+
+    private static void OnPlayModeStateChanged(PlayModeStateChange state)
+    {
+        if (state == PlayModeStateChange.ExitingEditMode)
+            ClearForcedPlayScene();
+    }
+
+    private static void ClearForcedPlayScene()
+    {
+        if (EditorSceneManager.playModeStartScene != null)
+            EditorSceneManager.playModeStartScene = null;
+    }
+
     [MenuItem("Tools/MORPHIC/Capture Current Camera as Pottery View")]
     public static void CapturePotteryCamera()
     {

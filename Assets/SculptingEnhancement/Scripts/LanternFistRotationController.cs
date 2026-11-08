@@ -11,6 +11,8 @@ public sealed class LanternFistRotationController : MonoBehaviour
     [SerializeField] private TaiwanLanternGestureController originalGestureController;
     [SerializeField] private Camera viewCamera;
 
+    public bool suppressDriving;
+
     [Header("Hold-to-steer")]
     [SerializeField, Range(40f, 400f)] private float turnYawRate = 110f;
     [SerializeField, Range(40f, 400f)] private float turnPitchRate = 110f;
@@ -69,9 +71,7 @@ public sealed class LanternFistRotationController : MonoBehaviour
         if (handRunner == null || lanternRenderer == null)
             return;
 
-        SculptingEnhancementIndexGestureController index =
-            GetComponent<SculptingEnhancementIndexGestureController>();
-        if (index != null && index.suppressDriving)
+        if (suppressDriving)
         {
             PauseRotation();
             return;
@@ -106,7 +106,7 @@ public sealed class LanternFistRotationController : MonoBehaviour
 
         float steerLeft = ApplyDeadZone(0.5f - fist.PalmCenter.x);
         float steerUp = ApplyDeadZone(fist.PalmCenter.y - 0.5f);
-        float targetYaw = -steerLeft * turnYawRate;
+        float targetYaw = steerLeft * turnYawRate;
         float targetPitch = steerUp * turnPitchRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);

@@ -17,8 +17,6 @@ public sealed partial class SculptingEnhancementKerisColorController
     private GameObject shelfGroup;
     private GameObject confirmDeleteGroup;
     private GameObject selfiePanel;
-    private TMP_Text savedStatusText;
-    private bool kerisSaved;
     private bool bandTintActive;
     private bool colorBackToBands;
     private bool designTintActive;
@@ -29,10 +27,15 @@ public sealed partial class SculptingEnhancementKerisColorController
     private Renderer designSurfaceRenderer;
     private Texture2D capturedSelfieTexture;
     private Texture2D appliedSelfieTexture;
+    private Texture2D undoneSelfieTexture;
     private Renderer selfieSurfaceRenderer;
     private Material selfieSurfaceMaterial;
     private Material designSurfaceMaterial;
     private Material designHiddenMaterial;
+    private MaterialPropertyBlock designPropertyBlock;
+    private Texture2D tintedDesignTexture;
+    private Texture lastBakedDesignSource;
+    private Color lastBakedDesignTint = new Color(-1f, -1f, -1f, -1f);
     private Transform selfieSurfaceRoot;
     private const int SelfieCircleCount = 1;
     private readonly Transform[] selfieCircleRoots = new Transform[SelfieCircleCount];
@@ -50,8 +53,11 @@ public sealed partial class SculptingEnhancementKerisColorController
     private Button retakeSelfieButton;
     private Button selfieBackButton;
     private Button selfieDoneButton;
+    private Button removeSelfieButton;
     private RawImage freeColorPaletteImage;
+    private RectTransform freeColorSelectionCheck;
     private Color freePalettePreviewColor = Color.white;
+    private Vector2 freePaletteMarkerPosition;
     private Vector2 lastColorSampleScreen;
     private Texture2D freeColorTexture;
     private Texture2D[] kerisStamps;
@@ -73,7 +79,12 @@ public sealed partial class SculptingEnhancementKerisColorController
     private const int StampTileRows = 3;
     private const float StampTileSpanFraction = 0.78f;
     private const float StampTileFillFraction = 0.92f;
-    private readonly Button[] shelfSlotButtons = new Button[KerisCollectionStore.MaxCount];
+    private LanternShelfController kerisShelf;
+    private Transform[] kerisSlots;
+    private readonly List<GameObject> kerisShelfDisplays = new List<GameObject>();
+    private bool workingKerisVisible = true;
+    private const string KerisSlotName = "KerisShelfSlot";
+    private const int KerisSlotCount = 9;
     private Color[] savedPartColors = { new Color(0.80f, 0.58f, 0.22f, 1f), Color.white, Color.white };
     private const int UnresolvedCarvingSlot = -2;
     private int cachedCarvingSlot = UnresolvedCarvingSlot;
@@ -138,7 +149,43 @@ public sealed partial class SculptingEnhancementKerisColorController
         Button button = root.GetComponent<Button>();
         button.targetGraphic = freeColorPaletteImage;
         button.transition = Selectable.Transition.None;
+        freeColorSelectionCheck = CreateSelectionCheck(rect, true);
         return button;
+    }
+
+    private RectTransform CreateSelectionCheck(RectTransform parent, bool movable = false)
+    {
+        GameObject checkObject = new GameObject("SelectionCheck", typeof(RectTransform));
+        checkObject.transform.SetParent(parent, false);
+        RectTransform check = checkObject.GetComponent<RectTransform>();
+        check.anchorMin = check.anchorMax = movable
+            ? new Vector2(0.5f, 1f)
+            : new Vector2(0.5f, 0.5f);
+        check.pivot = new Vector2(0.5f, 0.5f);
+        check.anchoredPosition = Vector2.zero;
+        check.sizeDelta = new Vector2(38f, 38f);
+        CreateCheckStroke("LeftBorder", check, new Vector2(-5f, -2f), new Vector2(15f, 8f), -45f, Color.black);
+        CreateCheckStroke("RightBorder", check, new Vector2(5f, 0f), new Vector2(23f, 8f), 45f, Color.black);
+        CreateCheckStroke("LeftFill", check, new Vector2(-5f, -2f), new Vector2(15f, 4f), -45f, Color.white);
+        CreateCheckStroke("RightFill", check, new Vector2(5f, 0f), new Vector2(23f, 4f), 45f, Color.white);
+        checkObject.SetActive(false);
+        return check;
+    }
+
+    private static void CreateCheckStroke(
+        string objectName, Transform parent, Vector2 anchoredPosition, Vector2 size, float rotation, Color color)
+    {
+        GameObject strokeObject = new GameObject(objectName, typeof(RectTransform), typeof(Image));
+        strokeObject.transform.SetParent(parent, false);
+        RectTransform rect = strokeObject.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = size;
+        rect.localRotation = Quaternion.Euler(0f, 0f, rotation);
+        Image image = strokeObject.GetComponent<Image>();
+        image.color = color;
+        image.raycastTarget = false;
     }
 
     private void UpdateFreePalettePreview(HitTarget target, Vector2 screenPosition)
@@ -156,22 +203,23 @@ public sealed partial class SculptingEnhancementKerisColorController
             ? Color.Lerp(hue, Color.white, (y - 0.5f) * 2f)
             : Color.Lerp(Color.black, hue, y * 2f);
         lastColorSampleScreen = screenPosition;
-        if (clayTintActive) PreviewClayColor(freePalettePreviewColor);
-        else if (designTintActive)
-        {
-            committedDesignTint = freePalettePreviewColor;
-            ApplyDesignTint(freePalettePreviewColor);
-        }
-        else if (bandTintActive)
-        {
-            committedBandColor = freePalettePreviewColor;
-            if (patternPainter != null)
-                patternPainter.SetStrokeColor(freePalettePreviewColor, true);
-        }
-        else ApplyKerisColor(freePalettePreviewColor);
+        freePaletteMarkerPosition = local;
+        if (clayTintActive)
+            PreviewClayColor(freePalettePreviewColor);
+        else if (!designTintActive && !bandTintActive)
+            ApplyKerisColor(freePalettePreviewColor);
     }
 
-    private void CommitFreePaletteColor() => CommitColor(freePalettePreviewColor);
+    private void CommitFreePaletteColor()
+    {
+        CommitColor(freePalettePreviewColor);
+        ClearSelectedColorVisual();
+        if (freeColorSelectionCheck != null)
+        {
+            freeColorSelectionCheck.anchoredPosition = freePaletteMarkerPosition;
+            freeColorSelectionCheck.gameObject.SetActive(true);
+        }
+    }
 
     private void OnColorDoneClicked()
     {
@@ -208,43 +256,55 @@ public sealed partial class SculptingEnhancementKerisColorController
         reviewGroup = new GameObject("KerisReview", typeof(RectTransform));
         reviewGroup.transform.SetParent(parent, false);
         RectTransform rect = reviewGroup.GetComponent<RectTransform>();
-        DockTop(rect, -140f, 230f);
-        CreateText("ReviewPrompt", rect, Vector2.zero, new Vector2(PillWidth, 46f),
-            "Your Keris is ready to keep on the shelf.", 20f,
-            TextAlignmentOptions.Center, FontStyles.Bold);
-        savedStatusText = CreateText("SavedStatus", rect, new Vector2(0f, -48f),
-            new Vector2(PillWidth, 34f), "", 17f, TextAlignmentOptions.Center, FontStyles.Bold);
-        Button save = CreateButton("SaveKeris", rect, new Vector2(0f, -95f),
-            new Vector2(PillWidth, 56f), "SAVE TO SHELF", ActionPink);
-        save.onClick.AddListener(SaveKerisToShelf);
-        RegisterHitTarget(save, false, false, Color.white);
-        Button done = CreateButton("ReviewDone", rect, new Vector2(0f, -162f),
-            new Vector2(PillWidth, 56f), "DONE", DonePink);
-        done.onClick.AddListener(ShowMainMenu);
-        RegisterHitTarget(done, false, false, Color.white);
+        DockTop(rect, -124f, 220f);
+
+        Button retake = CreateButton("Retake", rect, new Vector2(0f, -28f),
+            new Vector2(PillWidth, PillHeight), "RETAKE", PillPink);
+        retake.onClick.AddListener(ShowMainMenu);
+        RegisterHitTarget(retake, false, false, Color.white);
+
+        Button finish = CreateButton("Finish", rect, new Vector2(0f, -100f),
+            new Vector2(PillWidth, PillHeight), "FINISH", DonePink);
+        finish.onClick.AddListener(FinishToShelf);
+        RegisterHitTarget(finish, false, false, Color.white);
         reviewGroup.SetActive(false);
 
-        shelfGroup = new GameObject("KerisShelf", typeof(RectTransform));
+        shelfGroup = new GameObject("ShelfActions", typeof(RectTransform));
         shelfGroup.transform.SetParent(parent, false);
         RectTransform shelfRect = shelfGroup.GetComponent<RectTransform>();
-        DockTop(shelfRect, -140f, 240f);
-        CreateText("ShelfTitle", shelfRect, Vector2.zero, new Vector2(PillWidth, 42f),
-            "KERIS COLLECTION", 22f, TextAlignmentOptions.Center, FontStyles.Bold);
-        for (int i = 0; i < shelfSlotButtons.Length; i++)
-        {
-            int slot = i;
-            shelfSlotButtons[i] = CreateButton("KerisSlot" + i, shelfRect,
-                new Vector2(-165f + (i % 3) * 165f, -55f - (i / 3) * 58f),
-                new Vector2(154f, 48f), "EMPTY", PillPink);
-            shelfSlotButtons[i].onClick.AddListener(() => LoadKerisFromShelf(slot));
-            RegisterHitTarget(shelfSlotButtons[i], false, true, Color.white);
-        }
-        Button shelfDone = CreateButton("ShelfDone", shelfRect, new Vector2(0f, -242f),
-            new Vector2(PillWidth, 56f), "DONE", DonePink);
-        shelfDone.onClick.AddListener(LeaveShelfDone);
-        RegisterHitTarget(shelfDone, false, false, Color.white);
+        DockTop(shelfRect, -124f, 250f);
+
+        Button takeBack = CreateButton("TakeBack", shelfRect, new Vector2(0f, 0f),
+            new Vector2(PillWidth, PillHeight), "TAKE BACK", PillPink);
+        takeBack.onClick.AddListener(TakeBackFromShelf);
+        RegisterHitTarget(takeBack, false, false, Color.white);
+
+        Button delete = CreateButton("Delete", shelfRect, new Vector2(0f, -72f),
+            new Vector2(PillWidth, PillHeight), "DELETE", DonePink);
+        delete.onClick.AddListener(ShowConfirmDelete);
+        RegisterHitTarget(delete, false, false, Color.white);
+
+        Button done = CreateButton("Done", shelfRect, new Vector2(0f, -144f),
+            new Vector2(PillWidth, PillHeight), "DONE", DonePink);
+        done.onClick.AddListener(LeaveShelfDone);
+        RegisterHitTarget(done, false, false, Color.white);
         shelfGroup.SetActive(false);
-        confirmDeleteGroup = null;
+
+        confirmDeleteGroup = new GameObject("ConfirmDelete", typeof(RectTransform));
+        confirmDeleteGroup.transform.SetParent(parent, false);
+        RectTransform confirmRect = confirmDeleteGroup.GetComponent<RectTransform>();
+        DockTop(confirmRect, -124f, 170f);
+
+        Button cancelDelete = CreateButton("Cancel", confirmRect, new Vector2(0f, 0f),
+            new Vector2(PillWidth, PillHeight), "CANCEL", PillPink);
+        cancelDelete.onClick.AddListener(ShowShelf);
+        RegisterHitTarget(cancelDelete, false, false, Color.white);
+
+        Button confirmDelete = CreateButton("Delete", confirmRect, new Vector2(0f, -72f),
+            new Vector2(PillWidth, PillHeight), "DELETE", DonePink);
+        confirmDelete.onClick.AddListener(ConfirmDeleteKeris);
+        RegisterHitTarget(confirmDelete, false, false, Color.white);
+        confirmDeleteGroup.SetActive(false);
     }
 
     private void BuildSelfie(Transform parent)
@@ -271,7 +331,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         selfieContent = new GameObject("Content", typeof(RectTransform));
         selfieContent.transform.SetParent(rect, false);
         RectTransform selfieRect = selfieContent.GetComponent<RectTransform>();
-        DockTop(selfieRect, -118f, 450f);
+        DockTop(selfieRect, -118f, 520f);
 
         GameObject preview = new GameObject("Preview", typeof(RectTransform), typeof(RawImage), typeof(Outline));
         preview.transform.SetParent(selfieRect, false);
@@ -311,6 +371,11 @@ public sealed partial class SculptingEnhancementKerisColorController
             new Vector2(172f, PillHeight), "DONE", DonePink);
         selfieDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(selfieDoneButton, false, false, Color.white);
+
+        removeSelfieButton = CreateButton("RemoveSelfie", selfieRect, new Vector2(0f, -378f),
+            new Vector2(PillWidth, PillHeight), "REMOVE SELFIE", PillPink);
+        removeSelfieButton.onClick.AddListener(RemoveSelfie);
+        RegisterHitTarget(removeSelfieButton, false, false, Color.white);
 
         selfiePanel.SetActive(false);
         SetSelfieReviewControls(false);
@@ -399,6 +464,9 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (attachSelfieButton != null) attachSelfieButton.gameObject.SetActive(review);
         if (retakeSelfieButton != null) retakeSelfieButton.gameObject.SetActive(review);
         if (selfieDoneButton != null) selfieDoneButton.gameObject.SetActive(review);
+        if (removeSelfieButton != null)
+            removeSelfieButton.gameObject.SetActive(
+                appliedSelfieTexture != null || (review && capturedSelfieTexture != null));
     }
 
     private void ShowBodyActions()
@@ -552,6 +620,13 @@ public sealed partial class SculptingEnhancementKerisColorController
 
     private void ClearKerisDesign()
     {
+        HideKerisDesign();
+        instructionText.text = "Design cleared.";
+        PushHistory();
+    }
+
+    private void HideKerisDesign()
+    {
         appliedDesignTexture = null;
         designTintActive = false;
         committedDesignTint = Color.white;
@@ -559,7 +634,22 @@ public sealed partial class SculptingEnhancementKerisColorController
             designSurfaceRenderer.enabled = false;
         if (designSurfaceRoot != null)
             designSurfaceRoot.gameObject.SetActive(false);
-        instructionText.text = "Design cleared.";
+    }
+
+    private void RestoreStampFromSnapshot(KerisSnapshot snapshot)
+    {
+        if (snapshot != null && snapshot.StampVisible && snapshot.Stamp != null)
+        {
+            Texture2D stamp = snapshot.Stamp as Texture2D;
+            if (stamp == null && !string.IsNullOrEmpty(snapshot.Stamp.name))
+                stamp = FindStampByName(snapshot.Stamp.name);
+            if (stamp != null)
+            {
+                ApplyKerisStamp(stamp, snapshot.StampTint);
+                return;
+            }
+        }
+        HideKerisDesign();
     }
 
     private void SelectStamp(Texture2D stamp)
@@ -572,6 +662,7 @@ public sealed partial class SculptingEnhancementKerisColorController
 
         ApplyKerisStamp(stamp, committedDesignTint);
         instructionText.text = PatternLabel(stamp) + " applied. Change Color tints the stamp.";
+        PushHistory();
     }
 
     private void ApplyKerisStamp(Texture2D stamp, Color tint)
@@ -922,7 +1013,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         DockTop(barRect, -116f, 56f);
 
         targetingSizeBtn = CreateButton(
-            "TargetingSize", barRect, new Vector2(-171f, 0f),
+            "TargetingSize", barRect, new Vector2(-187f, 0f),
             new Vector2(126f, 48f),
             "SIZE: " + bandSizeLabels[selectedBandSizeIndex], PillPink);
         targetingSizeBtn.onClick.AddListener(() =>
@@ -932,8 +1023,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         RegisterHitTarget(targetingSizeBtn, false, false, Color.white);
 
         targetingColorBtn = CreateButton(
-            "TargetingColor", barRect, new Vector2(-57f, 0f),
-            new Vector2(108f, 48f), "COLOR", ActionPink);
+            "TargetingColor", barRect, new Vector2(-80f, 0f),
+            new Vector2(84f, 48f), "COLOR", ActionPink);
         targetingColorBtn.onClick.AddListener(() =>
         {
             returnToBandDrawing = true;
@@ -942,8 +1033,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         RegisterHitTarget(targetingColorBtn, false, false, Color.white);
 
         Button undoBtn = CreateButton(
-            "TargetingUndo", barRect, new Vector2(57f, 0f),
-            new Vector2(108f, 48f), "UNDO", PillPink);
+            "TargetingUndo", barRect, new Vector2(8f, 0f),
+            new Vector2(84f, 48f), "UNDO", PillPink);
         undoBtn.onClick.AddListener(() =>
         {
             if (patternPainter != null)
@@ -952,9 +1043,20 @@ public sealed partial class SculptingEnhancementKerisColorController
         });
         RegisterHitTarget(undoBtn, false, false, Color.white);
 
+        Button redoBtn = CreateButton(
+            "TargetingRedo", barRect, new Vector2(96f, 0f),
+            new Vector2(84f, 48f), "REDO", PillPink);
+        redoBtn.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.RedoLastStroke();
+            instructionText.text = "Last stroke redone.";
+        });
+        RegisterHitTarget(redoBtn, false, false, Color.white);
+
         Button clearBtn = CreateButton(
-            "TargetingClear", barRect, new Vector2(171f, 0f),
-            new Vector2(108f, 48f), "CLEAR", PillPink);
+            "TargetingClear", barRect, new Vector2(186f, 0f),
+            new Vector2(92f, 48f), "CLEAR", PillPink);
         clearBtn.onClick.AddListener(() =>
         {
             if (patternPainter != null)
@@ -980,13 +1082,20 @@ public sealed partial class SculptingEnhancementKerisColorController
         mode = ColorMode.Selfie;
         panel.SetActive(false);
         selfiePanel.SetActive(true);
-        SetSelfieReviewControls(false);
-        if (selfieInstructionText != null)
-            selfieInstructionText.text = "Frame your photo, then point and hold TAKE SELFIE.";
-        
         if (capturedSelfieTexture == null && appliedSelfieTexture != null)
             capturedSelfieTexture = Instantiate(appliedSelfieTexture);
-        
+
+        bool hasPhoto = capturedSelfieTexture != null;
+        SetSelfieReviewControls(hasPhoto);
+        if (selfieInstructionText != null)
+        {
+            selfieInstructionText.text = hasPhoto
+                ? appliedSelfieTexture != null
+                    ? "Remove the selfie, retake it, or press DONE."
+                    : "Attach the photo to the keris, retake it, or press DONE."
+                : "Frame your photo, then point and hold TAKE SELFIE.";
+        }
+
         ShowLiveSelfiePreview();
         SetSculptGesturesEnabled(false);
     }
@@ -1055,6 +1164,9 @@ public sealed partial class SculptingEnhancementKerisColorController
     {
         if (capturedSelfieTexture != null)
         {
+            DestroyRuntime(undoneSelfieTexture);
+            undoneSelfieTexture = null;
+            NoteTimedUndo(TimedUndo.Selfie);
             DestroyRuntime(appliedSelfieTexture);
             appliedSelfieTexture = Instantiate(capturedSelfieTexture);
             SyncSelfieSurfaceRenderer();
@@ -1063,9 +1175,37 @@ public sealed partial class SculptingEnhancementKerisColorController
         ShowMainMenu();
     }
 
+    private void RemoveSelfie()
+    {
+        if (appliedSelfieTexture != null)
+        {
+            TryUndoSelfie();
+            ForgetTimedSelfie();
+        }
+        DestroyRuntime(capturedSelfieTexture);
+        capturedSelfieTexture = null;
+        SetSelfieReviewControls(false);
+        ShowLiveSelfiePreview();
+        if (selfieInstructionText != null)
+            selfieInstructionText.text = "Selfie removed. Take a new one, or press BACK.";
+    }
+
+    private void ForgetTimedSelfie()
+    {
+        for (int i = timedUndo.Count - 1; i >= 0; i--)
+        {
+            if (timedUndo[i] != TimedUndo.Selfie)
+                continue;
+            timedUndo.RemoveAt(i);
+            timedRedo.Add(TimedUndo.Selfie);
+            break;
+        }
+    }
+
     private void ShowReview()
     {
         DisableVertexSculpt();
+        SetSculptGesturesEnabled(false);
         mode = ColorMode.Review;
         SetPanelHeight(ReviewPanelHeight);
         panel.SetActive(true);
@@ -1073,18 +1213,25 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (historyBar != null) historyBar.SetActive(false);
         HideExtraGroups();
         HideReviewAndShelf();
-        reviewGroup.SetActive(true);
+        if (reviewGroup != null)
+            reviewGroup.SetActive(true);
         if (selfiePanel != null) selfiePanel.SetActive(false);
-        headerText.text = "REVIEW KERIS";
-        instructionText.gameObject.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        headerText.text = "REVIEW";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Go back, or put this keris on the shelf.";
+        SetHeaderBackLabel("← PALETTE");
         SetHeaderBackVisible(true);
-        RefreshSavedStatus();
-        RefreshShelfSlots();
+        SetTitleBurstsVisible(false);
+        ResetDwell();
+        SetHoveredTarget(null);
     }
 
     private void ShowShelf()
     {
         DisableVertexSculpt();
+        SetSculptGesturesEnabled(false);
         mode = ColorMode.Shelf;
         SetPanelHeight(ShelfPanelHeight);
         panel.SetActive(true);
@@ -1092,15 +1239,20 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (historyBar != null) historyBar.SetActive(false);
         HideExtraGroups();
         HideReviewAndShelf();
-        shelfGroup.SetActive(true);
-        headerText.text = "KERIS SHELF";
-        instructionText.gameObject.SetActive(false);
+        if (shelfGroup != null)
+            shelfGroup.SetActive(true);
+        if (selfiePanel != null) selfiePanel.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        headerText.text = "SHELF";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Take it back, delete it, or go back when you are done.";
+        SetHeaderBackLabel("← REVIEW");
         SetHeaderBackVisible(true);
-        RefreshSavedStatus();
-        RefreshShelfSlots();
+        SetTitleBurstsVisible(false);
+        ResetDwell();
+        SetHoveredTarget(null);
     }
-
-    private void LeaveShelfDone() => ShowMainMenu();
 
     private void HideReviewAndShelf()
     {
@@ -1109,91 +1261,588 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (confirmDeleteGroup != null) confirmDeleteGroup.SetActive(false);
     }
 
-    private void SaveKerisToShelf()
+
+    private void FinishToShelf()
     {
-        if (kerisSaved || KerisCollectionStore.IsFull || kerisSkin == null) return;
-        Mesh mesh = kerisSkin.sharedMesh;
-        var weights = new float[mesh != null ? mesh.blendShapeCount : 0];
-        for (int i = 0; i < weights.Length; i++) weights[i] = kerisSkin.GetBlendShapeWeight(i);
-        KerisCollectionStore.Add(new KerisCollectionStore.Record
+        EnsureKerisShelf();
+        if (kerisShelf == null || ResolveKerisRoot() == null)
         {
-            Id = Guid.NewGuid().ToString("N"),
-            BlendWeights = weights,
-            BladeColor = committedKerisColor,
-            PartColors = (Color[])savedPartColors.Clone(),
-            LocalRotation = new[] { transform.localRotation.x, transform.localRotation.y,
-                transform.localRotation.z, transform.localRotation.w },
-            StampVisible = appliedDesignTexture != null,
-            StampName = appliedDesignTexture != null ? appliedDesignTexture.name : "",
-            StampTint = committedDesignTint,
-            SelfiePng = appliedSelfieTexture != null ? appliedSelfieTexture.EncodeToPNG() : null
-        });
-        kerisSaved = true;
-        RefreshSavedStatus();
+            if (instructionText != null)
+                instructionText.text = "The shelf is not ready yet.";
+            return;
+        }
+
+        if (KerisCollectionStore.IsFull)
+        {
+            if (instructionText != null)
+                instructionText.text = "The shelf is full.";
+            return;
+        }
+
+        if (!CommitShelfCopy())
+        {
+            if (instructionText != null)
+                instructionText.text = "Could not place this keris on the shelf.";
+            return;
+        }
+
+        SnapRestoreVertexSculptCamera();
+        SnapViewToPotteryStudio();
+        SetWorkingKerisVisible(false);
+        Transform seat = GetKerisSlot(KerisCollectionStore.Count - 1);
+        if (kerisShelf != null)
+            kerisShelf.PanToShelfView(seat != null ? seat : kerisShelf.Slot);
         ShowShelf();
     }
 
-    private void RefreshSavedStatus()
+    private void TakeBackFromShelf()
     {
-        if (savedStatusText == null) return;
-        savedStatusText.text = kerisSaved
-            ? "Saved • " + KerisCollectionStore.Count + " / " + KerisCollectionStore.MaxCount
-            : "Shelf: " + KerisCollectionStore.Count + " / " + KerisCollectionStore.MaxCount;
-    }
-
-    private void RefreshShelfSlots()
-    {
-        IReadOnlyList<KerisCollectionStore.Record> records = KerisCollectionStore.All;
-        for (int i = 0; i < shelfSlotButtons.Length; i++)
-        {
-            Button button = shelfSlotButtons[i];
-            if (button == null) continue;
-            bool occupied = i < records.Count;
-            TMP_Text label = button.GetComponentInChildren<TMP_Text>();
-            if (label != null) label.text = occupied ? "KERIS " + (i + 1) : "EMPTY";
-            button.interactable = occupied;
-            Image fill = GetButtonFill(button);
-            if (fill != null) fill.color = occupied ? PillPink : new Color(0.72f, 0.72f, 0.72f, 1f);
-        }
-    }
-
-    private void LoadKerisFromShelf(int slot)
-    {
-        IReadOnlyList<KerisCollectionStore.Record> records = KerisCollectionStore.All;
-        if (slot < 0 || slot >= records.Count || kerisSkin == null) return;
-        KerisCollectionStore.Record record = records[slot];
-        Mesh mesh = kerisSkin.sharedMesh;
-        int count = mesh != null ? Mathf.Min(mesh.blendShapeCount,
-            record.BlendWeights != null ? record.BlendWeights.Length : 0) : 0;
-        for (int i = 0; i < count; i++) kerisSkin.SetBlendShapeWeight(i, record.BlendWeights[i]);
-        committedKerisColor = record.BladeColor;
-        if (record.PartColors != null && record.PartColors.Length == savedPartColors.Length)
-            savedPartColors = (Color[])record.PartColors.Clone();
-        selectedPart = -1;
-        ApplyKerisColor(committedKerisColor);
-        if (record.LocalRotation != null && record.LocalRotation.Length == 4)
-            transform.localRotation = new Quaternion(record.LocalRotation[0], record.LocalRotation[1],
-                record.LocalRotation[2], record.LocalRotation[3]);
-        if (record.SelfiePng != null && record.SelfiePng.Length > 0)
-        {
-            DestroyRuntime(appliedSelfieTexture);
-            appliedSelfieTexture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-            appliedSelfieTexture.LoadImage(record.SelfiePng);
-        }
-        if (record.StampVisible && !string.IsNullOrEmpty(record.StampName))
-        {
-            Texture2D stamp = Resources.Load<Texture2D>("StampPatterns/" + record.StampName);
-            if (stamp == null)
-                stamp = FindStampByName(record.StampName);
-            if (stamp != null)
-                ApplyKerisStamp(stamp, record.StampTint);
-        }
-        else
-        {
-            ClearKerisDesign();
-        }
-        kerisSaved = true;
+        KerisCollectionStore.RemoveLast();
+        RemoveLastKerisDisplay();
+        if (kerisShelf != null)
+            kerisShelf.RestoreSculptView();
+        SetWorkingKerisVisible(true);
         ShowMainMenu();
+    }
+
+    private void LeaveShelfDone()
+    {
+        SetWorkingKerisVisible(true);
+        ResetKerisColor();
+        if (kerisShelf != null)
+            kerisShelf.RestoreSculptView();
+        if (paletteAvailable)
+            ShowMainMenu();
+        else
+            SetSculptGesturesEnabled(true);
+    }
+
+    private void ShowConfirmDelete()
+    {
+        mode = ColorMode.ConfirmDelete;
+        SetPanelHeight(ShelfPanelHeight);
+        if (shelfGroup != null)
+            shelfGroup.SetActive(false);
+        if (confirmDeleteGroup != null)
+            confirmDeleteGroup.SetActive(true);
+        headerText.text = "DELETE";
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "This removes the keris from the shelf.";
+        SetHeaderBackVisible(true);
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void ConfirmDeleteKeris()
+    {
+        KerisCollectionStore.RemoveLast();
+        RemoveLastKerisDisplay();
+        if (kerisShelf != null)
+            kerisShelf.RestoreSculptView();
+        SetWorkingKerisVisible(true);
+        if (paletteAvailable)
+            ShowMainMenu();
+        else
+            SetSculptGesturesEnabled(true);
+    }
+
+    private void EnsureKerisShelf()
+    {
+        if (kerisShelf != null)
+        {
+            EnsureKerisShelfSlots();
+            return;
+        }
+
+        kerisShelf = FindFirstObjectByType<LanternShelfController>(FindObjectsInactive.Include);
+        if (kerisShelf != null)
+        {
+            kerisShelf.BindPieces();
+            EnsureKerisShelfSlots();
+            return;
+        }
+
+        GameObject root = new GameObject(LanternShelfController.ShelfRootName);
+        kerisShelf = root.AddComponent<LanternShelfController>();
+        kerisShelf.BindPieces();
+        EnsureKerisShelfSlots();
+    }
+
+    private Transform ResolveKerisRoot()
+    {
+        if (kerisSkin != null)
+        {
+            Transform current = kerisSkin.transform;
+            while (current != null)
+            {
+                string objectName = current.name;
+                if (objectName == "Keris_Updated" || objectName == "Keris")
+                    return current;
+                current = current.parent;
+            }
+        }
+
+        if (kerisRenderer != null)
+            return kerisRenderer.transform;
+        return transform;
+    }
+
+    private bool CommitShelfCopy()
+    {
+        Transform source = ResolveKerisRoot();
+        if (source == null)
+            return false;
+
+        ApplySavedPartColors();
+        if (appliedDesignTexture != null)
+            ApplyDesignTint(committedDesignTint);
+
+        KerisCollectionStore.Record record = CaptureCollectionRecord();
+        if (!KerisCollectionStore.Add(record))
+            return false;
+
+        int slotIndex = KerisCollectionStore.Count - 1;
+        GameObject clone = Instantiate(source.gameObject);
+        clone.name = "KerisCollection_" + record.Id;
+        clone.SetActive(true);
+        clone.transform.SetPositionAndRotation(source.position, source.rotation);
+        UniqueCloneMeshes(clone);
+        UniqueCloneMaterials(clone);
+        CopyLookOntoClone(clone);
+        StripGameplay(clone);
+        SeatKerisAtOwnSlot(clone.transform, slotIndex);
+        ForceCloneVisible(clone);
+        if (kerisShelf != null)
+            kerisShelf.SetPlacedDisplay(clone.transform);
+        kerisShelfDisplays.Add(clone);
+        return true;
+    }
+
+    private KerisCollectionStore.Record CaptureCollectionRecord()
+    {
+        KerisSnapshot snapshot = CaptureSnapshot();
+        Transform root = ResolveKerisRoot();
+        Quaternion rotation = root != null ? root.rotation : Quaternion.identity;
+        return new KerisCollectionStore.Record
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            BlendWeights = snapshot.BlendWeights,
+            BladeColor = committedKerisColor,
+            PartColors = snapshot.PartColors,
+            LocalRotation = new[] { rotation.x, rotation.y, rotation.z, rotation.w },
+            StampVisible = snapshot.StampVisible,
+            StampName = appliedDesignTexture != null ? appliedDesignTexture.name : "",
+            StampTint = committedDesignTint,
+            SelfiePng = appliedSelfieTexture != null ? appliedSelfieTexture.EncodeToPNG() : null
+        };
+    }
+
+    private void SeatKerisAtOwnSlot(Transform keris, int slotIndex)
+    {
+        if (keris == null)
+            return;
+
+        EnsureKerisShelfSlots();
+        Transform seat = GetKerisSlot(slotIndex);
+        Transform collection = kerisShelf != null ? kerisShelf.CollectionRoot : null;
+        Quaternion upright = keris.rotation;
+        Vector3 worldScale = keris.lossyScale;
+        if (collection != null)
+            keris.SetParent(collection, true);
+        keris.rotation = upright;
+        KeepWorldScale(keris, worldScale);
+
+        Bounds body = GetCloneBodyWorldBounds(keris);
+        Vector3 currentBottom = new Vector3(body.center.x, body.min.y, body.center.z);
+        Vector3 slotPos = seat != null ? seat.position : keris.position;
+        keris.position += slotPos - currentBottom;
+    }
+
+    private Transform GetKerisSlot(int slotIndex)
+    {
+        EnsureKerisShelfSlots();
+        if (kerisSlots == null || kerisSlots.Length == 0)
+            return null;
+        return kerisSlots[Mathf.Clamp(slotIndex, 0, kerisSlots.Length - 1)];
+    }
+
+    private void EnsureKerisShelfSlots()
+    {
+        List<Transform> found = FindNamedSlots(KerisSlotName);
+        found.Sort((a, b) => SlotSortKey(a.name, KerisSlotName).CompareTo(SlotSortKey(b.name, KerisSlotName)));
+
+        Transform parent = kerisShelf != null ? kerisShelf.transform : null;
+        List<Transform> teapotSlots = FindNamedSlots("TeapotShelfSlot");
+        teapotSlots.Sort((a, b) =>
+            SlotSortKey(a.name, "TeapotShelfSlot").CompareTo(SlotSortKey(b.name, "TeapotShelfSlot")));
+        List<Transform> lanternSlots = FindNamedSlots(LanternShelfController.SlotName);
+        lanternSlots.Sort((a, b) =>
+            SlotSortKey(a.name, LanternShelfController.SlotName)
+                .CompareTo(SlotSortKey(b.name, LanternShelfController.SlotName)));
+
+        if (parent == null && teapotSlots.Count > 0)
+            parent = teapotSlots[0].parent;
+        if (parent == null && lanternSlots.Count > 0)
+            parent = lanternSlots[0].parent;
+        if (parent == null)
+            parent = transform;
+
+        for (int i = found.Count; i < KerisSlotCount; i++)
+        {
+            GameObject slotObject = new GameObject(i == 0 ? KerisSlotName : KerisSlotName + "_" + (i + 1));
+            Transform slot = slotObject.transform;
+            slot.SetParent(parent, true);
+            Transform template = i < teapotSlots.Count && teapotSlots[i] != null
+                ? teapotSlots[i]
+                : i < lanternSlots.Count ? lanternSlots[i] : null;
+            if (template != null)
+            {
+                slot.position = template.position + template.forward * 0.4f;
+                slot.rotation = template.rotation;
+            }
+            else
+            {
+                slot.position = parent.position + Vector3.right * (0.45f * i);
+                slot.rotation = Quaternion.identity;
+            }
+
+            found.Add(slot);
+        }
+
+        kerisSlots = found.ToArray();
+    }
+
+    private static int SlotSortKey(string objectName, string prefix)
+    {
+        if (objectName == prefix)
+            return 1;
+        if (objectName.StartsWith(prefix + "_", StringComparison.Ordinal) &&
+            int.TryParse(objectName.Substring(prefix.Length + 1), out int number))
+            return number;
+        return 99;
+    }
+
+    private static List<Transform> FindNamedSlots(string prefix)
+    {
+        List<Transform> found = new List<Transform>();
+        for (int sceneIndex = 0; sceneIndex < UnityEngine.SceneManagement.SceneManager.sceneCount; sceneIndex++)
+        {
+            var scene = UnityEngine.SceneManagement.SceneManager.GetSceneAt(sceneIndex);
+            if (!scene.isLoaded)
+                continue;
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                Transform[] transforms = roots[i].GetComponentsInChildren<Transform>(true);
+                for (int t = 0; t < transforms.Length; t++)
+                {
+                    if (transforms[t] != null &&
+                        transforms[t].name.StartsWith(prefix, StringComparison.Ordinal) &&
+                        !found.Contains(transforms[t]))
+                        found.Add(transforms[t]);
+                }
+            }
+        }
+
+        return found;
+    }
+
+    private static Bounds GetCloneBodyWorldBounds(Transform root)
+    {
+        SkinnedMeshRenderer skin = root.GetComponentInChildren<SkinnedMeshRenderer>(true);
+        if (skin == null || skin.sharedMesh == null)
+        {
+            Renderer renderer = root.GetComponentInChildren<Renderer>(true);
+            return renderer != null ? renderer.bounds : new Bounds(root.position, Vector3.one * 0.2f);
+        }
+
+        Mesh baked = new Mesh();
+        skin.BakeMesh(baked);
+        Vector3[] vertices = baked.vertices;
+        UnityEngine.Object.Destroy(baked);
+        if (vertices == null || vertices.Length == 0)
+            return skin.bounds;
+
+        Bounds world = new Bounds(skin.transform.TransformPoint(vertices[0]), Vector3.zero);
+        for (int i = 1; i < vertices.Length; i++)
+            world.Encapsulate(skin.transform.TransformPoint(vertices[i]));
+        return world;
+    }
+
+    private void SetWorkingKerisVisible(bool visible)
+    {
+        workingKerisVisible = visible;
+        Transform root = ResolveKerisRoot();
+        if (root != null)
+        {
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] == null || IsShelfClone(renderers[i].transform))
+                    continue;
+                renderers[i].enabled = visible;
+            }
+        }
+
+        if (designSurfaceRoot != null && !IsShelfClone(designSurfaceRoot))
+        {
+            bool showStamp = visible && appliedDesignTexture != null;
+            designSurfaceRoot.gameObject.SetActive(showStamp);
+            if (designSurfaceRenderer != null)
+                designSurfaceRenderer.enabled = showStamp;
+        }
+
+        SetSelfieCirclesVisible(visible && appliedSelfieTexture != null);
+    }
+
+    private static bool IsShelfClone(Transform target)
+    {
+        Transform current = target;
+        while (current != null)
+        {
+            if (current.name.StartsWith("KerisCollection_", StringComparison.Ordinal))
+                return true;
+            current = current.parent;
+        }
+        return false;
+    }
+
+    private static void KeepWorldScale(Transform target, Vector3 worldScale)
+    {
+        if (target == null || target.parent == null)
+        {
+            if (target != null)
+                target.localScale = worldScale;
+            return;
+        }
+
+        Vector3 parentScale = target.parent.lossyScale;
+        target.localScale = new Vector3(
+            SafeDivide(worldScale.x, parentScale.x),
+            SafeDivide(worldScale.y, parentScale.y),
+            SafeDivide(worldScale.z, parentScale.z));
+    }
+
+    private static float SafeDivide(float value, float divisor)
+    {
+        return Mathf.Abs(divisor) < 0.0001f ? value : value / divisor;
+    }
+
+    private void RemoveLastKerisDisplay()
+    {
+        if (kerisShelfDisplays.Count == 0)
+            return;
+        GameObject last = kerisShelfDisplays[kerisShelfDisplays.Count - 1];
+        kerisShelfDisplays.RemoveAt(kerisShelfDisplays.Count - 1);
+        if (last != null)
+            Destroy(last);
+    }
+
+    private static void UniqueCloneMaterials(GameObject clone)
+    {
+        if (clone == null)
+            return;
+        Renderer[] renderers = clone.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i] == null)
+                continue;
+            renderers[i].materials = renderers[i].materials;
+        }
+    }
+
+    private static void UniqueCloneMeshes(GameObject clone)
+    {
+        if (clone == null)
+            return;
+
+        SkinnedMeshRenderer[] skins = clone.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < skins.Length; i++)
+        {
+            if (skins[i] == null || skins[i].sharedMesh == null)
+                continue;
+            float[] weights = null;
+            Mesh sourceMesh = skins[i].sharedMesh;
+            if (sourceMesh.blendShapeCount > 0)
+            {
+                weights = new float[sourceMesh.blendShapeCount];
+                for (int w = 0; w < weights.Length; w++)
+                    weights[w] = skins[i].GetBlendShapeWeight(w);
+            }
+
+            skins[i].sharedMesh = Instantiate(sourceMesh);
+            if (weights == null)
+                continue;
+            int count = Mathf.Min(weights.Length, skins[i].sharedMesh.blendShapeCount);
+            for (int w = 0; w < count; w++)
+                skins[i].SetBlendShapeWeight(w, weights[w]);
+        }
+
+        MeshFilter[] filters = clone.GetComponentsInChildren<MeshFilter>(true);
+        for (int i = 0; i < filters.Length; i++)
+        {
+            if (filters[i] == null || filters[i].sharedMesh == null)
+                continue;
+            filters[i].sharedMesh = Instantiate(filters[i].sharedMesh);
+        }
+    }
+
+    private static void StripGameplay(GameObject clone)
+    {
+        if (clone == null)
+            return;
+
+        DisableAndDestroy(clone.GetComponentsInChildren<KerisGestureController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<KerisFistRotationController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<SculptingEnhancementKerisColorController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<VertexSculptController>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<TeapotSurfacePatternPainter>(true));
+        DestroyNamedChildren(clone.transform, "BrushCursor");
+        DestroyNamedChildren(clone.transform, "KerisColorUI");
+        DisableAndDestroy(clone.GetComponentsInChildren<Canvas>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<Camera>(true));
+        DisableAndDestroy(clone.GetComponentsInChildren<AudioListener>(true));
+    }
+
+    private static void DisableAndDestroy(Component[] components)
+    {
+        if (components == null)
+            return;
+        for (int i = 0; i < components.Length; i++)
+        {
+            if (components[i] == null)
+                continue;
+            Behaviour behaviour = components[i] as Behaviour;
+            if (behaviour != null)
+                behaviour.enabled = false;
+            Destroy(components[i]);
+        }
+    }
+
+    private static void DestroyNamedChildren(Transform root, string objectName)
+    {
+        if (root == null || string.IsNullOrEmpty(objectName))
+            return;
+
+        Transform[] children = root.GetComponentsInChildren<Transform>(true);
+        for (int i = children.Length - 1; i >= 0; i--)
+        {
+            Transform child = children[i];
+            if (child == null || child == root || child.name != objectName)
+                continue;
+            Destroy(child.gameObject);
+        }
+    }
+
+    private void CopyLookOntoClone(GameObject clone)
+    {
+        if (clone == null)
+            return;
+
+        Transform stamp = FindNamedChild(clone.transform, "KerisStampOverlay");
+        if (stamp != null)
+        {
+            bool showStamp = appliedDesignTexture != null;
+            stamp.gameObject.SetActive(showStamp);
+            MeshRenderer stampRenderer = stamp.GetComponent<MeshRenderer>();
+            if (stampRenderer != null)
+            {
+                stampRenderer.enabled = showStamp;
+                if (showStamp)
+                    AssignUniqueTexture(stampRenderer, tintedDesignTexture != null
+                        ? tintedDesignTexture
+                        : appliedDesignTexture, "_DesignTex");
+            }
+        }
+
+        if (appliedSelfieTexture == null || selfieSurfaceRoot == null)
+            return;
+
+        GameObject selfie = Instantiate(selfieSurfaceRoot.gameObject);
+        selfie.name = "KerisSelfieCircle0";
+        selfie.transform.SetParent(clone.transform, true);
+        MeshFilter filter = selfie.GetComponent<MeshFilter>();
+        if (filter != null && filter.sharedMesh != null)
+            filter.sharedMesh = Instantiate(filter.sharedMesh);
+        MeshRenderer meshRenderer = selfie.GetComponent<MeshRenderer>();
+        if (meshRenderer != null)
+        {
+            meshRenderer.materials = meshRenderer.materials;
+            AssignUniqueTexture(meshRenderer, appliedSelfieTexture, "_MainTex");
+            AssignUniqueTexture(meshRenderer, appliedSelfieTexture, "_BaseMap");
+            meshRenderer.enabled = true;
+        }
+        selfie.SetActive(true);
+    }
+
+    private static void AssignUniqueTexture(Renderer target, Texture source, string property)
+    {
+        if (target == null || source == null)
+            return;
+        Texture2D pixels = source as Texture2D;
+        Texture2D copy = pixels != null ? CopyTexturePixels(pixels, "Morphic Shelf " + property) : null;
+        Material[] materials = target.materials;
+        for (int i = 0; i < materials.Length; i++)
+        {
+            if (materials[i] == null)
+                continue;
+            if (materials[i].HasProperty(property))
+                materials[i].SetTexture(property, copy != null ? copy : source);
+            if (property == "_MainTex" && materials[i].HasProperty("_BaseMap"))
+                materials[i].SetTexture("_BaseMap", copy != null ? copy : source);
+        }
+        target.materials = materials;
+    }
+
+    private static Texture2D CopyTexturePixels(Texture2D source, string textureName)
+    {
+        if (source == null)
+            return null;
+        Texture2D copy = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false)
+        {
+            name = textureName,
+            filterMode = source.filterMode,
+            wrapMode = source.wrapMode
+        };
+        try
+        {
+            copy.SetPixels32(source.GetPixels32());
+            copy.Apply(false, false);
+            return copy;
+        }
+        catch
+        {
+            Destroy(copy);
+            return source;
+        }
+    }
+
+    private static Transform FindNamedChild(Transform root, string objectName)
+    {
+        if (root == null)
+            return null;
+        Transform[] children = root.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < children.Length; i++)
+        {
+            if (children[i] != null && children[i].name == objectName)
+                return children[i];
+        }
+        return null;
+    }
+
+    private static void ForceCloneVisible(GameObject clone)
+    {
+        if (clone == null)
+            return;
+        clone.SetActive(true);
+        Renderer[] renderers = clone.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i] == null)
+                continue;
+            renderers[i].enabled = true;
+            renderers[i].forceRenderingOff = false;
+        }
     }
 
     private void ShowConfirmReset()
@@ -1213,10 +1862,17 @@ public sealed partial class SculptingEnhancementKerisColorController
     {
         DestroyRuntime(capturedSelfieTexture);
         DestroyRuntime(appliedSelfieTexture);
+        DestroyRuntime(undoneSelfieTexture);
         capturedSelfieTexture = null;
         appliedSelfieTexture = null;
+        undoneSelfieTexture = null;
         appliedDesignTexture = null;
         SetSelfieCirclesVisible(false);
+        DestroySelfieCircles();
+        if (selfiePreviewImage != null)
+            selfiePreviewImage.texture = null;
+        if (selfieSurfaceRenderer != null)
+            selfieSurfaceRenderer.enabled = false;
         if (designSurfaceRenderer != null) designSurfaceRenderer.enabled = false;
         if (designSurfaceRoot != null) designSurfaceRoot.gameObject.SetActive(false);
         if (patternPainter != null)
@@ -1226,16 +1882,108 @@ public sealed partial class SculptingEnhancementKerisColorController
         }
     }
 
+    private bool TryUndoSelfie()
+    {
+        if (appliedSelfieTexture == null)
+            return false;
+
+        DestroyRuntime(undoneSelfieTexture);
+        undoneSelfieTexture = appliedSelfieTexture;
+        appliedSelfieTexture = null;
+        SetSelfieCirclesVisible(false);
+        if (selfieSurfaceRenderer != null)
+            selfieSurfaceRenderer.enabled = false;
+        if (instructionText != null)
+        {
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Selfie removed.";
+        }
+        return true;
+    }
+
+    private bool TryRedoSelfie()
+    {
+        if (undoneSelfieTexture == null)
+            return false;
+
+        appliedSelfieTexture = undoneSelfieTexture;
+        undoneSelfieTexture = null;
+        SyncSelfieSurfaceRenderer();
+        ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
+        SetSelfieCirclesVisible(true);
+        if (instructionText != null)
+        {
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Selfie restored.";
+        }
+        return true;
+    }
+
+    private Color LiveDesignTint()
+    {
+        if (designTintActive && hoveredTarget != null && hoveredTarget.IsColor)
+        {
+            return hoveredTarget.IsFreeColorPalette
+                ? freePalettePreviewColor
+                : hoveredTarget.PreviewColor;
+        }
+        return committedDesignTint;
+    }
+
+    private Texture ResolveTintedDesign(Texture source, Color tint)
+    {
+        if (source == null)
+            return tintedDesignTexture;
+        if (tintedDesignTexture != null &&
+            lastBakedDesignSource == source &&
+            Mathf.Abs(lastBakedDesignTint.r - tint.r) < 0.002f &&
+            Mathf.Abs(lastBakedDesignTint.g - tint.g) < 0.002f &&
+            Mathf.Abs(lastBakedDesignTint.b - tint.b) < 0.002f)
+            return tintedDesignTexture;
+
+        tintedDesignTexture = MorphicOverlayShaders.BakeInkTint(
+            source, tint, tintedDesignTexture, TextureWrapMode.Clamp, TextureWrapMode.Clamp);
+        lastBakedDesignSource = source;
+        lastBakedDesignTint = tint;
+        return tintedDesignTexture;
+    }
+
     private void ApplyDesignTint(Color color)
     {
-        if (designSurfaceMaterial == null)
+        color.a = 1f;
+        Texture painted = null;
+        if (appliedDesignTexture != null)
+            painted = ResolveTintedDesign(appliedDesignTexture, color);
+
+        if (designSurfaceMaterial != null)
+        {
+            designSurfaceMaterial.enableInstancing = false;
+            if (painted != null)
+            {
+                if (designSurfaceMaterial.HasProperty("_DesignTex"))
+                    designSurfaceMaterial.SetTexture("_DesignTex", painted);
+                if (designSurfaceMaterial.HasProperty("_MainTex"))
+                    designSurfaceMaterial.SetTexture("_MainTex", painted);
+                if (designSurfaceMaterial.HasProperty("_BaseMap"))
+                    designSurfaceMaterial.SetTexture("_BaseMap", painted);
+                designSurfaceMaterial.mainTexture = painted;
+            }
+            if (designSurfaceMaterial.HasProperty("_DesignColor"))
+                designSurfaceMaterial.SetColor("_DesignColor", Color.white);
+            if (designSurfaceMaterial.HasProperty("_Color"))
+                designSurfaceMaterial.SetColor("_Color", Color.white);
+            if (designSurfaceMaterial.HasProperty("_BaseColor"))
+                designSurfaceMaterial.SetColor("_BaseColor", Color.white);
+            if (designSurfaceMaterial.HasProperty("_Opacity"))
+                designSurfaceMaterial.SetFloat("_Opacity", 1f);
+            designSurfaceMaterial.color = Color.white;
+        }
+
+        if (designSurfaceRenderer == null)
             return;
-        if (designSurfaceMaterial.HasProperty("_DesignColor"))
-            designSurfaceMaterial.SetColor("_DesignColor", color);
-        if (designSurfaceMaterial.HasProperty("_Color"))
-            designSurfaceMaterial.SetColor("_Color", color);
-        if (designSurfaceMaterial.HasProperty("_BaseColor"))
-            designSurfaceMaterial.SetColor("_BaseColor", color);
+
+        designSurfaceRenderer.SetPropertyBlock(null);
+        designSurfaceRenderer.sharedMaterial = designSurfaceMaterial;
     }
 
     private void SyncDesignSurfaceRenderer()
@@ -1473,7 +2221,6 @@ public sealed partial class SculptingEnhancementKerisColorController
     // stays circular when the keris curves; only its position follows the metal.
     private bool BuildSelfieStripMesh()
     {
-
         SkinnedMeshRenderer skin = kerisSkin != null ? kerisSkin : kerisRenderer as SkinnedMeshRenderer;
         Transform blade = skin != null ? skin.transform : (kerisRenderer != null ? kerisRenderer.transform : null);
         if (blade == null)
@@ -1544,60 +2291,83 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (alongRange < 0.0001f)
             return false;
 
-        float thinMid = (thinMin + thinMax) * 0.5f;
         float targetAlong = alongMin + alongRange * 0.48f;
-        float window = alongRange * 0.06f;
+        float window = alongRange * 0.10f;
+        float frontCut = thinMin + (thinMax - thinMin) * 0.78f;
 
         Vector3 sum = Vector3.zero;
         int hits = 0;
         float acrossMin = float.MaxValue;
         float acrossMax = float.MinValue;
-        float front = thinMin;
+        int best = -1;
+        float bestFacing = float.MinValue;
         for (int i = 0; i < vertices.Length; i++)
         {
-            if (thinAt[i] < thinMid)
-                continue;
             if (Mathf.Abs(alongAt[i] - targetAlong) > window)
+                continue;
+            if (acrossAt[i] < acrossMin) acrossMin = acrossAt[i];
+            if (acrossAt[i] > acrossMax) acrossMax = acrossAt[i];
+            if (thinAt[i] > bestFacing)
+            {
+                bestFacing = thinAt[i];
+                best = i;
+            }
+            if (thinAt[i] < frontCut)
                 continue;
             sum += worldPoints[i];
             hits++;
-            if (acrossAt[i] < acrossMin) acrossMin = acrossAt[i];
-            if (acrossAt[i] > acrossMax) acrossMax = acrossAt[i];
-            if (thinAt[i] > front) front = thinAt[i];
         }
 
-        if (hits < 3)
+        if (hits < 1 && best >= 0)
         {
-            window = alongRange * 0.12f;
+            sum = worldPoints[best];
+            hits = 1;
+        }
+
+        if (hits < 1)
+        {
+            window = alongRange * 0.28f;
             sum = Vector3.zero;
             hits = 0;
             acrossMin = float.MaxValue;
             acrossMax = float.MinValue;
-            front = thinMin;
+            best = -1;
+            bestFacing = float.MinValue;
             for (int i = 0; i < vertices.Length; i++)
             {
-                if (thinAt[i] < thinMid)
-                    continue;
                 if (Mathf.Abs(alongAt[i] - targetAlong) > window)
                     continue;
-                sum += worldPoints[i];
-                hits++;
                 if (acrossAt[i] < acrossMin) acrossMin = acrossAt[i];
                 if (acrossAt[i] > acrossMax) acrossMax = acrossAt[i];
-                if (thinAt[i] > front) front = thinAt[i];
+                if (thinAt[i] > bestFacing)
+                {
+                    bestFacing = thinAt[i];
+                    best = i;
+                }
+                sum += worldPoints[i];
+                hits++;
+            }
+            if (best >= 0)
+            {
+                sum = worldPoints[best];
+                hits = 1;
             }
         }
 
         if (hits < 1)
             return false;
 
-        float localWidth = Mathf.Max(0.0004f, acrossMax - acrossMin);
+        float localWidth = Mathf.Max(acrossMax - acrossMin, alongRange * 0.08f, 0.0004f);
         float width = localWidth * SelfieCircleFill;
         float height = Mathf.Min(alongRange * 0.28f, Mathf.Max(width * SelfieAlongFill, alongRange * 0.18f));
-        float thinSpan = Mathf.Max(0.0001f, thinMax - thinMin);
-        float worldPush = Mathf.Max(0.003f, thinSpan * 0.45f);
-        Vector3 center = sum / hits;
-        Vector3 attach = center + worldThin * worldPush;
+        // Sit on the camera-facing surface, but in the middle of the blade
+        // width. Using the sharpest vertex alone pulled the photo to one edge.
+        float acrossMid = (acrossMin + acrossMax) * 0.5f;
+        float frontThin = best >= 0 ? bestFacing : Vector3.Dot(sum / hits, worldThin);
+        float worldPush = Mathf.Max(0.004f, alongRange * 0.016f);
+        Vector3 attach = worldLong * targetAlong +
+                         worldAcross * acrossMid +
+                         worldThin * (frontThin + worldPush);
 
         EnsureSelfieCircles();
         Transform circle = selfieCircleRoots[0];
@@ -1654,7 +2424,6 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (selfieOverlayMesh == null) return;
         if (BuildSelfieStripMesh())
             return;
-        selfieOverlayMesh.Clear();
         WarnSelfie("Keris selfie could not be placed on the blade.");
         return;
 
@@ -2040,17 +2809,20 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (designSurfaceRenderer == null || texture == null)
             return;
 
-        Texture2D stamp = texture as Texture2D;
-        Texture2D ink = stamp != null ? GetStampAlphaTexture(stamp) : null;
-        Texture useTexture = ink != null ? ink : texture;
+        Shader shader = MorphicOverlayShaders.KerisBodyDesign();
+        bool useMeshUv = shader != null && shader.name.IndexOf("Keris", StringComparison.OrdinalIgnoreCase) >= 0;
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Transparent");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        if (shader == null)
+            return;
 
-        if (designSurfaceMaterial == null)
+        if (designSurfaceMaterial == null || designSurfaceMaterial.shader != shader)
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader == null) shader = Shader.Find("Unlit/Transparent");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            if (shader == null)
-                return;
+            DestroyRuntime(designSurfaceMaterial);
             designSurfaceMaterial = new Material(shader)
             {
                 name = "Morphic Keris Stamp Material",
@@ -2058,26 +2830,40 @@ public sealed partial class SculptingEnhancementKerisColorController
             };
         }
 
+        Texture painted = ResolveTintedDesign(texture, committedDesignTint);
+        Texture useTexture = painted != null ? painted : texture;
+
         Material material = designSurfaceMaterial;
-        if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
-        if (material.HasProperty("_AlphaClip")) material.SetFloat("_AlphaClip", 0f);
-        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        material.DisableKeyword("_ALPHATEST_ON");
-        if (material.HasProperty("_ZWrite")) material.SetInt("_ZWrite", 0);
-        if (material.HasProperty("_SrcBlend"))
-            material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        if (material.HasProperty("_DstBlend"))
-            material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-        if (material.HasProperty("_Cull")) material.SetFloat("_Cull", 0f);
-        if (material.HasProperty("_CullMode")) material.SetFloat("_CullMode", 0f);
-        material.SetOverrideTag("RenderType", "Transparent");
         material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20;
-        if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", useTexture);
-        if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", useTexture);
+        if (material.HasProperty("_DesignTex"))
+            material.SetTexture("_DesignTex", useTexture);
+        if (material.HasProperty("_UseMeshUV"))
+            material.SetFloat("_UseMeshUV", 1f);
+        if (material.HasProperty("_Opacity"))
+            material.SetFloat("_Opacity", 1f);
+        if (material.HasProperty("_MainTex"))
+            material.SetTexture("_MainTex", useTexture);
+        if (material.HasProperty("_BaseMap"))
+            material.SetTexture("_BaseMap", useTexture);
         material.mainTexture = useTexture;
-        ApplyDesignTint(committedDesignTint);
+        if (!useMeshUv)
+        {
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_AlphaClip")) material.SetFloat("_AlphaClip", 0f);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHATEST_ON");
+            if (material.HasProperty("_ZWrite")) material.SetInt("_ZWrite", 0);
+            if (material.HasProperty("_SrcBlend"))
+                material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (material.HasProperty("_DstBlend"))
+                material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (material.HasProperty("_Cull")) material.SetFloat("_Cull", 0f);
+            if (material.HasProperty("_CullMode")) material.SetFloat("_CullMode", 0f);
+            material.SetOverrideTag("RenderType", "Transparent");
+        }
         designSurfaceRenderer.sharedMaterial = material;
         designSurfaceRenderer.enabled = true;
+        ApplyDesignTint(committedDesignTint);
     }
 
     private void EnsureDesignOverlay()
@@ -2531,8 +3317,35 @@ public sealed partial class SculptingEnhancementKerisColorController
             return;
         }
 
-        Renderer target = part == PartBody ? kerisRenderer : FindOverlayRenderer("KerisHandle");
-        SetRendererColor(target, color);
+        if (part == PartHandle)
+        {
+            TintKerisHandle(color);
+            return;
+        }
+
+        SetRendererColor(kerisRenderer, color);
+    }
+
+    private void TintKerisHandle(Color color)
+    {
+        KerisHandleOverlay overlay = kerisSkin != null
+            ? kerisSkin.GetComponent<KerisHandleOverlay>()
+            : GetComponent<KerisHandleOverlay>();
+        if (overlay == null && kerisRenderer != null)
+            overlay = kerisRenderer.GetComponent<KerisHandleOverlay>();
+        if (overlay != null)
+            overlay.SetColor(color);
+
+        Transform root = kerisSkin != null ? kerisSkin.transform : transform;
+        Transform handle = root.Find("KerisHandle");
+        if (handle == null)
+            return;
+        Renderer[] renderers = handle.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i] != null && renderers[i].enabled)
+                SetRendererColor(renderers[i], color);
+        }
     }
 
     private void TintKerisFlowers(Color color)

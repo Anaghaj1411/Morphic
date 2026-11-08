@@ -39,6 +39,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         public bool IsPersistentChoice;
         public Color PreviewColor;
         public Color BaseColor;
+        public RectTransform SelectionCheck;
         public Image[] DwellEdges;
     }
 
@@ -60,6 +61,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     [SerializeField, Range(3f, 12f)] private float designRepeatCount = 6f;
     [SerializeField, Range(0.08f, 0.5f)] private float designPatchHalfAngle = 0.22f;
     [SerializeField, Range(0.15f, 0.7f)] private float designVerticalHalfFraction = 0.38f;
+
+    [Header("Vertex Sculpt Camera")]
+    [Tooltip("On = use the pose below during vertex sculpt and band drawing.")]
+    [SerializeField] private bool useCustomSculptCamera;
+    [SerializeField] private Vector3 sculptCameraPosition;
+    [SerializeField] private Vector3 sculptCameraRotation;
+    [SerializeField] private float sculptCameraFov = 40f;
 
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -92,6 +100,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private readonly List<Material> isolatedSpoutMaterials = new List<Material>();
     private readonly List<Material> isolatedHandleMaterials = new List<Material>();
     private readonly List<TeapotSnapshot> history = new List<TeapotSnapshot>();
+    private readonly List<TeapotSnapshot> redoHistory = new List<TeapotSnapshot>();
+    private enum TimedUndo { Clay, Sculpt, Band, Selfie, History }
+    private readonly List<TimedUndo> timedUndo = new List<TimedUndo>();
+    private readonly List<TimedUndo> timedRedo = new List<TimedUndo>();
+    private int trackedClayCount;
+    private int trackedBandCount;
+    private int trackedSculptCount;
 
     private Material[] runtimeMaterials;
     private Color[] committedMaterialColors;
@@ -114,8 +129,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private GameObject reviewGroup;
     private GameObject shelfGroup;
     private GameObject confirmDeleteGroup;
-    private TMP_Text savedStatusText;
-    private bool teapotSaved;
     private LanternShelfController teapotShelf;
     private GameObject historyBar;
     private GameObject confirmResetGroup;
@@ -135,6 +148,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private Button attachSelfieButton;
     private Button retakeSelfieButton;
     private Button selfieDoneButton;
+    private Button removeSelfieButton;
     private RawImage freeColorPaletteImage;
     private RectTransform freeColorSelectionCheck;
     private Color freePalettePreviewColor = Color.white;
@@ -144,6 +158,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private HitTarget hoveredTarget;
     private HitTarget dwellTarget;
     private HitTarget completedDwellTarget;
+    private HitTarget selectedColorTarget;
     private ColorMode mode = ColorMode.Sculpt;
     private int selectedPart = -1;
     private float dwellTimer;
@@ -173,7 +188,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private readonly Button[] vertexSculptStrengthButtons = new Button[4];
     private readonly float[] vertexSculptBrushSizes = { 0.006f, 0.012f, 0.018f, 0.028f };
     private readonly string[] vertexSculptBrushSizeLabels = { "S", "M", "L", "XL" };
-    private readonly float[] vertexSculptStrengths = { 1f, 1.18f, 1.38f, 1.65f };
+    private readonly float[] vertexSculptStrengths = { 0.28f, 0.75f, 1.45f, 2.6f };
     private readonly string[] vertexSculptStrengthLabels = { "SOFT", "MED", "STRONG", "MAX" };
     private int selectedVertexSculptSizeIndex = 1;
     private int selectedVertexSculptStrengthIndex = 1;
@@ -186,6 +201,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private Image bandColorChip;
     private Image clayColorChip;
     private bool vertexSculptCameraZoomed;
+    private bool hasStoredSculptCam;
     private Vector3 storedSculptCamPos;
     private Quaternion storedSculptCamRot;
     private float storedSculptCamFov;
@@ -198,6 +214,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private SkinnedMeshRenderer designSurfaceRenderer;
     private Material designSurfaceMaterial;
     private Material designHiddenMaterial;
+    private MaterialPropertyBlock designPropertyBlock;
     private Texture appliedDesignTexture;
     private Texture2D appliedBandTexture;
     private TeapotSurfacePatternPainter patternPainter;
@@ -208,8 +225,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private float bandPatchHalfAngle = 0.3927f;
     private float bandOpacity = 1f;
     private Color committedDesignTint = Color.white;
+    private Texture2D tintedDesignTexture;
+    private Texture lastBakedDesignSource;
+    private Color lastBakedDesignTint = new Color(-1f, -1f, -1f, -1f);
     private Texture2D capturedSelfieTexture;
     private Texture2D appliedSelfieTexture;
+    private Texture2D undoneSelfieTexture;
     private Transform selfieDecalRoot;
     private Material selfieDecalMaterial;
     private Mesh selfieQuadMesh;
@@ -231,12 +252,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private const float CustomizePanelWidth = 540f;
     private const float PillWidth = 490f;
     private const float PillHeight = 60f;
-    private const float MainMenuPanelHeight = 500f;
-    private const float ReviewPanelHeight = 450f;
+    private const float MainMenuPanelHeight = 428f;
+    private const float ReviewPanelHeight = 360f;
     private const float ShelfPanelHeight = 450f;
-    private const float PartSelectionPanelHeight = 740f;
+    private const float PartSelectionPanelHeight = 662f;
     private const float ColorSelectionPanelHeight = 680f;
-    private const float SelfiePanelHeight = 600f;
+    private const float SelfiePanelHeight = 670f;
     private const float VariantSelectionPanelHeight = 460f;
     private const float BodyActionsPanelHeight = 470f;
     private const float DesignSelectionPanelHeight = 600f;
@@ -299,6 +320,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         if (!available)
         {
+            SnapRestoreVertexSculptCamera();
             RestoreSelectedPreview();
             HideLeftoverSelfieCards();
             if (!sculptLockedByTutorial)
@@ -328,8 +350,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         EnsureTeapotIndexHelper();
         EnsureTeapotShelf();
-        if (teapotShelf != null)
-            teapotShelf.ClearCollectionDisplays();
         TeapotCollectionStore.Clear();
         BuildInterface();
         LoadStampPatterns();
@@ -345,6 +365,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void OnDisable()
     {
+        SnapRestoreVertexSculptCamera();
         RestoreSelectedPreview();
         vertexSculptEnabled = false;
         if (vertexSculptController != null)
@@ -373,6 +394,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             Destroy(designSurfaceRoot.gameObject);
         DestroyRuntime(designSurfaceMaterial);
         DestroyRuntime(designHiddenMaterial);
+        DestroyRuntime(tintedDesignTexture);
         for (int i = 0; i < isolatedLidMaterials.Count; i++)
             DestroyRuntime(isolatedLidMaterials[i]);
         for (int i = 0; i < isolatedSpoutMaterials.Count; i++)
@@ -410,6 +432,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             {
                 SetHoveredTarget(null);
                 ResetDwell();
+                TrackNewPainterActions();
                 return;
             }
         }
@@ -487,6 +510,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         UpdateFreePalettePreview(nextHovered, screenPosition);
         UpdateDwellSelection(nextHovered);
         UpdateSculptLockFromUi(IsCursorOverColorUi(screenPosition));
+        TrackNewPainterActions();
     }
 
     private void LateUpdate()
@@ -550,7 +574,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         mainActionGroup = new GameObject("MainActions", typeof(RectTransform));
         mainActionGroup.transform.SetParent(panelRect, false);
         RectTransform mainRect = mainActionGroup.GetComponent<RectTransform>();
-        DockTop(mainRect, -196f, 250f);
+        DockTop(mainRect, -196f, 180f);
 
         selfieEntryButton = CreateButton("SelfieEntry", panelRect, new Vector2(0f, -118f),
             new Vector2(PillWidth, PillHeight), "SELFIE", new Color32(155, 92, 130, 255));
@@ -562,13 +586,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         selectPart.onClick.AddListener(ShowPartSelection);
         RegisterHitTarget(selectPart, false, false, default);
 
-        Button changeColor = CreateButton("ChangeColor", mainRect, new Vector2(0f, -72f),
-            new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
-        changeColor.onClick.AddListener(ContinueToColorSelection);
-        RegisterHitTarget(changeColor, false, false, default);
-
-        // Add Vertex Sculpt toggle button between CHANGE COLOR and FINISH
-        vertexSculptButton = CreateButton("VertexSculpt", mainRect, new Vector2(0f, -144f),
+        vertexSculptButton = CreateButton("VertexSculpt", mainRect, new Vector2(0f, -72f),
             new Vector2(PillWidth, PillHeight), "VERTEX SCULPT", PillPink);
         TMP_Text vText = vertexSculptButton.GetComponentInChildren<TMP_Text>();
         if (vText != null)
@@ -580,7 +598,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         vertexSculptButton.onClick.AddListener(ShowVertexSculpt);
         RegisterHitTarget(vertexSculptButton, false, false, default);
 
-        Button finish = CreateButton("Finish", mainRect, new Vector2(0f, -216f),
+        Button finish = CreateButton("Finish", mainRect, new Vector2(0f, -144f),
             new Vector2(PillWidth, PillHeight), "FINISH", DonePink);
         finish.onClick.AddListener(ShowReview);
         RegisterHitTarget(finish, false, false, default);
@@ -588,7 +606,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         partGroup = new GameObject("PartSelection", typeof(RectTransform));
         partGroup.transform.SetParent(panelRect, false);
         RectTransform partRect = partGroup.GetComponent<RectTransform>();
-        DockTop(partRect, -124f, 550f);
+        DockTop(partRect, -124f, 472f);
 
         for (int i = 0; i < partNames.Length; i++)
         {
@@ -600,12 +618,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             RegisterHitTarget(partButton, false, true, default);
         }
 
-        Button nextColors = CreateButton("NextColors", partRect, new Vector2(0f, -360f),
-            new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
-        nextColors.onClick.AddListener(ContinueToColorSelection);
-        RegisterHitTarget(nextColors, false, false, default);
-
-        Button partDone = CreateButton("Done", partRect, new Vector2(0f, -438f),
+        Button partDone = CreateButton("Done", partRect, new Vector2(0f, -360f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         partDone.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(partDone, false, false, default);
@@ -658,9 +671,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         barRect.anchoredPosition = new Vector2(0f, 18f);
         barRect.sizeDelta = new Vector2(-40f, 58f);
 
-        Button undo = CreateButton("Undo", barRect, new Vector2(-130f, 0f),
-            new Vector2(230f, 54f), "UNDO", PillPink);
-        CenterInBar(undo, -130f);
+        Button undo = CreateButton("Undo", barRect, new Vector2(-175f, 0f),
+            new Vector2(150f, 54f), "UNDO", PillPink);
+        CenterInBar(undo, -175f);
         TMP_Text uText = undo.GetComponentInChildren<TMP_Text>();
         if (uText != null)
         {
@@ -671,9 +684,22 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         undo.onClick.AddListener(UndoHistory);
         RegisterHitTarget(undo, false, false, default);
 
-        Button reset = CreateButton("Reset", barRect, new Vector2(130f, 0f),
-            new Vector2(230f, 54f), "RESET", DonePink);
-        CenterInBar(reset, 130f);
+        Button redo = CreateButton("Redo", barRect, new Vector2(0f, 0f),
+            new Vector2(150f, 54f), "REDO", PillPink);
+        CenterInBar(redo, 0f);
+        TMP_Text redoText = redo.GetComponentInChildren<TMP_Text>();
+        if (redoText != null)
+        {
+            redoText.fontSize = 24f;
+            redoText.fontStyle = FontStyles.Bold;
+            redoText.color = DarkTextGreen;
+        }
+        redo.onClick.AddListener(RedoHistory);
+        RegisterHitTarget(redo, false, false, default);
+
+        Button reset = CreateButton("Reset", barRect, new Vector2(175f, 0f),
+            new Vector2(150f, 54f), "RESET", DonePink);
+        CenterInBar(reset, 175f);
         TMP_Text rText = reset.GetComponentInChildren<TMP_Text>();
         if (rText != null)
         {
@@ -709,28 +735,16 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         reviewGroup = new GameObject("Review", typeof(RectTransform));
         reviewGroup.transform.SetParent(panelRect, false);
         RectTransform reviewRect = reviewGroup.GetComponent<RectTransform>();
-        DockTop(reviewRect, -124f, 320f);
-
-        savedStatusText = CreateText(
-            "SavedStatus", reviewRect, new Vector2(0f, 8f),
-            new Vector2(PillWidth, 28f), "", 18f,
-            TextAlignmentOptions.Center, FontStyles.Bold);
-        savedStatusText.color = LanguagePageBuilder.Green;
-
-        Button save = CreateButton(
-            "Save", reviewRect, new Vector2(0f, -28f),
-            new Vector2(PillWidth, PillHeight), "SAVE", PillPink);
-        save.onClick.AddListener(SaveTeapotReview);
-        RegisterHitTarget(save, false, false, default);
+        DockTop(reviewRect, -124f, 220f);
 
         Button retake = CreateButton(
-            "Retake", reviewRect, new Vector2(0f, -100f),
+            "Retake", reviewRect, new Vector2(0f, -28f),
             new Vector2(PillWidth, PillHeight), "RETAKE", PillPink);
         retake.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(retake, false, false, default);
 
         Button finish = CreateButton(
-            "Finish", reviewRect, new Vector2(0f, -172f),
+            "Finish", reviewRect, new Vector2(0f, -100f),
             new Vector2(PillWidth, PillHeight), "FINISH", DonePink);
         finish.onClick.AddListener(FinishToShelf);
         RegisterHitTarget(finish, false, false, default);
@@ -776,7 +790,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         RegisterHitTarget(confirmDelete, false, false, default);
 
         HideReviewAndShelf();
-        RefreshSavedStatus();
     }
 
     private void BuildSelfie(Transform parent)
@@ -802,7 +815,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         GameObject content = new GameObject("Content", typeof(RectTransform));
         content.transform.SetParent(rect, false);
         RectTransform selfieRect = content.GetComponent<RectTransform>();
-        DockTop(selfieRect, -118f, 450f);
+        DockTop(selfieRect, -118f, 520f);
 
         GameObject preview = new GameObject("Preview", typeof(RectTransform), typeof(RawImage), typeof(Outline));
         preview.transform.SetParent(selfieRect, false);
@@ -842,6 +855,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             new Vector2(172f, PillHeight), "DONE", DonePink);
         selfieDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(selfieDoneButton, false, false, default);
+
+        removeSelfieButton = CreateButton("RemoveSelfie", selfieRect, new Vector2(0f, -378f),
+            new Vector2(PillWidth, PillHeight), "REMOVE SELFIE", PillPink);
+        removeSelfieButton.onClick.AddListener(RemoveSelfie);
+        RegisterHitTarget(removeSelfieButton, false, false, default);
 
         selfiePanel.SetActive(false);
         SetSelfieReviewControls(false);
@@ -937,6 +955,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
         instructionText.text = "Choose the whole teapot or one part.";
+        Transform leftoverColors = partGroup != null ? partGroup.transform.Find("NextColors") : null;
+        if (leftoverColors != null)
+            leftoverColors.gameObject.SetActive(false);
         SetHoveredTarget(null);
     }
 
@@ -958,9 +979,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         }
 
-        headerText.text = "SELECT PART";
-        instructionText.text = partNames[partIndex] + " selected.";
-        SetHoveredTarget(null);
+        ContinueToColorSelection();
     }
 
     private void ContinueToColorSelection()
@@ -968,7 +987,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (selectedPart < 0)
             selectedPart = 0;
 
-        if (PartNeedsVariant(selectedPart) && selectedVariant < 0 &&
+        bool tintingStampOrBand = clayTintActive || bandTintActive || designTintActive ||
+            colorBackToDesigns || colorBackToBands;
+        if (!tintingStampOrBand && PartNeedsVariant(selectedPart) && selectedVariant < 0 &&
             !TryAdoptVisibleVariant(selectedPart))
         {
             if (mode == ColorMode.SelectVariant)
@@ -1008,8 +1029,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         SetTitleBurstsVisible(false);
         instructionText.text = designTintActive
             ? "Point at a color to tint the stamp."
-            : "Point and hold until the border completes.";
+            : bandTintActive
+                ? "Point and hold on a color to tint the band."
+                : "Point and hold until the border completes.";
         SetHoveredTarget(null);
+        RefreshColorSelectionMarks();
     }
 
     private void HideReviewAndShelf()
@@ -1044,26 +1068,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         headerText.text = "REVIEW";
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Save this teapot, go back, or put it on the shelf.";
+        instructionText.text = "Go back, or put this teapot on the shelf.";
         SetHeaderBackLabel("← PALETTE");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
-        RefreshSavedStatus();
         SetHoveredTarget(null);
-    }
-
-    private void SaveTeapotReview()
-    {
-        teapotSaved = true;
-        RefreshSavedStatus();
-        instructionText.text = "Teapot saved.";
-    }
-
-    private void RefreshSavedStatus()
-    {
-        if (savedStatusText == null)
-            return;
-        savedStatusText.text = teapotSaved ? "SAVED" : "";
     }
 
     private void FinishToShelf()
@@ -1088,7 +1097,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         }
 
         SetWorkingTeapotVisible(false);
-        teapotShelf.PanToShelfView();
+        Transform seat = GetTeapotSlot(TeapotCollectionStore.Count - 1);
+        teapotShelf.PanToShelfView(seat != null ? seat : teapotShelf.Slot);
         ShowShelf();
     }
 
@@ -1126,7 +1136,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         TeapotCollectionStore.RemoveLast();
         if (teapotShelf != null)
         {
-            teapotShelf.RemoveLastDisplay();
+            teapotShelf.RemoveLastDisplay("TeapotCollection_");
             teapotShelf.RestoreSculptView();
         }
 
@@ -1170,7 +1180,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         TeapotCollectionStore.RemoveLast();
         if (teapotShelf != null)
         {
-            teapotShelf.RemoveLastDisplay();
+            teapotShelf.RemoveLastDisplay("TeapotCollection_");
             teapotShelf.RestoreSculptView();
         }
 
@@ -1194,9 +1204,19 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         selfiePanel.SetActive(true);
         selfieHeaderText.text = "SELFIE";
-        selfieInstructionText.text = "Frame your photo, then point and hold TAKE SELFIE.";
-        SetSelfieReviewControls(false);
-        ShowLiveSelfiePreview();
+        if (capturedSelfieTexture == null && appliedSelfieTexture != null)
+            capturedSelfieTexture = Instantiate(appliedSelfieTexture);
+        bool hasPhoto = capturedSelfieTexture != null;
+        SetSelfieReviewControls(hasPhoto);
+        selfieInstructionText.text = hasPhoto
+            ? appliedSelfieTexture != null
+                ? "Remove the selfie, retake it, or press DONE."
+                : "Attach the photo to the teapot, retake it, or press DONE."
+            : "Frame your photo, then point and hold TAKE SELFIE.";
+        if (hasPhoto && selfiePreviewImage != null)
+            selfiePreviewImage.texture = capturedSelfieTexture;
+        else
+            ShowLiveSelfiePreview();
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -1213,6 +1233,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             retakeSelfieButton.gameObject.SetActive(reviewing);
         if (selfieDoneButton != null)
             selfieDoneButton.gameObject.SetActive(reviewing);
+        if (removeSelfieButton != null)
+            removeSelfieButton.gameObject.SetActive(
+                appliedSelfieTexture != null || (reviewing && capturedSelfieTexture != null));
     }
 
     private void ShowLiveSelfiePreview()
@@ -1272,6 +1295,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         }
 
+        DestroyRuntime(undoneSelfieTexture);
+        undoneSelfieTexture = null;
+        NoteTimedUndo(TimedUndo.Selfie);
         DestroyRuntime(appliedSelfieTexture);
         appliedSelfieTexture = CopyTexturePixels(capturedSelfieTexture, "Morphic Applied Teapot Selfie");
         FreezeSelfieAxes();
@@ -1282,7 +1308,35 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
 
         selfieInstructionText.text = "Selfie attached to the teapot body.";
-        PushHistory();
+        SetSelfieReviewControls(true);
+    }
+
+    private void RemoveSelfie()
+    {
+        if (appliedSelfieTexture != null)
+        {
+            TryUndoSelfie();
+            ForgetTimedSelfie();
+        }
+        DestroyRuntime(capturedSelfieTexture);
+        capturedSelfieTexture = null;
+        SetSelfieReviewControls(false);
+        ShowLiveSelfiePreview();
+        selfieInstructionText.text = "Selfie removed. Take a new one, or press BACK.";
+        ResetDwell();
+        SetHoveredTarget(null);
+    }
+
+    private void ForgetTimedSelfie()
+    {
+        for (int i = timedUndo.Count - 1; i >= 0; i--)
+        {
+            if (timedUndo[i] != TimedUndo.Selfie)
+                continue;
+            timedUndo.RemoveAt(i);
+            timedRedo.Add(TimedUndo.Selfie);
+            break;
+        }
     }
 
     private static Texture2D CopyTexturePixels(Texture2D source, string textureName)
@@ -1909,20 +1963,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (teapotGestures != null)
             teapotGestures.RestoreRestState();
+        if (vertexSculptController != null)
+            vertexSculptController.ResetMesh();
         if (history.Count > 0)
             ApplySnapshot(history[0]);
-        HideLeftoverSelfieCards();
-        if (selfieSurfaceRenderer != null)
-            selfieSurfaceRenderer.enabled = false;
-
-        DestroyRuntime(appliedSelfieTexture);
-        appliedSelfieTexture = null;
-        appliedDesignTexture = null;
-        designTintActive = false;
-        committedDesignTint = Color.white;
-        if (designSurfaceRenderer != null)
-            designSurfaceRenderer.enabled = false;
-        ClearWorkingBand();
+        ClearWorkingSelfieAndDesign();
         CaptureBaseline();
         HideConfirmReset();
         instructionText.text = "Teapot reset.";
@@ -1931,6 +1976,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private void UndoHistory()
     {
         RestoreSelectedPreview();
+        if (UndoTimedAction())
+            return;
 
         if (patternPainter != null && patternPainter.ClayStrokeCount > 0)
         {
@@ -1956,6 +2003,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         }
 
+        if (TryUndoSelfie())
+            return;
+
         if (history.Count < 2)
         {
             instructionText.gameObject.SetActive(true);
@@ -1963,10 +2013,59 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         }
 
+        redoHistory.Add(history[history.Count - 1]);
         history.RemoveAt(history.Count - 1);
         ApplySnapshot(history[history.Count - 1]);
         instructionText.gameObject.SetActive(true);
         instructionText.text = "Last change undone.";
+    }
+
+    private void RedoHistory()
+    {
+        RestoreSelectedPreview();
+        if (RedoTimedAction())
+            return;
+
+        if (patternPainter != null && patternPainter.RedoClayCount > 0)
+        {
+            patternPainter.RedoLastClayStroke();
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Last clay coil redone.";
+            return;
+        }
+
+        if (vertexSculptController != null && vertexSculptController.HasRedo &&
+            vertexSculptController.RedoLastStroke())
+        {
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Last sculpt stroke redone.";
+            return;
+        }
+
+        if (patternPainter != null && patternPainter.RedoStrokeCount > 0)
+        {
+            patternPainter.RedoLastStroke();
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Last drawing stroke redone.";
+            return;
+        }
+
+        if (TryRedoSelfie())
+            return;
+
+        if (redoHistory.Count == 0)
+        {
+            instructionText.gameObject.SetActive(true);
+            instructionText.text = "Nothing to redo.";
+            return;
+        }
+
+        TeapotSnapshot snapshot = redoHistory[redoHistory.Count - 1];
+        redoHistory.RemoveAt(redoHistory.Count - 1);
+        history.Add(snapshot);
+        ApplySnapshot(snapshot);
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Last change redone.";
     }
 
     private void ShowVertexSculpt()
@@ -1978,6 +2077,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             vertexSculptController.SetEnabled(false);
 
         SetSculptControllersEnabled(false);
+        SetFistRotationEnabled(true);
         if (patternPainter != null)
         {
             patternPainter.SetClayCoilMode(true);
@@ -2030,7 +2130,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         }
         if (vertexSculptGroup != null)
             vertexSculptGroup.SetActive(false);
-        RestoreVertexSculptCamera();
+        if (!clayTintActive)
+            RestoreVertexSculptCamera();
     }
 
     private void BeginVertexSculptCameraZoom()
@@ -2043,11 +2144,34 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (cam == null || focusRenderer == null)
             return;
 
-        storedSculptCamPos = cam.transform.position;
-        storedSculptCamRot = cam.transform.rotation;
-        storedSculptCamFov = cam.fieldOfView;
-        storedSculptCamNear = cam.nearClipPlane;
+        if (!hasStoredSculptCam)
+        {
+            storedSculptCamPos = cam.transform.position;
+            storedSculptCamRot = cam.transform.rotation;
+            storedSculptCamFov = cam.fieldOfView;
+            storedSculptCamNear = cam.nearClipPlane;
+            hasStoredSculptCam = true;
+        }
         vertexSculptCameraZoomed = true;
+        GetSculptCameraTarget(cam, focusRenderer, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
+        float targetNear = Mathf.Min(storedSculptCamNear, 0.05f);
+        StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.45f);
+    }
+
+    private void GetSculptCameraTarget(
+        Camera cam,
+        Renderer focusRenderer,
+        out Vector3 targetPos,
+        out Quaternion targetRot,
+        out float targetFov)
+    {
+        if (useCustomSculptCamera)
+        {
+            targetPos = sculptCameraPosition;
+            targetRot = Quaternion.Euler(sculptCameraRotation);
+            targetFov = Mathf.Max(10f, sculptCameraFov);
+            return;
+        }
 
         Bounds bounds = focusRenderer.bounds;
         Vector3 focus = bounds.center;
@@ -2059,22 +2183,58 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             dist = 2f;
         }
 
-        float targetDist = dist * 0.50f;
-        float minDist = Mathf.Max(0.22f, bounds.extents.magnitude * 0.28f);
-        if (minDist > dist * 0.7f)
-            minDist = dist * 0.40f;
-        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.62f);
+        float targetDist = dist * 0.72f;
+        float minDist = Mathf.Max(0.32f, bounds.extents.magnitude * 0.42f);
+        if (minDist > dist * 0.85f)
+            minDist = dist * 0.58f;
+        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.88f);
 
-        Vector3 targetPos = focus + offset.normalized * targetDist;
-        Quaternion targetRot = Quaternion.LookRotation(focus - targetPos, cam.transform.up);
-        float targetFov = Mathf.Max(28f, storedSculptCamFov * 0.76f);
-        float targetNear = Mathf.Min(storedSculptCamNear, 0.05f);
-        StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.45f);
+        Vector3 back = offset.normalized;
+        Vector3 camRight = storedSculptCamRot * Vector3.right;
+        if (camRight.sqrMagnitude < 0.0001f)
+            camRight = cam.transform.right;
+        else
+            camRight.Normalize();
+
+        targetPos = focus + back * targetDist + camRight * (targetDist * 0.10f);
+        targetRot = storedSculptCamRot;
+        targetFov = Mathf.Max(34f, storedSculptCamFov * 0.92f);
+    }
+
+    [ContextMenu("Capture Current View As Sculpt Camera")]
+    private void CaptureCurrentViewAsSculptCamera()
+    {
+        Camera cam = ResolveViewCamera();
+        if (cam == null)
+        {
+            Debug.LogWarning("MORPHIC: No view camera to capture.", this);
+            return;
+        }
+
+        useCustomSculptCamera = true;
+        sculptCameraPosition = cam.transform.position;
+        sculptCameraRotation = cam.transform.eulerAngles;
+        sculptCameraFov = cam.fieldOfView;
+        Debug.Log(
+            "MORPHIC: Teapot sculpt camera captured. pos=" + sculptCameraPosition.ToString("F3") +
+            "  euler=" + sculptCameraRotation.ToString("F2") +
+            "  fov=" + sculptCameraFov.ToString("F1"),
+            this);
+    }
+
+    [ContextMenu("Apply Sculpt Camera Now")]
+    private void ApplySculptCameraNow()
+    {
+        Camera cam = ResolveViewCamera();
+        if (cam == null || !useCustomSculptCamera)
+            return;
+        cam.transform.SetPositionAndRotation(sculptCameraPosition, Quaternion.Euler(sculptCameraRotation));
+        cam.fieldOfView = Mathf.Max(10f, sculptCameraFov);
     }
 
     private void RestoreVertexSculptCamera()
     {
-        if (!vertexSculptCameraZoomed)
+        if (!hasStoredSculptCam)
             return;
 
         if (!isActiveAndEnabled)
@@ -2086,7 +2246,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         Camera cam = ResolveViewCamera();
         vertexSculptCameraZoomed = false;
         if (cam == null)
+        {
+            hasStoredSculptCam = false;
             return;
+        }
 
         StartSculptCameraMove(
             cam,
@@ -2094,15 +2257,17 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             storedSculptCamRot,
             storedSculptCamFov,
             storedSculptCamNear,
-            0.5f);
+            0.5f,
+            true);
     }
 
     private void SnapRestoreVertexSculptCamera()
     {
-        if (!vertexSculptCameraZoomed)
+        if (!hasStoredSculptCam)
             return;
 
         vertexSculptCameraZoomed = false;
+        hasStoredSculptCam = false;
         if (sculptCameraMove != null)
         {
             StopCoroutine(sculptCameraMove);
@@ -2113,8 +2278,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (cam == null)
             return;
 
-        cam.transform.position = storedSculptCamPos;
-        cam.transform.rotation = storedSculptCamRot;
+        cam.transform.SetPositionAndRotation(storedSculptCamPos, storedSculptCamRot);
         cam.fieldOfView = storedSculptCamFov;
         cam.nearClipPlane = storedSculptCamNear;
     }
@@ -2125,12 +2289,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         Quaternion targetRot,
         float targetFov,
         float targetNear,
-        float duration)
+        float duration,
+        bool clearStoredWhenDone = false)
     {
         if (sculptCameraMove != null)
             StopCoroutine(sculptCameraMove);
         sculptCameraMove = StartCoroutine(
-            MoveSculptCamera(cam, targetPos, targetRot, targetFov, targetNear, duration));
+            MoveSculptCamera(cam, targetPos, targetRot, targetFov, targetNear, duration, clearStoredWhenDone));
     }
 
     private IEnumerator MoveSculptCamera(
@@ -2139,7 +2304,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         Quaternion targetRot,
         float targetFov,
         float targetNear,
-        float duration)
+        float duration,
+        bool clearStoredWhenDone)
     {
         Transform camTf = cam.transform;
         Vector3 startPos = camTf.position;
@@ -2166,6 +2332,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         cam.fieldOfView = targetFov;
         cam.nearClipPlane = targetNear;
         sculptCameraMove = null;
+        if (clearStoredWhenDone)
+            hasStoredSculptCam = false;
     }
 
     private void EnsureVertexSculptController()
@@ -2424,10 +2592,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         if (teapotIndexGestures == null)
             teapotIndexGestures = teapotGestures.GetComponent<SculptingEnhancementTeapotIndexGestureController>();
-        if (teapotIndexGestures == null)
-            teapotIndexGestures = teapotGestures.gameObject.AddComponent<SculptingEnhancementTeapotIndexGestureController>();
-        teapotIndexGestures.BindFrom(handRunner, teapotRenderer);
-        teapotGestures.ownWidthHeight = teapotIndexGestures == null || !teapotIndexGestures.enabled;
+        if (teapotIndexGestures != null)
+        {
+            teapotIndexGestures.suppressDriving = true;
+            teapotIndexGestures.enabled = false;
+        }
+
+        teapotGestures.ownWidthHeight = true;
     }
 
     private void EnsureTeapotShelf()
@@ -2483,6 +2654,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         CopyDesignOntoClone(clone);
         SeatTeapotAtOwnSlot(clone.transform, slotIndex);
         CopySelfieSurfaceOntoClone(clone);
+        if (teapotShelf != null)
+            teapotShelf.SetPlacedDisplay(clone.transform);
         return true;
     }
 
@@ -2651,19 +2824,25 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (history.Count > 0)
             ApplySnapshot(history[0]);
         ClearWorkingBand();
-        teapotSaved = false;
-        RefreshSavedStatus();
         CaptureBaseline();
     }
 
     private void ClearWorkingSelfieAndDesign()
     {
         HideLeftoverSelfieCards();
+        DestroySelfieOverlay();
         if (selfieSurfaceRenderer != null)
             selfieSurfaceRenderer.enabled = false;
+        if (selfieSurfaceRoot != null)
+            selfieSurfaceRoot.gameObject.SetActive(false);
         DestroyRuntime(appliedSelfieTexture);
+        DestroyRuntime(capturedSelfieTexture);
+        DestroyRuntime(undoneSelfieTexture);
         appliedSelfieTexture = null;
         capturedSelfieTexture = null;
+        undoneSelfieTexture = null;
+        if (selfiePreviewImage != null)
+            selfiePreviewImage.texture = null;
         appliedDesignTexture = null;
         designTintActive = false;
         committedDesignTint = Color.white;
@@ -2672,6 +2851,40 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (designSurfaceRoot != null)
             designSurfaceRoot.gameObject.SetActive(false);
         ClearWorkingBand();
+    }
+
+    private bool TryUndoSelfie()
+    {
+        if (appliedSelfieTexture == null)
+            return false;
+
+        DestroyRuntime(undoneSelfieTexture);
+        undoneSelfieTexture = appliedSelfieTexture;
+        appliedSelfieTexture = null;
+        HideLeftoverSelfieCards();
+        if (selfieSurfaceRenderer != null)
+            selfieSurfaceRenderer.enabled = false;
+        if (selfieSurfaceRoot != null)
+            selfieSurfaceRoot.gameObject.SetActive(false);
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Selfie removed.";
+        return true;
+    }
+
+    private bool TryRedoSelfie()
+    {
+        if (undoneSelfieTexture == null)
+            return false;
+
+        appliedSelfieTexture = undoneSelfieTexture;
+        undoneSelfieTexture = null;
+        HideLeftoverSelfieCards();
+        EnsureSelfieSurfaceOverlay();
+        ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
+        SyncSelfieSurfaceRenderer();
+        instructionText.gameObject.SetActive(true);
+        instructionText.text = "Selfie restored.";
+        return true;
     }
 
     private void ClearWorkingBand()
@@ -3045,10 +3258,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 clayColorChip.color = color;
             PushHistory();
             instructionText.text = "Clay color selected. Pick another color or press DONE.";
+            MarkColorSwatch(color);
             return;
         }
-        if (bandTintActive)
+        if (bandTintActive || colorBackToBands)
         {
+            bandTintActive = true;
             committedBandColor = color;
             if (patternPainter != null)
                 patternPainter.SetStrokeColor(color, true);
@@ -3056,16 +3271,27 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 bandColorChip.color = color;
             PushHistory();
             instructionText.text = "Band color selected. Pick another color or press DONE.";
+            MarkColorSwatch(color);
             return;
         }
-        if (designTintActive)
+        if (designTintActive || colorBackToDesigns)
+        {
+            designTintActive = true;
             committedDesignTint = color;
+            if (appliedDesignTexture != null)
+            {
+                EnsureDesignOverlay();
+                ConfigureDesignSurfaceMaterial(appliedDesignTexture);
+                ApplyDesignTint(color);
+            }
+        }
         else
             CommitTargetColor(selectedPart, color);
         PushHistory();
         instructionText.text = designTintActive
             ? "Stamp tint selected. Choose another color or press DONE."
             : "Color selected. Choose another color or press DONE.";
+        MarkColorSwatch(color);
     }
 
     private void CaptureInitialColors()
@@ -3554,7 +3780,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
         EnsureDesignOverlay();
         appliedDesignTexture = stamp;
-        committedDesignTint = Color.white;
         designTintActive = true;
         ConfigureDesignSurfaceMaterial(stamp);
         ApplyDesignTint(committedDesignTint);
@@ -3896,7 +4121,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         // [SIZE: M] button
         targetingSizeBtn = CreateButton(
             "TargetingSize", barRect,
-            new Vector2(-171f, 0f),
+            new Vector2(-187f, 0f),
             new Vector2(126f, 48f),
             "SIZE: " + bandSizeLabels[selectedBandSizeIndex],
             PillPink);
@@ -3917,8 +4142,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         // [COLOR] button
         targetingColorBtn = CreateButton(
             "TargetingColor", barRect,
-            new Vector2(-57f, 0f),
-            new Vector2(108f, 48f),
+            new Vector2(-80f, 0f),
+            new Vector2(84f, 48f),
             "COLOR",
             ActionPink);
         TMP_Text tColor = targetingColorBtn.GetComponentInChildren<TMP_Text>();
@@ -3938,8 +4163,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         // [UNDO] button
         Button undoBtn = CreateButton(
             "TargetingUndo", barRect,
-            new Vector2(57f, 0f),
-            new Vector2(108f, 48f),
+            new Vector2(8f, 0f),
+            new Vector2(84f, 48f),
             "UNDO",
             PillPink);
         TMP_Text tUndo = undoBtn.GetComponentInChildren<TMP_Text>();
@@ -3957,11 +4182,32 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         });
         RegisterHitTarget(undoBtn, false, false, default);
 
+        Button redoBtn = CreateButton(
+            "TargetingRedo", barRect,
+            new Vector2(96f, 0f),
+            new Vector2(84f, 48f),
+            "REDO",
+            PillPink);
+        TMP_Text tRedo = redoBtn.GetComponentInChildren<TMP_Text>();
+        if (tRedo != null)
+        {
+            tRedo.fontSize = 18f;
+            tRedo.fontStyle = FontStyles.Bold;
+            tRedo.color = DarkTextGreen;
+        }
+        redoBtn.onClick.AddListener(() =>
+        {
+            if (patternPainter != null)
+                patternPainter.RedoLastStroke();
+            instructionText.text = "Last stroke redone.";
+        });
+        RegisterHitTarget(redoBtn, false, false, default);
+
         // [CLEAR] button
         Button clearBtn = CreateButton(
             "TargetingClear", barRect,
-            new Vector2(171f, 0f),
-            new Vector2(108f, 48f),
+            new Vector2(186f, 0f),
+            new Vector2(92f, 48f),
             "CLEAR",
             PillPink);
         TMP_Text tClear = clearBtn.GetComponentInChildren<TMP_Text>();
@@ -4346,7 +4592,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
 
         Bounds localBounds = GetTeapotBodyLocalBounds();
-        designSurfaceMaterial.SetTexture("_DesignTex", texture);
+        Texture painted = ResolveTintedDesign(texture, LiveDesignTint());
+        designSurfaceMaterial.SetTexture("_DesignTex", painted != null ? painted : texture);
         if (isBandActive)
         {
             designSurfaceMaterial.SetFloat("_Opacity", bandOpacity);
@@ -4367,13 +4614,80 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             designSurfaceMaterial.SetVector("_ObjectCenter", localBounds.center);
             designSurfaceMaterial.SetVector("_ObjectExtents", localBounds.extents);
         }
+        ApplyDesignTint(LiveDesignTint());
+    }
+
+    private Color LiveDesignTint()
+    {
+        if (designTintActive && hoveredTarget != null && hoveredTarget.IsColor)
+        {
+            return hoveredTarget.IsFreeColorPalette
+                ? freePalettePreviewColor
+                : hoveredTarget.PreviewColor;
+        }
+        return committedDesignTint;
+    }
+
+    private Texture ResolveTintedDesign(Texture source, Color tint)
+    {
+        if (source == null)
+            return tintedDesignTexture;
+        if (tintedDesignTexture != null &&
+            lastBakedDesignSource == source &&
+            Mathf.Abs(lastBakedDesignTint.r - tint.r) < 0.002f &&
+            Mathf.Abs(lastBakedDesignTint.g - tint.g) < 0.002f &&
+            Mathf.Abs(lastBakedDesignTint.b - tint.b) < 0.002f)
+            return tintedDesignTexture;
+
+        tintedDesignTexture = MorphicOverlayShaders.BakeInkTint(
+            source, tint, tintedDesignTexture, TextureWrapMode.Clamp, TextureWrapMode.Clamp);
+        lastBakedDesignSource = source;
+        lastBakedDesignTint = tint;
+        return tintedDesignTexture;
     }
 
     private void ApplyDesignTint(Color color)
     {
-        if (designSurfaceMaterial == null)
+        color.a = 1f;
+        if (appliedDesignTexture != null && designSurfaceMaterial != null)
+        {
+            Texture painted = ResolveTintedDesign(appliedDesignTexture, color);
+            if (painted != null)
+                designSurfaceMaterial.SetTexture("_DesignTex", painted);
+        }
+        if (designSurfaceMaterial != null)
+        {
+            designSurfaceMaterial.enableInstancing = false;
+            if (designSurfaceMaterial.HasProperty("_DesignColor"))
+                designSurfaceMaterial.SetColor("_DesignColor", color);
+            if (designSurfaceMaterial.HasProperty("_Color"))
+                designSurfaceMaterial.SetColor("_Color", color);
+            if (designSurfaceMaterial.HasProperty("_BaseColor"))
+                designSurfaceMaterial.SetColor("_BaseColor", color);
+            if (designSurfaceMaterial.HasProperty("_Opacity"))
+                designSurfaceMaterial.SetFloat("_Opacity", 1f);
+            designSurfaceMaterial.color = color;
+        }
+
+        if (designSurfaceRenderer == null)
             return;
-        designSurfaceMaterial.SetColor("_DesignColor", color);
+
+        int count = designSurfaceRenderer.sharedMaterials != null
+            ? designSurfaceRenderer.sharedMaterials.Length
+            : 1;
+        for (int i = 0; i < count; i++)
+            designSurfaceRenderer.SetPropertyBlock(null, i);
+
+        if (designPropertyBlock == null)
+            designPropertyBlock = new MaterialPropertyBlock();
+        int slot = 0;
+        if (designSurfaceRenderer.sharedMesh != null)
+            slot = Mathf.Clamp(bodyMaterialIndex, 0, Mathf.Max(0, designSurfaceRenderer.sharedMesh.subMeshCount - 1));
+        designPropertyBlock.Clear();
+        designPropertyBlock.SetColor("_DesignColor", color);
+        designPropertyBlock.SetColor("_Color", color);
+        designPropertyBlock.SetColor("_BaseColor", color);
+        designSurfaceRenderer.SetPropertyBlock(designPropertyBlock, slot);
     }
 
     private void ApplyColor(int partIndex, Color color)
@@ -4387,7 +4701,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         }
 
-        if (bandTintActive)
+        if (bandTintActive || colorBackToBands)
         {
             if (patternPainter != null)
                 patternPainter.SetStrokeColor(color, true);
@@ -4396,7 +4710,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         }
 
-        if (designTintActive && appliedDesignTexture != null)
+        if ((designTintActive || colorBackToDesigns) && appliedDesignTexture != null)
         {
             ApplyDesignTint(color);
             return;
@@ -4510,7 +4824,16 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
         }
 
-        if (designTintActive && appliedDesignTexture != null)
+        if (bandTintActive || colorBackToBands)
+        {
+            if (patternPainter != null)
+                patternPainter.SetStrokeColor(committedBandColor, true);
+            if (bandColorChip != null)
+                bandColorChip.color = committedBandColor;
+            return;
+        }
+
+        if ((designTintActive || colorBackToDesigns) && appliedDesignTexture != null)
         {
             ApplyDesignTint(committedDesignTint);
             return;
@@ -4553,14 +4876,174 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             teapotGestures.CaptureRestState();
         lastDeformationLocked = teapotGestures != null && teapotGestures.IsDeformationLocked;
         history.Clear();
+        redoHistory.Clear();
         history.Add(CaptureSnapshot());
+        ResetTimedUndo();
     }
 
     private void PushHistory()
     {
+        redoHistory.Clear();
         history.Add(CaptureSnapshot());
         while (history.Count > MaxHistory)
             history.RemoveAt(0);
+        NoteTimedUndo(TimedUndo.History);
+    }
+
+    private void NoteTimedUndo(TimedUndo kind)
+    {
+        timedUndo.Add(kind);
+        timedRedo.Clear();
+    }
+
+    private void ResetTimedUndo()
+    {
+        timedUndo.Clear();
+        timedRedo.Clear();
+        trackedClayCount = patternPainter != null ? patternPainter.ClayStrokeCount : 0;
+        trackedBandCount = patternPainter != null ? patternPainter.StrokeCount : 0;
+        trackedSculptCount = vertexSculptController != null ? vertexSculptController.UndoDepth : 0;
+    }
+
+    private void TrackNewPainterActions()
+    {
+        int clay = patternPainter != null ? patternPainter.ClayStrokeCount : 0;
+        int band = patternPainter != null ? patternPainter.StrokeCount : 0;
+        int sculpt = vertexSculptController != null ? vertexSculptController.UndoDepth : 0;
+        while (trackedClayCount < clay)
+        {
+            NoteTimedUndo(TimedUndo.Clay);
+            trackedClayCount++;
+        }
+        while (trackedBandCount < band)
+        {
+            NoteTimedUndo(TimedUndo.Band);
+            trackedBandCount++;
+        }
+        while (trackedSculptCount < sculpt)
+        {
+            NoteTimedUndo(TimedUndo.Sculpt);
+            trackedSculptCount++;
+        }
+        if (trackedClayCount > clay)
+            trackedClayCount = clay;
+        if (trackedBandCount > band)
+            trackedBandCount = band;
+        if (trackedSculptCount > sculpt)
+            trackedSculptCount = sculpt;
+    }
+
+    private bool UndoTimedAction()
+    {
+        if (timedUndo.Count == 0)
+            return false;
+        TimedUndo kind = timedUndo[timedUndo.Count - 1];
+        timedUndo.RemoveAt(timedUndo.Count - 1);
+        if (!PerformTimedUndo(kind))
+            return false;
+        timedRedo.Add(kind);
+        return true;
+    }
+
+    private bool RedoTimedAction()
+    {
+        if (timedRedo.Count == 0)
+            return false;
+        TimedUndo kind = timedRedo[timedRedo.Count - 1];
+        timedRedo.RemoveAt(timedRedo.Count - 1);
+        if (!PerformTimedRedo(kind))
+            return false;
+        timedUndo.Add(kind);
+        return true;
+    }
+
+    private bool PerformTimedUndo(TimedUndo kind)
+    {
+        switch (kind)
+        {
+            case TimedUndo.Clay:
+                if (patternPainter == null || patternPainter.ClayStrokeCount <= 0)
+                    return false;
+                patternPainter.UndoLastClayStroke();
+                trackedClayCount = patternPainter.ClayStrokeCount;
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last clay coil undone.";
+                return true;
+            case TimedUndo.Sculpt:
+                if (vertexSculptController == null || !vertexSculptController.HasUndo)
+                    return false;
+                vertexSculptController.UndoLastStroke();
+                trackedSculptCount = vertexSculptController.UndoDepth;
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last sculpt stroke undone.";
+                return true;
+            case TimedUndo.Band:
+                if (patternPainter == null || patternPainter.StrokeCount <= 0)
+                    return false;
+                patternPainter.UndoLastStroke();
+                trackedBandCount = patternPainter.StrokeCount;
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last drawing stroke undone.";
+                return true;
+            case TimedUndo.Selfie:
+                return TryUndoSelfie();
+            case TimedUndo.History:
+                if (history.Count < 2)
+                    return false;
+                redoHistory.Add(history[history.Count - 1]);
+                history.RemoveAt(history.Count - 1);
+                ApplySnapshot(history[history.Count - 1]);
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last change undone.";
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool PerformTimedRedo(TimedUndo kind)
+    {
+        switch (kind)
+        {
+            case TimedUndo.Clay:
+                if (patternPainter == null || patternPainter.RedoClayCount <= 0)
+                    return false;
+                patternPainter.RedoLastClayStroke();
+                trackedClayCount = patternPainter.ClayStrokeCount;
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last clay coil redone.";
+                return true;
+            case TimedUndo.Sculpt:
+                if (vertexSculptController == null || !vertexSculptController.HasRedo)
+                    return false;
+                vertexSculptController.RedoLastStroke();
+                trackedSculptCount = vertexSculptController.UndoDepth;
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last sculpt stroke redone.";
+                return true;
+            case TimedUndo.Band:
+                if (patternPainter == null || patternPainter.RedoStrokeCount <= 0)
+                    return false;
+                patternPainter.RedoLastStroke();
+                trackedBandCount = patternPainter.StrokeCount;
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last drawing stroke redone.";
+                return true;
+            case TimedUndo.Selfie:
+                return TryRedoSelfie();
+            case TimedUndo.History:
+                if (redoHistory.Count == 0)
+                    return false;
+                TeapotSnapshot snapshot = redoHistory[redoHistory.Count - 1];
+                redoHistory.RemoveAt(redoHistory.Count - 1);
+                history.Add(snapshot);
+                ApplySnapshot(snapshot);
+                instructionText.gameObject.SetActive(true);
+                instructionText.text = "Last change redone.";
+                return true;
+            default:
+                return false;
+        }
     }
 
     private TeapotSnapshot CaptureSnapshot()
@@ -4644,54 +5127,59 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (sculptLockedByTutorial && enabled)
             return;
-        if (enabled && teapotGestures != null)
-            teapotGestures.SynchronizeWeightsFromRenderer();
-        if (teapotGestures != null)
-        {
-            teapotGestures.suppressDriving = !enabled;
-            teapotGestures.enabled = true;
-            teapotGestures.ownWidthHeight = teapotIndexGestures == null || !teapotIndexGestures.enabled;
-        }
 
         if (teapotIndexGestures != null)
         {
-            teapotIndexGestures.suppressDriving = !enabled;
-            teapotIndexGestures.enabled = enabled;
-            if (enabled)
-                teapotIndexGestures.SynchronizeWeightsFromRenderer();
+            teapotIndexGestures.suppressDriving = true;
+            teapotIndexGestures.enabled = false;
         }
 
-        if (teapotFistRotation != null)
-            teapotFistRotation.enabled = enabled;
+        if (teapotGestures != null)
+        {
+            bool wasSuppressed = teapotGestures.suppressDriving;
+            teapotGestures.suppressDriving = !enabled;
+            teapotGestures.enabled = true;
+            teapotGestures.ownWidthHeight = true;
+            if (enabled && wasSuppressed)
+                teapotGestures.SynchronizeWeightsFromRenderer();
+        }
+
+        if (!IsZoomInspectMode())
+            SetFistRotationEnabled(enabled);
+    }
+
+    private bool IsZoomInspectMode()
+    {
+        return vertexSculptEnabled ||
+               mode == ColorMode.VertexSculpt ||
+               mode == ColorMode.DrawBandTargeting ||
+               (mode == ColorMode.SelectColor && clayTintActive);
+    }
+
+    private void SetFistRotationEnabled(bool enabled)
+    {
+        if (teapotFistRotation == null)
+            return;
+        teapotFistRotation.suppressDriving = !enabled;
+        teapotFistRotation.enabled = true;
     }
 
     private void UpdateSculptLockFromUi(bool overUi)
     {
-        if (vertexSculptEnabled)
+        if (sculptLockedByTutorial)
         {
             SetSculptControllersEnabled(false);
-            if (patternPainter != null && overUi)
-                patternPainter.SetPaintingEnabled(false);
-            if (vertexSculptController != null)
-                vertexSculptController.SetEnabled(false);
+            SetFistRotationEnabled(false);
             return;
         }
 
-        if (mode == ColorMode.Review || mode == ColorMode.Shelf || mode == ColorMode.ConfirmDelete)
-        {
-            SetSculptControllersEnabled(false);
-            return;
-        }
-
-        if (mode == ColorMode.Sculpt || mode == ColorMode.MainMenu)
-            return;
-        if (mode == ColorMode.SelectVariant && selectedVariant >= 0 && !overUi)
-        {
-            SetSculptControllersEnabled(true);
-            return;
-        }
-
-        SetSculptControllersEnabled(false);
+        bool allowGestures = !overUi;
+        SetSculptControllersEnabled(allowGestures);
+        SetFistRotationEnabled(allowGestures);
+        if (patternPainter != null && overUi)
+            patternPainter.SetPaintingEnabled(false);
+        if (vertexSculptController != null)
+            vertexSculptController.SetEnabled(false);
     }
 
     private bool IsCursorOverColorUi(Vector2 screenPosition)
@@ -4779,6 +5267,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
 
         completedDwellTarget = target;
+        if (target.IsColor)
+            SetSelectedChoice(target);
         target.Button.onClick.Invoke();
     }
 
@@ -4819,6 +5309,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         outline.effectDistance = new Vector2(4f, -4f);
         outline.enabled = false;
         Image fill = GetButtonFill(button);
+        Transform checkTransform = button.transform.Find("SelectionCheck");
         hitTargets.Add(new HitTarget
         {
             Button = button,
@@ -4829,8 +5320,78 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             IsPersistentChoice = isPersistentChoice,
             PreviewColor = previewColor,
             BaseColor = fill != null ? fill.color : Color.white,
+            SelectionCheck = checkTransform != null
+                ? checkTransform.GetComponent<RectTransform>()
+                : null,
             DwellEdges = CreateDwellFrame(button.transform)
         });
+    }
+
+    private void SetSelectedChoice(HitTarget target)
+    {
+        if (target == null || !target.IsColor)
+            return;
+        ClearSelectedColorVisual();
+        selectedColorTarget = target;
+        if (selectedColorTarget.SelectionCheck != null)
+            selectedColorTarget.SelectionCheck.gameObject.SetActive(true);
+        if (freeColorSelectionCheck != null && !target.IsFreeColorPalette)
+            freeColorSelectionCheck.gameObject.SetActive(false);
+    }
+
+    private void ClearSelectedColorVisual()
+    {
+        if (selectedColorTarget != null && selectedColorTarget.SelectionCheck != null)
+            selectedColorTarget.SelectionCheck.gameObject.SetActive(false);
+        selectedColorTarget = null;
+    }
+
+    private void MarkColorSwatch(Color color)
+    {
+        HitTarget match = FindColorSwatch(color);
+        if (match != null)
+            SetSelectedChoice(match);
+        else
+            ClearSelectedColorVisual();
+    }
+
+    private void RefreshColorSelectionMarks()
+    {
+        if (freeColorSelectionCheck != null)
+            freeColorSelectionCheck.gameObject.SetActive(false);
+        Color current = clayTintActive
+            ? committedClayColor
+            : designTintActive
+                ? committedDesignTint
+                : bandTintActive
+                    ? committedBandColor
+                    : Color.clear;
+        if (current.a <= 0f)
+        {
+            ClearSelectedColorVisual();
+            return;
+        }
+        MarkColorSwatch(current);
+    }
+
+    private HitTarget FindColorSwatch(Color color)
+    {
+        for (int i = 0; i < hitTargets.Count; i++)
+        {
+            HitTarget target = hitTargets[i];
+            if (target == null || !target.IsColor || target.IsFreeColorPalette)
+                continue;
+            if (ColorsMatch(target.PreviewColor, color))
+                return target;
+        }
+        return null;
+    }
+
+    private static bool ColorsMatch(Color a, Color b)
+    {
+        return Mathf.Abs(a.r - b.r) < 0.02f &&
+               Mathf.Abs(a.g - b.g) < 0.02f &&
+               Mathf.Abs(a.b - b.b) < 0.02f;
     }
 
     private void CommitFreePaletteColor()
@@ -4840,6 +5401,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             screen = Input.mousePosition;
         SampleFreePaletteColor(screen);
         CommitColor(freePalettePreviewColor);
+        ClearSelectedColorVisual();
         if (freeColorSelectionCheck != null)
         {
             freeColorSelectionCheck.anchoredPosition = freePaletteMarkerPosition;

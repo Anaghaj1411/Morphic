@@ -17,8 +17,9 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     public const float HandleMaxAmount = 35f;
     private const bool UseCodedMesh = true;
     private static readonly Vector3 HandlePosStraight = new Vector3(0.1f, -1.002f, 0.03f);
-    private static readonly Vector3 HandlePosCurved = new Vector3(0.1f, -1.002f, 0.03f);
+    private static readonly Vector3 HandlePosCurved = new Vector3(-0.1f, -0.662f, 0.07f);
     private static readonly Vector3 HandleLocalEuler = new Vector3(0.163f, 284.306f, -178.884f);
+    private static readonly Vector3 HandleEulerCurved = new Vector3(0.489f, 296.203f, -179.562f);
     private static readonly Vector3 HandleLocalScale = new Vector3(3f, 0.4f, 4f);
 
     [Header("Coded handles")]
@@ -43,6 +44,8 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     private Mesh handleMesh;
     private Material woodMat;
     private Material goldMat;
+    private bool hasTint;
+    private Color tintColor = Color.white;
     private bool built;
     private float lastHandle1Amount = float.NaN;
     private float lastHandle2Amount = float.NaN;
@@ -71,8 +74,6 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     private float restWy;
     private float restWz;
     private float restBladeWidthWorld;
-    private Vector3 extraFollow;
-    private Vector3 lastAppliedTangLocal;
     private float warnTimer;
 
     private Vector3 tangOrigin;
@@ -127,6 +128,38 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     {
         useHandle2 = useSecond;
         ApplyAmount(true);
+    }
+
+    public void SetColor(Color color)
+    {
+        hasTint = true;
+        tintColor = color;
+        ApplyStoredTint();
+    }
+
+    private void ApplyStoredTint()
+    {
+        if (!hasTint)
+            return;
+        Color gold = Color.Lerp(tintColor, Color.white, 0.28f);
+        TintMaterial(woodMat, tintColor);
+        TintMaterial(goldMat, gold);
+        if (handleRenderer == null)
+            return;
+        Material[] materials = handleRenderer.sharedMaterials;
+        for (int i = 0; i < materials.Length; i++)
+            TintMaterial(materials[i], i == 1 ? gold : tintColor);
+        handleRenderer.sharedMaterials = materials;
+    }
+
+    private static void TintMaterial(Material material, Color color)
+    {
+        if (material == null)
+            return;
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", color);
     }
 
     [ContextMenu("Rebuild Handle Now")]
@@ -322,6 +355,7 @@ public sealed class KerisHandleOverlay : MonoBehaviour
             woodMat = MakeLitMaterial("KerisHandleWood", new Color(0.42f, 0.24f, 0.12f, 1f), 0.05f, 0.28f);
         if (goldMat == null)
             goldMat = MakeLitMaterial("KerisHandleGold", new Color(0.83f, 0.68f, 0.28f, 1f), 0.65f, 0.72f);
+        ApplyStoredTint();
         handleRenderer.sharedMaterials = new[] { woodMat, goldMat };
         handleRenderer.enabled = true;
         handleRenderer.shadowCastingMode = ShadowCastingMode.On;
@@ -342,7 +376,6 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     {
         if (handleRoot == null)
             return;
-        extraFollow = Vector3.zero;
         if (handleRoot.parent != transform)
             handleRoot.SetParent(transform, true);
         handleRoot.gameObject.SetActive(true);
@@ -353,9 +386,28 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         EnsureHandleParent();
         if (handleRoot == null)
             return;
-        handleRoot.localPosition = HandlePosStraight;
-        handleRoot.localEulerAngles = HandleLocalEuler;
-        handleRoot.localScale = HandleLocalScale;
+        float curveT = 0f;
+        float widthT = 0f;
+        Vector3 heightDelta = Vector3.zero;
+        SkinnedMeshRenderer skin = GetComponent<SkinnedMeshRenderer>();
+        if (skin != null)
+        {
+            curveT = Mathf.Clamp01(ReadFollowWeight(skin, "Curve") / 100f);
+            widthT = Mathf.Clamp01(ReadWidthWeight(skin) / 100f);
+            if (restVerts == null)
+            {
+                Mesh body = GetBodyMesh();
+                if (body != null)
+                    CalculateTangPosition(body);
+            }
+            heightDelta = ShapeTangDelta("Height");
+        }
+        handleRoot.localPosition = Vector3.Lerp(HandlePosStraight, HandlePosCurved, curveT) + heightDelta;
+        handleRoot.localRotation = Quaternion.Slerp(
+            Quaternion.Euler(HandleLocalEuler),
+            Quaternion.Euler(HandleEulerCurved),
+            curveT);
+        handleRoot.localScale = HandleLocalScale * Mathf.Lerp(1f, 1.45f, widthT);
         if (growRoot != null)
         {
             float grow = 1f;
@@ -412,7 +464,7 @@ public sealed class KerisHandleOverlay : MonoBehaviour
             this);
     }
 
-    private Vector3 HeightWidthLocalDelta()
+    private Vector3 ShapeTangDelta(string shapeName)
     {
         SkinnedMeshRenderer skin = GetComponent<SkinnedMeshRenderer>();
         if (skin == null || skin.sharedMesh == null || restVerts == null || endIdx == null || endIdx.Length == 0)
@@ -422,24 +474,30 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         if (shapeDelta == null || shapeDelta.Length != src.vertexCount)
             shapeDelta = new Vector3[src.vertexCount];
 
-        Vector3 sum = Vector3.zero;
         for (int s = 0; s < src.blendShapeCount; s++)
         {
-            string name = src.GetBlendShapeName(s);
-            if (name.StartsWith("Handle", System.StringComparison.OrdinalIgnoreCase))
-                continue;
-            if (string.Equals(name, "Curve", System.StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(src.GetBlendShapeName(s), shapeName, System.StringComparison.OrdinalIgnoreCase))
                 continue;
             float weight = skin.GetBlendShapeWeight(s);
             if (weight < 0.01f)
-                continue;
+                return Vector3.zero;
             src.GetBlendShapeFrameVertices(s, 0, shapeDelta, null, null);
             float frame = Mathf.Max(src.GetBlendShapeFrameWeight(s, 0), 1f);
             float scale = weight / frame;
+            Vector3 sum = Vector3.zero;
             for (int i = 0; i < endIdx.Length; i++)
                 sum += shapeDelta[endIdx[i]] * scale;
+            return sum / endIdx.Length;
         }
-        return sum / endIdx.Length;
+        return Vector3.zero;
+    }
+
+    private static float ReadWidthWeight(SkinnedMeshRenderer skin)
+    {
+        float width = ReadFollowWeight(skin, "Weight");
+        if (width < 0.01f)
+            width = ReadFollowWeight(skin, "Width");
+        return width;
     }
 
     private Mesh GetBodyMesh()

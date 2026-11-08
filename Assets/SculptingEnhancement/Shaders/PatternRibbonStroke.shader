@@ -3,7 +3,7 @@ Shader "Morphic/Pattern Ribbon Stroke"
     Properties
     {
         _MainTex ("Pattern Texture", 2D) = "white" {}
-        _Color ("Tint Color", Color) = (1, 1, 1, 1)
+        [MainColor] _Color ("Tint Color", Color) = (1, 1, 1, 1)
         _Opacity ("Opacity", Range(0, 1)) = 1
     }
 
@@ -14,6 +14,7 @@ Shader "Morphic/Pattern Ribbon Stroke"
             "RenderPipeline" = "UniversalPipeline"
             "Queue" = "Transparent+25"
             "RenderType" = "Transparent"
+            "DisableBatching" = "True"
         }
 
         Pass
@@ -69,8 +70,7 @@ Shader "Morphic/Pattern Ribbon Stroke"
             half4 frag(Varyings input) : SV_Target
             {
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
-                half4 col = tex * _Color * input.color;
-                col.a *= _Opacity;
+                half4 col = half4(tex.rgb * input.color.rgb, tex.a * input.color.a * _Opacity);
                 clip(col.a - 0.05);
                 return col;
             }

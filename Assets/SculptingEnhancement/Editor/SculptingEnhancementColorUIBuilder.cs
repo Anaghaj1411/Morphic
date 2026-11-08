@@ -95,7 +95,6 @@ public static class SculptingEnhancementColorUIBuilder
                uiRoot.Find("LanternColorPanel/ConfirmReset/Cancel") != null &&
                uiRoot.Find("LanternColorPanel/ConfirmReset/Reset") != null &&
                uiRoot.Find("LanternColorPanel/MainActions/SelectPart") != null &&
-               uiRoot.Find("LanternColorPanel/MainActions/ChangeColor") != null &&
                uiRoot.Find("LanternColorPanel/MainActions/Finish") != null &&
                uiRoot.Find("LanternColorPanel/Review/Save") != null &&
                uiRoot.Find("LanternColorPanel/Review/Retake") != null &&

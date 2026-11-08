@@ -12,6 +12,7 @@ public class VertexSculptController : MonoBehaviour
     {
         public int[] VertexIndices;
         public Vector3[] PreviousPositions;
+        public Vector3[] AfterPositions;
     }
 
     [Header("References")]
@@ -65,6 +66,7 @@ public class VertexSculptController : MonoBehaviour
     private bool[] sculptableVertices;
     private Dictionary<int, Vector3> strokeStartPositions;
     private readonly Stack<SculptUndoRecord> undoHistory = new Stack<SculptUndoRecord>();
+    private readonly Stack<SculptUndoRecord> redoHistory = new Stack<SculptUndoRecord>();
     private int[][] weldedVertexGroups;
     private Bounds originalMeshBounds;
     private bool isInitialized;
@@ -86,6 +88,9 @@ public class VertexSculptController : MonoBehaviour
 
     public bool HasUndo => undoHistory.Count > 0 ||
         (strokeChanged && strokeStartPositions != null && strokeStartPositions.Count > 0);
+    public bool HasRedo => redoHistory.Count > 0;
+    public int UndoDepth => undoHistory.Count;
+    public int CompletedUndoCount => undoHistory.Count;
     public bool IsPinching => isSculptPinching;
 
     private Transform MeshXform =>
@@ -530,7 +535,8 @@ public class VertexSculptController : MonoBehaviour
             var record = new SculptUndoRecord
             {
                 VertexIndices = new int[strokeStartPositions.Count],
-                PreviousPositions = new Vector3[strokeStartPositions.Count]
+                PreviousPositions = new Vector3[strokeStartPositions.Count],
+                AfterPositions = new Vector3[strokeStartPositions.Count]
             };
 
             int i = 0;
@@ -538,10 +544,12 @@ public class VertexSculptController : MonoBehaviour
             {
                 record.VertexIndices[i] = entry.Key;
                 record.PreviousPositions[i] = entry.Value;
+                record.AfterPositions[i] = currentVertices[entry.Key];
                 i++;
             }
 
             undoHistory.Push(record);
+            redoHistory.Clear();
         }
 
         strokeStartPositions = null;
@@ -555,6 +563,7 @@ public class VertexSculptController : MonoBehaviour
 
         System.Array.Copy(originalVertices, currentVertices, originalVertices.Length);
         undoHistory.Clear();
+        redoHistory.Clear();
         strokeStartPositions = null;
         strokeChanged = false;
         isSculptPinching = false;
@@ -569,15 +578,58 @@ public class VertexSculptController : MonoBehaviour
 
         if (strokeChanged && strokeStartPositions != null && strokeStartPositions.Count > 0)
         {
+            var record = new SculptUndoRecord
+            {
+                VertexIndices = new int[strokeStartPositions.Count],
+                PreviousPositions = new Vector3[strokeStartPositions.Count],
+                AfterPositions = new Vector3[strokeStartPositions.Count]
+            };
+            int i = 0;
+            foreach (KeyValuePair<int, Vector3> entry in strokeStartPositions)
+            {
+                record.VertexIndices[i] = entry.Key;
+                record.PreviousPositions[i] = entry.Value;
+                record.AfterPositions[i] = currentVertices[entry.Key];
+                i++;
+            }
+            redoHistory.Push(record);
             RestoreStrokePositions(strokeStartPositions);
             strokeStartPositions = null;
         }
         else
         {
             SculptUndoRecord record = undoHistory.Pop();
+            if (record.AfterPositions == null || record.AfterPositions.Length != record.VertexIndices.Length)
+            {
+                record.AfterPositions = new Vector3[record.VertexIndices.Length];
+                for (int i = 0; i < record.VertexIndices.Length; i++)
+                    record.AfterPositions[i] = currentVertices[record.VertexIndices[i]];
+            }
             for (int i = 0; i < record.VertexIndices.Length; i++)
                 currentVertices[record.VertexIndices[i]] = record.PreviousPositions[i];
+            redoHistory.Push(record);
         }
+
+        strokeChanged = false;
+        isSculptPinching = false;
+        pinchHoldDuration = 0f;
+        undoBlockedUntilPinchRelease = true;
+        ApplyMeshChanges();
+        return true;
+    }
+
+    public bool RedoLastStroke()
+    {
+        if (currentVertices == null || redoHistory.Count == 0)
+            return false;
+
+        SculptUndoRecord record = redoHistory.Pop();
+        if (record.AfterPositions == null)
+            return false;
+
+        for (int i = 0; i < record.VertexIndices.Length; i++)
+            currentVertices[record.VertexIndices[i]] = record.AfterPositions[i];
+        undoHistory.Push(record);
 
         strokeChanged = false;
         isSculptPinching = false;

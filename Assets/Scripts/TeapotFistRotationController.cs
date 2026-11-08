@@ -15,6 +15,8 @@ public sealed class TeapotFistRotationController : MonoBehaviour
     [SerializeField] private TeapotGestureController teapotGestures;
     [SerializeField] private Camera viewCamera;
 
+    public bool suppressDriving;
+
     [Header("Rotation Axis")]
     [Tooltip("Horizontal world-space axis to roll around. Use (1, 0, 0) or (0, 0, 1), depending on the teapot orientation.")]
     [SerializeField] private Vector3 rotationAxis = new Vector3(0f, 0f, 1f);
@@ -98,7 +100,7 @@ public sealed class TeapotFistRotationController : MonoBehaviour
         if (handRunner == null || teapotRenderer == null)
             return;
 
-        if (teapotGestures != null && teapotGestures.suppressDriving)
+        if (suppressDriving)
         {
             PauseRotation();
             return;
@@ -106,7 +108,9 @@ public sealed class TeapotFistRotationController : MonoBehaviour
 
         bool hasTwo = handRunner.TryGetLatestTwoHands(out SculptHandFrame first, out SculptHandFrame second);
         bool hasOne = hasTwo || handRunner.TryGetLatestHand(out first);
-        if (hasTwo && LooksClosed(first) && LooksClosed(second))
+        // Two hands are width / height / middle / handle. Never start a
+        // one-fist turn while the second hand is in view.
+        if (hasTwo)
         {
             PauseRotation();
             return;

@@ -35,6 +35,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private readonly List<StrokeRecord> completedStrokes = new List<StrokeRecord>();
     private readonly List<StrokeRecord> clayStrokes = new List<StrokeRecord>();
+    private readonly List<StrokeRecord> redoStrokes = new List<StrokeRecord>();
+    private readonly List<StrokeRecord> redoClayStrokes = new List<StrokeRecord>();
     private StrokeRecord currentStroke;
     private bool clayCoilMode;
     private float clayLift = 1.15f;
@@ -58,6 +60,9 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     private Material cursorMaterial;
     private Material strokeMaterial;
     private Texture2D activePatternTexture;
+    private Texture2D tintedPatternTexture;
+    private Color lastBakedPatternTint = new Color(-1f, -1f, -1f, -1f);
+    private Texture lastBakedPatternSource;
 
     private float accumulatedDistance;
     private bool isDrawingActive;
@@ -82,6 +87,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public int StrokeCount => completedStrokes.Count;
     public int ClayStrokeCount => clayStrokes.Count;
+    public int RedoStrokeCount => redoStrokes.Count;
+    public int RedoClayCount => redoClayStrokes.Count;
     public bool IsDrawing => isDrawingActive;
     public bool ClayCoilMode => clayCoilMode;
     public bool IsOverSurface => isPointerOnSurface;
@@ -183,7 +190,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public void SetClayLift(float lift)
     {
-        clayLift = Mathf.Clamp(lift, 0.5f, 5.0f);
+        clayLift = Mathf.Clamp(lift, 0.15f, 5.0f);
     }
 
     public void SetClayColor(Color color, bool updateExisting = true)
@@ -269,60 +276,121 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
         activePatternTexture = pattern;
         EnsureMaterial();
-        if (strokeMaterial != null && pattern != null)
-        {
-            strokeMaterial.mainTexture = pattern;
-            if (strokeMaterial.HasProperty("_MainTex"))
-                strokeMaterial.SetTexture("_MainTex", pattern);
-            if (strokeMaterial.HasProperty("_BaseMap"))
-                strokeMaterial.SetTexture("_BaseMap", pattern);
-        }
+        RefreshTintedPattern();
     }
 
     public void SetStrokeColor(Color color, bool updateExisting = true)
     {
+        color.a = 1f;
         strokeColor = color;
-        if (strokeMaterial != null)
+        RefreshTintedPattern();
+        ApplyTintToMaterial(strokeMaterial, Color.white);
+
+        if (!updateExisting)
+            return;
+
+        for (int i = 0; i < completedStrokes.Count; i++)
+            ApplyTintToStroke(completedStrokes[i], color);
+
+        ApplyTintToStroke(currentStroke, Color.white);
+        BindPatternToAll();
+    }
+
+    private static void ApplyTintToStroke(StrokeRecord record, Color color)
+    {
+        if (record == null)
+            return;
+
+        ApplyTintToMaterial(record.material, color);
+        if (record.strokeObject == null)
+            return;
+
+        MeshRenderer renderer = record.strokeObject.GetComponent<MeshRenderer>();
+        if (renderer == null)
+            return;
+
+        renderer.SetPropertyBlock(null);
+        if (record.material != null)
+            renderer.sharedMaterial = record.material;
+    }
+
+    private static void ApplyTintToMaterial(Material material, Color color)
+    {
+        if (material == null)
+            return;
+
+        color.a = 1f;
+        material.enableInstancing = false;
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", color);
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_DesignColor"))
+            material.SetColor("_DesignColor", color);
+        if (material.HasProperty("_Opacity"))
+            material.SetFloat("_Opacity", 1f);
+        material.color = color;
+    }
+
+    private void RefreshTintedPattern()
+    {
+        if (activePatternTexture == null)
+            return;
+
+        if (tintedPatternTexture == null ||
+            lastBakedPatternSource != activePatternTexture ||
+            Mathf.Abs(lastBakedPatternTint.r - strokeColor.r) >= 0.002f ||
+            Mathf.Abs(lastBakedPatternTint.g - strokeColor.g) >= 0.002f ||
+            Mathf.Abs(lastBakedPatternTint.b - strokeColor.b) >= 0.002f)
         {
-            if (strokeMaterial.HasProperty("_Color"))
-                strokeMaterial.SetColor("_Color", color);
-            if (strokeMaterial.HasProperty("_BaseColor"))
-                strokeMaterial.SetColor("_BaseColor", color);
+            tintedPatternTexture = MorphicOverlayShaders.BakeInkTint(
+                activePatternTexture,
+                strokeColor,
+                tintedPatternTexture,
+                TextureWrapMode.Repeat,
+                TextureWrapMode.Clamp);
+            lastBakedPatternSource = activePatternTexture;
+            lastBakedPatternTint = strokeColor;
         }
 
-        if (updateExisting)
-        {
-            for (int i = 0; i < completedStrokes.Count; i++)
-            {
-                if (completedStrokes[i] != null && completedStrokes[i].material != null)
-                {
-                    if (completedStrokes[i].material.HasProperty("_Color"))
-                        completedStrokes[i].material.SetColor("_Color", color);
-                    if (completedStrokes[i].material.HasProperty("_BaseColor"))
-                        completedStrokes[i].material.SetColor("_BaseColor", color);
-                }
-            }
+        BindPatternToAll();
+    }
 
-            if (currentStroke != null && currentStroke.material != null)
-            {
-                if (currentStroke.material.HasProperty("_Color"))
-                    currentStroke.material.SetColor("_Color", color);
-                if (currentStroke.material.HasProperty("_BaseColor"))
-                    currentStroke.material.SetColor("_BaseColor", color);
-            }
+    private void BindPatternToAll()
+    {
+        BindPattern(strokeMaterial);
+        for (int i = 0; i < completedStrokes.Count; i++)
+        {
+            if (completedStrokes[i] != null)
+                BindPattern(completedStrokes[i].material);
         }
+
+        if (currentStroke != null)
+            BindPattern(currentStroke.material);
+    }
+
+    private void BindPattern(Material material)
+    {
+        Texture pattern = tintedPatternTexture != null ? tintedPatternTexture : (Texture)activePatternTexture;
+        if (material == null || pattern == null)
+            return;
+
+        material.mainTexture = pattern;
+        if (material.HasProperty("_MainTex"))
+            material.SetTexture("_MainTex", pattern);
+        if (material.HasProperty("_BaseMap"))
+            material.SetTexture("_BaseMap", pattern);
+        ApplyTintToMaterial(material, Color.white);
     }
 
     public void UndoLastStroke()
     {
-        if (completedStrokes.Count == 0)
-            return;
+        ParkLastStroke(completedStrokes, redoStrokes);
+    }
 
-        int lastIndex = completedStrokes.Count - 1;
-        StrokeRecord last = completedStrokes[lastIndex];
-        completedStrokes.RemoveAt(lastIndex);
-        if (last != null && last.strokeObject != null)
-            Destroy(last.strokeObject);
+    public void RedoLastStroke()
+    {
+        RestoreLastStroke(redoStrokes, completedStrokes);
     }
 
     public void ClearAllStrokes()
@@ -330,24 +398,18 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         if (isDrawingActive)
             FinishCurrentStroke();
 
-        for (int i = 0; i < completedStrokes.Count; i++)
-        {
-            if (completedStrokes[i] != null && completedStrokes[i].strokeObject != null)
-                Destroy(completedStrokes[i].strokeObject);
-        }
-        completedStrokes.Clear();
+        DestroyStrokeList(completedStrokes);
+        DestroyStrokeList(redoStrokes);
     }
 
     public void UndoLastClayStroke()
     {
-        if (clayStrokes.Count == 0)
-            return;
+        ParkLastStroke(clayStrokes, redoClayStrokes);
+    }
 
-        int lastIndex = clayStrokes.Count - 1;
-        StrokeRecord last = clayStrokes[lastIndex];
-        clayStrokes.RemoveAt(lastIndex);
-        if (last != null && last.strokeObject != null)
-            Destroy(last.strokeObject);
+    public void RedoLastClayStroke()
+    {
+        RestoreLastStroke(redoClayStrokes, clayStrokes);
     }
 
     public void ClearClayCoils()
@@ -355,12 +417,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         if (isDrawingActive && currentStroke != null && currentStroke.isClayCoil)
             FinishCurrentStroke();
 
-        for (int i = 0; i < clayStrokes.Count; i++)
-        {
-            if (clayStrokes[i] != null && clayStrokes[i].strokeObject != null)
-                Destroy(clayStrokes[i].strokeObject);
-        }
-        clayStrokes.Clear();
+        DestroyStrokeList(clayStrokes);
+        DestroyStrokeList(redoClayStrokes);
 
         if (clayContainer != null)
         {
@@ -371,6 +429,42 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
                     Destroy(child.gameObject);
             }
         }
+    }
+
+    private static void ParkLastStroke(List<StrokeRecord> source, List<StrokeRecord> redo)
+    {
+        if (source.Count == 0)
+            return;
+
+        int lastIndex = source.Count - 1;
+        StrokeRecord last = source[lastIndex];
+        source.RemoveAt(lastIndex);
+        if (last != null && last.strokeObject != null)
+            last.strokeObject.SetActive(false);
+        redo.Add(last);
+    }
+
+    private static void RestoreLastStroke(List<StrokeRecord> redo, List<StrokeRecord> source)
+    {
+        if (redo.Count == 0)
+            return;
+
+        int lastIndex = redo.Count - 1;
+        StrokeRecord last = redo[lastIndex];
+        redo.RemoveAt(lastIndex);
+        if (last != null && last.strokeObject != null)
+            last.strokeObject.SetActive(true);
+        source.Add(last);
+    }
+
+    private static void DestroyStrokeList(List<StrokeRecord> strokes)
+    {
+        for (int i = 0; i < strokes.Count; i++)
+        {
+            if (strokes[i] != null && strokes[i].strokeObject != null)
+                Destroy(strokes[i].strokeObject);
+        }
+        strokes.Clear();
     }
 
     public void SetStrokesVisible(bool visible)
@@ -782,21 +876,17 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         Material mat = new Material(source);
         if (!clay && activePatternTexture != null)
         {
-            mat.mainTexture = activePatternTexture;
+            Texture pattern = tintedPatternTexture != null ? tintedPatternTexture : (Texture)activePatternTexture;
+            mat.mainTexture = pattern;
             if (mat.HasProperty("_MainTex"))
-                mat.SetTexture("_MainTex", activePatternTexture);
+                mat.SetTexture("_MainTex", pattern);
             if (mat.HasProperty("_BaseMap"))
-                mat.SetTexture("_BaseMap", activePatternTexture);
+                mat.SetTexture("_BaseMap", pattern);
         }
 
         Color color = clay ? clayColor : strokeColor;
-        if (mat.HasProperty("_Color"))
-            mat.SetColor("_Color", color);
-        if (mat.HasProperty("_BaseColor"))
-            mat.SetColor("_BaseColor", color);
-        if (mat.HasProperty("_Opacity"))
-            mat.SetFloat("_Opacity", 1f);
-
+        ApplyTintToMaterial(mat, color);
+        mr.SetPropertyBlock(null);
         mr.sharedMaterial = mat;
 
         currentStroke = new StrokeRecord
@@ -1041,9 +1131,15 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             if (currentStroke.anchors.Count >= 2)
             {
                 if (currentStroke.isClayCoil)
+                {
+                    DestroyStrokeList(redoClayStrokes);
                     clayStrokes.Add(currentStroke);
+                }
                 else
+                {
+                    DestroyStrokeList(redoStrokes);
                     completedStrokes.Add(currentStroke);
+                }
             }
             else
             {
@@ -1292,10 +1388,11 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     private void RebuildClayCoilMesh(StrokeRecord record, Vector3[] V, Vector3[] N)
     {
         int count = record.anchors.Count;
-        const int sides = 8;
+        const int sides = 10;
         float scaleFactor = GetLossyScaleFactor();
         float radius = (record.strokeWidth / scaleFactor) * 0.5f;
-        float lift = radius * Mathf.Max(0.9f, record.clayLift);
+        float bulge = Mathf.Clamp(record.clayLift, 0.15f, 5f);
+        float radiusOut = radius * bulge;
 
         Vector3[] pts = new Vector3[count];
         Vector3[] norms = new Vector3[count];
@@ -1330,15 +1427,16 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
                 binormal = Vector3.Cross(Vector3.right, n);
             binormal.Normalize();
             n = Vector3.Cross(binormal, tangent).normalized;
-            Vector3 center = pts[i] + n * lift;
+            Vector3 center = pts[i] + n * radiusOut;
 
             for (int s = 0; s < sides; s++)
             {
                 float angle = s / (float)sides * Mathf.PI * 2f;
-                Vector3 radial = (binormal * Mathf.Cos(angle) + n * Mathf.Sin(angle)) * radius;
+                Vector3 radial = binormal * (Mathf.Cos(angle) * radius) + n * (Mathf.Sin(angle) * radiusOut);
                 int idx = i * sides + s;
                 vertices[idx] = center + radial;
-                normals[idx] = radial.sqrMagnitude > 0.0001f ? radial.normalized : n;
+                Vector3 outward = binormal * (Mathf.Cos(angle) * radiusOut) + n * (Mathf.Sin(angle) * radius);
+                normals[idx] = outward.sqrMagnitude > 0.0001f ? outward.normalized : n;
                 uvs[idx] = new Vector2(s / (float)sides, i / Mathf.Max(1f, count - 1f));
             }
         }
@@ -1430,12 +1528,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         {
             name = "Morphic Pattern Ribbon Material"
         };
-        if (strokeMaterial.HasProperty("_Opacity"))
-            strokeMaterial.SetFloat("_Opacity", 1f);
-        if (strokeMaterial.HasProperty("_Color"))
-            strokeMaterial.SetColor("_Color", strokeColor);
-        if (strokeMaterial.HasProperty("_BaseColor"))
-            strokeMaterial.SetColor("_BaseColor", strokeColor);
+        ApplyTintToMaterial(strokeMaterial, strokeColor);
         if (activePatternTexture != null)
         {
             strokeMaterial.mainTexture = activePatternTexture;

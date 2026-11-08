@@ -87,6 +87,7 @@ public class DialogueManager : MonoBehaviour
     private MorphicAIHelpUI aiHelpUi;
     private GameObject sculptBackRoot;
     private GameObject craftExitRoot;
+    private MainMenuStartTransition studioCameraTransition;
     private DialogueButtonClickSound dialogueButtonSound;
 
     private void Awake()
@@ -141,6 +142,7 @@ public class DialogueManager : MonoBehaviour
 
         HideAllChoices();
         HideCultureChoices();
+        HideRestaurantChoices();
 
         // Ensure webcam display is deactivated initially
         if (webcamDisplayController != null)
@@ -253,6 +255,7 @@ public class DialogueManager : MonoBehaviour
     {
         HideAllChoices();
         HideCultureChoices();
+        HideRestaurantChoices();
 
         switch (node)
         {
@@ -276,24 +279,24 @@ public class DialogueManager : MonoBehaviour
             case 1:
                 SetDialogue(
                     "LISA",
-                    "It's wonderful to finally be back in my beloved city of Yuanlin."
+                    "It's wonderful to finally be back in Yuanlin. I opened a pottery studio here so I can work with clay every day."
                 );
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "About this place", () => ShowNode(3)
+                    "Tell me more", () => ShowNode(3)
                 );
 
                 SetChoice(
                     choice2Button, choice2Text,
-                    "Why this shop?", () => ShowNode(4)
+                    "Why pottery?", () => ShowNode(4)
                 );
                 break;
 
             case 2:
                 SetDialogue(
                     "LISA",
-                    "We're in Yuanlin, my hometown. And this little pottery shop is my new home for creating art."
+                    "We're in Yuanlin, my hometown. This pottery studio is my new home for making art with clay."
                 );
 
                 SetChoice(
@@ -310,7 +313,7 @@ public class DialogueManager : MonoBehaviour
             case 3:
                 SetDialogue(
                     "LISA",
-                    "Yuanlin is full of life, food, people and little places worth discovering. I wanted my shop to become one of those places."
+                    "Yuanlin is full of little workshops and people who still make things by hand. I wanted my studio to be one of those places — a quiet corner for clay."
                 );
 
                 SetChoice(
@@ -327,7 +330,7 @@ public class DialogueManager : MonoBehaviour
             case 4:
                 SetDialogue(
                     "LISA",
-                    "Because clay lets you turn an idea into something you can actually touch. And during my studies, I discovered how differently cultures approach the same material."
+                    "Because clay lets you turn an idea into something you can actually hold. During my studies I saw how differently cultures shape the same material."
                 );
 
                 SetChoice(
@@ -344,7 +347,7 @@ public class DialogueManager : MonoBehaviour
             case 5:
                 SetDialogue(
                     "LISA",
-                    "I studied art in India and Indonesia. Their sculpting traditions inspired me to create a place where different cultures could meet through clay."
+                    "I studied art in India and Indonesia. Their sculpting traditions inspired me to create a studio where those cultures can meet through clay — along with the lantern craft I grew up with in Taiwan."
                 );
 
                 SetChoice(
@@ -361,7 +364,7 @@ public class DialogueManager : MonoBehaviour
             case 6:
                 SetDialogue(
                     "LISA",
-                    "Exactly! I want this place to be more than a shop. I want people to experiment, learn and create something of their own."
+                    "That's the heart of this studio. I want people to experiment, learn, and leave with something they shaped themselves."
                 );
 
                 SetChoice(
@@ -373,57 +376,24 @@ public class DialogueManager : MonoBehaviour
             case 7:
                 SetDialogue(
                     "LISA",
-                    "Welcome to my little corner of Yuanlin! " +
-                    "This is where I bring together art, food, and traditions " +
-                    "from different cultures. Where would you like to explore first?"
+                    "Welcome to my pottery studio. Inside, you can try a Taiwanese lantern, an Indian teapot, or an Indonesian keris — all in clay. Shall we go in?"
                 );
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "Pottery Studio", EnterPotteryStudio
-                );
-
-                SetChoice(
-                    choice2Button, choice2Text,
-                    "Restaurant", EnterRestaurant
-                );
-
-                SetChoice(
-                    choice3Button, choice3Text,
-                    "Ask Lisa", () => ShowNode(9)
-                );
-                break;
-
-            case 8:
-                SetDialogue(
-                    "LISA",
-                    "Welcome to the restaurant! Here, we explore " +
-                    "the food and flavours of Taiwan. " +
-                    "Take a look at the ingredients on the table. " +
-                    "What would you like to do?"
-                );
-
-                SetChoice(
-                    choice1Button, choice1Text,
-                    "Back to shop",
-                    ReturnToLocationChoices
+                    "Enter the studio", EnterPotteryStudio
                 );
                 break;
 
             case 9:
                 SetDialogue(
                     "LISA",
-                    "There is a lot to discover here. Why don't you start by exploring the pottery studio?"
+                    "Everything here is about clay. Come into the studio and pick a craft to shape."
                 );
 
                 SetChoice(
                     choice1Button, choice1Text,
-                    "Pottery Studio", EnterPotteryStudio
-                );
-
-                SetChoice(
-                    choice2Button, choice2Text,
-                    "Go back.", () => ShowNode(7)
+                    "Enter the studio", EnterPotteryStudio
                 );
                 break;
 
@@ -854,38 +824,10 @@ public class DialogueManager : MonoBehaviour
         button.onClick.AddListener(() => SelectCulture(culture));
     }
 
-    private void ShowRestaurantChoices()
+    private void HideRestaurantChoices()
     {
-        HideAllChoices();
-        HideCultureChoices();
-
-        if (dialoguePanel != null)
-            dialoguePanel.SetActive(false);
-
         if (restaurantChoicesPanel != null)
-            restaurantChoicesPanel.SetActive(true);
-
-        ConfigureRestaurantButton(taiwanFoodButton, "Taiwan");
-        ConfigureRestaurantButton(indoAsiaFoodButton, "IndoAsia");
-        ConfigureRestaurantButton(indiaFoodButton, "India");
-    }
-
-    private void ConfigureRestaurantButton(
-        Button button,
-        string cuisine)
-    {
-        if (button == null)
-            return;
-
-        button.onClick.RemoveAllListeners();
-        button.onClick.AddListener(
-            () => SelectRestaurantCuisine(cuisine)
-        );
-    }
-
-    private void SelectRestaurantCuisine(string cuisine)
-    {
-        Debug.Log("MORPHIC: Selected restaurant cuisine: " + cuisine);
+            restaurantChoicesPanel.SetActive(false);
     }
 
     private void SelectCulture(string culture)
@@ -922,86 +864,6 @@ public class DialogueManager : MonoBehaviour
             += OnCameraFinished;
 
         cameraTransition.EnterPotteryStudio();
-    }
-
-    private void ReturnToLocationChoices()
-    {
-        HideAllChoices();
-        HideCultureChoices();
-
-        if (dialoguePanel != null)
-            dialoguePanel.SetActive(false);
-
-        if (cameraTransition == null)
-        {
-            cameraTransition =
-                FindObjectOfType<MainMenuStartTransition>();
-        }
-
-        if (cameraTransition == null)
-        {
-            Debug.LogWarning(
-                "MORPHIC: MainMenuStartTransition was not found."
-            );
-            return;
-        }
-
-        Debug.Log(
-            "MORPHIC: Return-to-entrance camera transition is not implemented yet."
-        );
-    }
-
-    private void EnterRestaurant()
-    {
-        HideAllChoices();
-        HideCultureChoices();
-
-        if (cameraTransition == null)
-        {
-            cameraTransition =
-                FindObjectOfType<MainMenuStartTransition>();
-        }
-
-        if (cameraTransition == null)
-        {
-            Debug.LogWarning(
-                "MORPHIC: MainMenuStartTransition was not found."
-            );
-            ShowNode(8);
-            return;
-        }
-
-        cameraTransition.RestaurantTransitionCompleted
-            -= OnRestaurantCameraFinished;
-
-        cameraTransition.RestaurantTransitionCompleted
-            += OnRestaurantCameraFinished;
-
-        cameraTransition.EnterRestaurant();
-    }
-
-    private void OnRestaurantCameraFinished()
-    {
-        if (cameraTransition != null)
-        {
-            cameraTransition.RestaurantTransitionCompleted
-                -= OnRestaurantCameraFinished;
-        }
-
-        HideAllChoices();
-        HideCultureChoices();
-
-        if (dialoguePanel != null)
-        {
-            Transform parent = dialoguePanel.transform.parent;
-
-            if (parent != null)
-                parent.gameObject.SetActive(true);
-
-            dialoguePanel.SetActive(true);
-        }
-
-        ShowRestaurantChoices();
     }
 
     private void OnCameraFinished()
@@ -1398,6 +1260,7 @@ public class DialogueManager : MonoBehaviour
                 if (teapotColorController != null)
                     teapotColorController.SetPaletteAvailable(false);
 
+                SnapViewToPotteryStudio();
                 EnsureIndonesiaKeris();
                 if (indonesiaKeris != null)
                 {
@@ -1738,6 +1601,14 @@ public class DialogueManager : MonoBehaviour
             kerisColorController.SetPaletteAvailable(false);
     }
 
+    private void SnapViewToPotteryStudio()
+    {
+        if (studioCameraTransition == null)
+            studioCameraTransition = FindFirstObjectByType<MainMenuStartTransition>(FindObjectsInactive.Include);
+        if (studioCameraTransition != null)
+            studioCameraTransition.SnapViewToPotteryStudio();
+    }
+
     /// <summary>
     /// Activates the shared MediaPipe hierarchy used by lantern, teapot, and keris.
     /// The Solution GameObject cannot start while its TaiwanHandTracking parent
@@ -1961,6 +1832,7 @@ public class DialogueManager : MonoBehaviour
             indiaTeapot.SetActive(false);
         if (indonesiaKeris != null)
             indonesiaKeris.SetActive(false);
+        SnapViewToPotteryStudio();
 
         GameObject teapotStatus = FindSceneObject("Teapot Gesture Status");
         if (teapotStatus != null)

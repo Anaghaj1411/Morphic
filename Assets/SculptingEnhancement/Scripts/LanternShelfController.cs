@@ -19,6 +19,9 @@ public sealed class LanternShelfController : MonoBehaviour
     [SerializeField] private Transform collectionRoot;
     [SerializeField] private Transform[] displayMarks;
     [SerializeField] private float collectionSpacing;
+    [SerializeField] private Transform shelfCameraTarget;
+    [SerializeField] private Vector3 shelfCameraPosition = new Vector3(-25.723f, 2.13f, -5.95f);
+    [SerializeField] private Vector3 shelfCameraRotation = new Vector3(-180f, -101.054f, -90f);
 
     private Vector3 storedPosition;
     private Quaternion storedRotation;
@@ -111,35 +114,59 @@ public sealed class LanternShelfController : MonoBehaviour
 
     public void RemoveLastDisplay()
     {
-        Transform root = EnsureCollectionRoot();
-        if (root.childCount == 0)
-            return;
+        RemoveLastDisplay(null);
+    }
 
-        Transform last = root.GetChild(root.childCount - 1);
-        if (last != null)
-            UnityEngine.Object.DestroyImmediate(last.gameObject);
-        placedLantern = root.childCount > 0 ? root.GetChild(root.childCount - 1) : null;
+    public void RemoveLastDisplay(string namePrefix)
+    {
+        Transform root = EnsureCollectionRoot();
+        for (int i = root.childCount - 1; i >= 0; i--)
+        {
+            Transform child = root.GetChild(i);
+            if (child == null)
+                continue;
+            if (!string.IsNullOrEmpty(namePrefix) &&
+                !child.name.StartsWith(namePrefix, StringComparison.Ordinal))
+                continue;
+
+            UnityEngine.Object.DestroyImmediate(child.gameObject);
+            placedLantern = root.childCount > 0 ? root.GetChild(root.childCount - 1) : null;
+            return;
+        }
     }
 
     public void SeatAtSlot(Transform lantern, int slotIndex)
     {
-        if (lantern == null)
+        CreateManualSlots();
+        SeatAt(lantern, GetSlotTransform(slotIndex));
+    }
+
+    public void SeatAt(Transform item, Transform seat)
+    {
+        if (item == null)
             return;
 
         EnsureSlot();
-        lantern.SetParent(EnsureCollectionRoot(), true);
-        CreateManualSlots();
-        Transform seat = GetSlotTransform(slotIndex);
-        lantern.rotation = seat != null ? seat.rotation : Quaternion.identity;
+        item.SetParent(EnsureCollectionRoot(), true);
+        if (seat != null)
+            item.rotation = seat.rotation;
 
-        Vector3 slotPos = GetMarkPosition(slotIndex);
-        Bounds lanternBounds = GetWorldBounds(lantern);
+        Vector3 slotPos = seat != null ? seat.position : GetMarkPosition(0);
+        Bounds itemBounds = GetWorldBounds(item);
         Vector3 currentBottom = new Vector3(
-            lanternBounds.center.x,
-            lanternBounds.min.y,
-            lanternBounds.center.z);
-        lantern.position += slotPos - currentBottom;
-        placedLantern = lantern;
+            itemBounds.center.x,
+            itemBounds.min.y,
+            itemBounds.center.z);
+        item.position += slotPos - currentBottom;
+        placedLantern = item;
+        lanternDeleted = false;
+    }
+
+    public void SetPlacedDisplay(Transform display)
+    {
+        if (display == null)
+            return;
+        placedLantern = display;
         lanternDeleted = false;
     }
 
@@ -152,15 +179,22 @@ public sealed class LanternShelfController : MonoBehaviour
 
     public void PanToShelfView()
     {
+        Transform anchor = placedLantern != null ? placedLantern : lanternSlot;
+        PanToShelfView(anchor);
+    }
+
+    public void PanToShelfView(Transform slot)
+    {
         Camera camera = ResolveCamera();
-        if (camera == null || lanternSlot == null)
+        Transform anchor = slot != null ? slot : lanternSlot;
+        if (camera == null || anchor == null)
             return;
 
         CacheCamera(camera);
         Vector3 targetPosition;
         Quaternion targetRotation;
         float targetFieldOfView;
-        GetShelfCameraPose(camera, out targetPosition, out targetRotation, out targetFieldOfView);
+        GetShelfCameraPose(camera, anchor, out targetPosition, out targetRotation, out targetFieldOfView);
         StartCameraMove(camera, targetPosition, targetRotation, targetFieldOfView, 0.01f);
     }
 
@@ -220,35 +254,28 @@ public sealed class LanternShelfController : MonoBehaviour
 
     private void GetShelfCameraPose(
         Camera camera,
+        Transform anchor,
         out Vector3 position,
         out Quaternion rotation,
         out float fieldOfView)
     {
-        Bounds focusBounds = placedLantern != null
-            ? GetWorldBounds(placedLantern)
-            : new Bounds(lanternSlot.position, Vector3.one * 0.4f);
-        focusBounds.Encapsulate(lanternSlot.position);
-        EncapsulateCollection(ref focusBounds);
-        focusBounds.Expand(new Vector3(0.85f, 0.55f, 0.85f));
+        Transform target = shelfCameraTarget != null
+            ? shelfCameraTarget
+            : FindNamedTransform("ShelfCameraTarget");
+        if (target != null)
+        {
+            position = target.position;
+            rotation = target.rotation;
+        }
+        else
+        {
+            position = shelfCameraPosition;
+            rotation = Quaternion.Euler(shelfCameraRotation);
+        }
 
-        Vector3 focus = focusBounds.center;
-        Vector3 fromCamera = focus - camera.transform.position;
-        Vector3 sculptEuler = storedCameraRotation.eulerAngles;
-        Vector3 planarLook = fromCamera;
-        planarLook.y = 0f;
-        float yaw = planarLook.sqrMagnitude > 0.002f
-            ? Quaternion.LookRotation(planarLook).eulerAngles.y
-            : sculptEuler.y;
-        rotation = Quaternion.Euler(sculptEuler.x, yaw, sculptEuler.z);
-
-        fieldOfView = Mathf.Clamp(
-            storedCameraFieldOfView > 1f ? storedCameraFieldOfView * 0.88f : camera.fieldOfView,
-            48f,
-            68f);
-        float halfSize = Mathf.Max(focusBounds.extents.x, Mathf.Max(focusBounds.extents.y, focusBounds.extents.z));
-        float framingDistance = halfSize / Mathf.Tan(0.5f * fieldOfView * Mathf.Deg2Rad);
-        float distance = Mathf.Clamp(framingDistance * 1.15f, 2.4f, 5.2f);
-        position = focus - rotation * Vector3.forward * distance;
+        fieldOfView = storedCameraFieldOfView > 1f
+            ? storedCameraFieldOfView
+            : camera != null ? camera.fieldOfView : 50f;
     }
 
     private void StartCameraMove(
@@ -560,6 +587,14 @@ public sealed class LanternShelfController : MonoBehaviour
 
     private static Transform FindNamedSlot()
     {
+        return FindNamedTransform(SlotName);
+    }
+
+    private static Transform FindNamedTransform(string objectName)
+    {
+        if (string.IsNullOrEmpty(objectName))
+            return null;
+
         for (int sceneIndex = 0; sceneIndex < SceneManager.sceneCount; sceneIndex++)
         {
             Scene scene = SceneManager.GetSceneAt(sceneIndex);
@@ -572,7 +607,7 @@ public sealed class LanternShelfController : MonoBehaviour
                 Transform[] transforms = roots[i].GetComponentsInChildren<Transform>(true);
                 for (int t = 0; t < transforms.Length; t++)
                 {
-                    if (transforms[t].name == SlotName)
+                    if (transforms[t] != null && transforms[t].name == objectName)
                         return transforms[t];
                 }
             }
