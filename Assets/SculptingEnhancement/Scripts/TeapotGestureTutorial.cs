@@ -58,7 +58,7 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         new Step
         {
             Title = "ROTATE",
-            Instruction = "Make one fist and move it left or right.",
+            Instruction = "Make one fist and move it left, right, up, or down.",
             Gesture = TeapotGestureController.PracticeGesture.SingleFist,
             ImagePath = ImageFolder + "gesture_one_fist.jpg"
         },

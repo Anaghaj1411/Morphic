@@ -104,17 +104,18 @@ public sealed class LanternFistRotationController : MonoBehaviour
             pitchSpeed = 0f;
         }
 
-        // Left/right only. Fist height does not steer.
         float steerLeft = ApplyDeadZone(0.5f - fist.PalmCenter.x);
+        float steerUp = ApplyDeadZone(fist.PalmCenter.y - 0.5f);
         float targetYaw = -steerLeft * turnYawRate;
+        float targetPitch = steerUp * turnPitchRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         float blend = 1f - Mathf.Exp(-smoothing * dt);
         yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
-        pitch = 0f;
-        pitchSpeed = 0f;
+        pitchSpeed = Mathf.Lerp(pitchSpeed, targetPitch, blend);
 
         yaw += yawSpeed * dt;
+        pitch += pitchSpeed * dt;
         ApplyRotation();
     }
 

@@ -13,12 +13,13 @@ using UnityEngine.Rendering;
 public sealed class KerisHandleOverlay : MonoBehaviour
 {
     private const string ChildName = "KerisHandle";
+    private const string GrowName = "KerisHandleGrow";
     public const float HandleMaxAmount = 35f;
     private const bool UseCodedMesh = true;
-    private static readonly Vector3 HandlePosStraight = new Vector3(-0.2f, -1.97f, -1.25f);
-    private static readonly Vector3 HandlePosCurved = new Vector3(-0.3f, -1.56f, -1.4f);
-    private static readonly Vector3 HandleLocalEuler = new Vector3(180f, 3f, 0f);
-    private static readonly Vector3 HandleLocalScale = new Vector3(0.1f, 1f, 1.3f);
+    private static readonly Vector3 HandlePosStraight = new Vector3(0.1f, -1.002f, 0.03f);
+    private static readonly Vector3 HandlePosCurved = new Vector3(0.1f, -1.002f, 0.03f);
+    private static readonly Vector3 HandleLocalEuler = new Vector3(0.163f, 284.306f, -178.884f);
+    private static readonly Vector3 HandleLocalScale = new Vector3(3f, 0.4f, 4f);
 
     [Header("Coded handles")]
     [Range(0f, HandleMaxAmount)]
@@ -27,11 +28,16 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     [Range(0f, HandleMaxAmount)]
     public float handle2Amount;
 
-    [Header("Variant Selection")]
-    [Tooltip("Check to use Handle 2, uncheck to use Handle 1")]
+    [Header("Handle 1 or Handle 2")]
+    [Tooltip("Also on the KerisHandle object in the Scene view.")]
     public bool useHandle2;
 
+    [Header("Scene placement")]
+    [Tooltip("Off = drag KerisHandle in the Scene view. Turn on after the pose is locked.")]
+    [SerializeField] private bool lockHandlePose = true;
+
     private Transform handleRoot;
+    private Transform growRoot;
     private MeshFilter handleFilter;
     private MeshRenderer handleRenderer;
     private Mesh handleMesh;
@@ -40,6 +46,7 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     private bool built;
     private float lastHandle1Amount = float.NaN;
     private float lastHandle2Amount = float.NaN;
+    private bool lastDrewHandle2;
     private float lastPushedControl1 = float.NaN;
     private float lastPushedControl2 = float.NaN;
     private float lastFollowCurve = float.NaN;
@@ -65,6 +72,7 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     private float restWz;
     private float restBladeWidthWorld;
     private Vector3 extraFollow;
+    private Vector3 lastAppliedTangLocal;
     private float warnTimer;
 
     private Vector3 tangOrigin;
@@ -188,9 +196,10 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         if (!built)
             Build();
         PullControlSliders();
+        ApplyHandleLocalPose();
         float active = ActiveHandleAmount();
         if (handleRenderer != null)
-            handleRenderer.enabled = active > 0.5f;
+            handleRenderer.enabled = !Application.isPlaying || active > 0.5f;
         ApplyAmount(false);
     }
 
@@ -207,41 +216,33 @@ public sealed class KerisHandleOverlay : MonoBehaviour
 
         float activeAmount = ActiveHandleAmount();
         bool drawHandle2 = ActiveHandleIs2();
+        ApplyHandleLocalPose();
 
-        float lastActive = drawHandle2 ? lastHandle2Amount : lastHandle1Amount;
-        bool deformChanged = BodyDeformChanged();
-        if (!force && !deformChanged && Mathf.Abs(activeAmount - lastActive) < 0.05f)
+        if (!force &&
+            drawHandle2 == lastDrewHandle2 &&
+            handleMesh != null &&
+            handleMesh.vertexCount > 0)
             return;
 
         lastHandle1Amount = handle1Amount;
         lastHandle2Amount = handle2Amount;
+        lastDrewHandle2 = drawHandle2;
 
-        float t = Mathf.Clamp01(activeAmount / 100f);
-        t = t * t * (3f - 2f * t);
-
-        if (t <= 0.001f)
+        if (Application.isPlaying && activeAmount <= 0.5f)
         {
-            handleMesh.Clear();
-            if (handleFilter != null)
-                handleFilter.sharedMesh = handleMesh;
             if (handleRenderer != null)
                 handleRenderer.enabled = false;
-            if (handleRoot != null)
-                handleRoot.gameObject.SetActive(false);
             return;
         }
-
-        RefreshLiveTang();
-        ApplyHandleLocalPose();
 
         var verts = new List<Vector3>();
         var wood = new List<int>();
         var gold = new List<int>();
 
         if (drawHandle2)
-            AddHandle2(verts, wood, gold, t);
+            AddHandle2(verts, wood, gold, 1f);
         else
-            AddHandle1(verts, wood, gold, t);
+            AddHandle1(verts, wood, gold, 1f);
 
         handleMesh.Clear();
         handleMesh.SetVertices(verts);
@@ -268,25 +269,42 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         RefreshLiveTang();
 
         Transform child = transform.Find(ChildName);
-        if (child == null)
+        bool created = child == null;
+        if (created)
         {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = ChildName;
+            GameObject go = new GameObject(ChildName);
             child = go.transform;
             child.SetParent(transform, false);
-            Destroy(child.GetComponent<Collider>());
+            child.localPosition = HandlePosStraight;
+            child.localEulerAngles = HandleLocalEuler;
+            child.localScale = HandleLocalScale;
         }
 
         handleRoot = child;
+        EnsureGrowRoot();
+        Collider leftoverCollider = child.GetComponent<Collider>();
+        if (leftoverCollider != null)
+        {
+            if (Application.isPlaying)
+                Destroy(leftoverCollider);
+            else
+                DestroyImmediate(leftoverCollider);
+        }
         ApplyHandleLocalPose();
         child.gameObject.SetActive(true);
 
-        handleFilter = child.GetComponent<MeshFilter>();
-        if (handleFilter == null)
-            handleFilter = child.gameObject.AddComponent<MeshFilter>();
-        handleRenderer = child.GetComponent<MeshRenderer>();
-        if (handleRenderer == null)
-            handleRenderer = child.gameObject.AddComponent<MeshRenderer>();
+        EnsureGrowRoot();
+        MeshRenderer parentRend = child.GetComponent<MeshRenderer>();
+        if (parentRend != null)
+            parentRend.enabled = false;
+        KerisHandleSceneEdit sceneEdit = child.GetComponent<KerisHandleSceneEdit>();
+        if (sceneEdit == null)
+        {
+            sceneEdit = child.gameObject.AddComponent<KerisHandleSceneEdit>();
+            sceneEdit.handle = useHandle2
+                ? KerisHandleSceneEdit.Variant.Handle2
+                : KerisHandleSceneEdit.Variant.Handle1;
+        }
 
         if (handleMesh != null)
         {
@@ -297,6 +315,7 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         }
 
         handleMesh = new Mesh { name = "KerisHandleCoded" };
+        handleMesh.hideFlags = HideFlags.DontSave;
         handleMesh.MarkDynamic();
         handleFilter.sharedMesh = handleMesh;
         if (woodMat == null)
@@ -319,19 +338,78 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         Debug.Log("MORPHIC: Coded Keris handle on the blade tang.", this);
     }
 
-    private void ApplyHandleLocalPose()
+    private void EnsureHandleParent()
     {
         if (handleRoot == null)
             return;
-        SkinnedMeshRenderer skin = GetComponent<SkinnedMeshRenderer>();
-        float curve = skin != null ? Mathf.Clamp01(ReadFollowWeight(skin, "Curve") / 100f) : 0f;
-        if (handleRoot.parent != transform)
-            handleRoot.SetParent(transform, false);
         extraFollow = Vector3.zero;
-        handleRoot.localPosition = Vector3.Lerp(HandlePosStraight, HandlePosCurved, curve);
+        if (handleRoot.parent != transform)
+            handleRoot.SetParent(transform, true);
+        handleRoot.gameObject.SetActive(true);
+    }
+
+    private void ApplyHandleLocalPose()
+    {
+        EnsureHandleParent();
+        if (handleRoot == null)
+            return;
+        handleRoot.localPosition = HandlePosStraight;
         handleRoot.localEulerAngles = HandleLocalEuler;
         handleRoot.localScale = HandleLocalScale;
-        handleRoot.gameObject.SetActive(true);
+        if (growRoot != null)
+        {
+            float grow = 1f;
+            if (Application.isPlaying)
+            {
+                grow = Mathf.Clamp01(ActiveHandleAmount() / HandleMaxAmount);
+                grow = grow * grow * (3f - 2f * grow);
+            }
+            growRoot.localPosition = Vector3.zero;
+            growRoot.localRotation = Quaternion.identity;
+            growRoot.localScale = Vector3.one * Mathf.Max(grow, 0.0001f);
+        }
+    }
+
+    private void EnsureGrowRoot()
+    {
+        if (handleRoot == null)
+            return;
+
+        Transform grow = handleRoot.Find(GrowName);
+        if (grow == null)
+        {
+            grow = new GameObject(GrowName).transform;
+            grow.SetParent(handleRoot, false);
+            grow.localPosition = Vector3.zero;
+            grow.localRotation = Quaternion.identity;
+            grow.localScale = Vector3.one;
+        }
+
+        growRoot = grow;
+        handleFilter = grow.GetComponent<MeshFilter>();
+        if (handleFilter == null)
+            handleFilter = grow.gameObject.AddComponent<MeshFilter>();
+        handleRenderer = grow.GetComponent<MeshRenderer>();
+        if (handleRenderer == null)
+            handleRenderer = grow.gameObject.AddComponent<MeshRenderer>();
+    }
+
+    [ContextMenu("Log Handle Pose")]
+    private void LogHandlePose()
+    {
+        if (handleRoot == null)
+            handleRoot = transform.Find(ChildName);
+        if (handleRoot == null)
+        {
+            Debug.LogWarning("MORPHIC: No KerisHandle to log.", this);
+            return;
+        }
+
+        Debug.Log(
+            "MORPHIC: KerisHandle pose  pos=" + handleRoot.localPosition.ToString("F4") +
+            "  euler=" + handleRoot.localEulerAngles.ToString("F3") +
+            "  scale=" + handleRoot.localScale.ToString("F4"),
+            this);
     }
 
     private Vector3 HeightWidthLocalDelta()
@@ -383,16 +461,44 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         if (restVerts == null || endIdx == null || endIdx.Length == 0)
             return;
 
+        Vector3[] live = restVerts;
+        SkinnedMeshRenderer skin = GetComponent<SkinnedMeshRenderer>();
+        if (skin != null)
+        {
+            if (bakeMesh == null)
+            {
+                bakeMesh = new Mesh();
+                bakeMesh.hideFlags = HideFlags.HideAndDontSave;
+            }
+            skin.BakeMesh(bakeMesh);
+            Vector3[] baked = bakeMesh.vertices;
+            if (baked != null && baked.Length == restVerts.Length)
+                live = baked;
+        }
+
         if (liveEndLocal == null || liveEndLocal.Length != endIdx.Length)
             liveEndLocal = new Vector3[endIdx.Length];
         Vector3 endSum = Vector3.zero;
         for (int i = 0; i < endIdx.Length; i++)
         {
-            liveEndLocal[i] = restVerts[endIdx[i]];
+            liveEndLocal[i] = live[endIdx[i]];
             endSum += liveEndLocal[i];
         }
         tangOrigin = endSum / liveEndLocal.Length;
-        tangDirection = restLocalLong;
+
+        if (innerIdx != null && innerIdx.Length > 0)
+        {
+            Vector3 innerSum = Vector3.zero;
+            for (int i = 0; i < innerIdx.Length; i++)
+                innerSum += live[innerIdx[i]];
+            Vector3 outward = tangOrigin - innerSum / innerIdx.Length;
+            tangDirection = outward.sqrMagnitude > 1e-8f
+                ? outward.normalized
+                : restLocalLong;
+        }
+        else
+            tangDirection = restLocalLong;
+
         tangUp = restLocalThin;
         StoreWorldTang(restWx, restWy, restWz, restLocalLong);
         tangCalculated = true;
@@ -723,16 +829,33 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         return useHandle2;
     }
 
+    private void EnsureHandleAxes()
+    {
+        if (handleRoot != null)
+        {
+            worldOut = handleRoot.up;
+            worldAcross = handleRoot.right;
+            worldThin = handleRoot.forward;
+        }
+        else if (worldOut.sqrMagnitude < 0.01f)
+        {
+            worldOut = Vector3.up;
+            worldAcross = Vector3.right;
+            worldThin = Vector3.forward;
+        }
+
+        if (bladeWidthWorld < 0.01f)
+            bladeWidthWorld = 0.2f;
+        tangCalculated = true;
+    }
+
     private void AddHandle1(List<Vector3> verts, List<int> wood, List<int> gold, float t)
     {
-        if (!tangCalculated)
-            return;
-
-        float u = bladeWidthWorld * t;
-        Vector3 along = worldOut;
-        Vector3 side = worldAcross;
-        Vector3 nrm = worldThin;
-        Vector3 surface = worldTang;
+        float u = Mathf.Max(t, 0.01f);
+        Vector3 along = Vector3.up;
+        Vector3 side = Vector3.right;
+        Vector3 nrm = Vector3.forward;
+        Vector3 surface = Vector3.zero;
         float embed = u * 0.22f;
 
         float tubeR = u * 0.22f;
@@ -778,14 +901,11 @@ public sealed class KerisHandleOverlay : MonoBehaviour
 
     private void AddHandle2(List<Vector3> verts, List<int> wood, List<int> gold, float t)
     {
-        if (!tangCalculated)
-            return;
-
-        float u = bladeWidthWorld * t;
-        Vector3 along = worldOut;
-        Vector3 side = worldAcross;
-        Vector3 nrm = worldThin;
-        Vector3 tang = worldTang;
+        float u = Mathf.Max(t, 0.01f);
+        Vector3 along = Vector3.up;
+        Vector3 side = Vector3.right;
+        Vector3 nrm = Vector3.forward;
+        Vector3 tang = Vector3.zero;
         float z = u * 0.26f;
 
         Vector3 P(float x, float y, float d)
@@ -986,9 +1106,9 @@ public sealed class KerisHandleOverlay : MonoBehaviour
         tris.Add(a); tris.Add(c); tris.Add(d);
     }
 
-    private Vector3 ToLocal(Vector3 world)
+    private Vector3 ToLocal(Vector3 local)
     {
-        return transform.InverseTransformPoint(world);
+        return local;
     }
 
     private const string NeutralMeshSuffix = "_NoOldHandles";

@@ -58,7 +58,7 @@ public sealed class KerisGestureTutorial : MonoBehaviour
         new Step
         {
             Title = "ROTATE",
-            Instruction = "Make one fist and move it left or right.",
+            Instruction = "Make one fist and move it left, right, up, or down.",
             Gesture = KerisGestureController.PracticeGesture.SingleFist,
             ImagePath = ImageFolder + "gesture_one_fist.jpg"
         },

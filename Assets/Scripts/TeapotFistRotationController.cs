@@ -21,6 +21,7 @@ public sealed class TeapotFistRotationController : MonoBehaviour
 
     [Header("Hold-to-steer")]
     [SerializeField, Range(40f, 400f)] private float turnYawRate = 110f;
+    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 110f;
     [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.06f;
     [SerializeField, Range(0.12f, 0.4f)] private float fullSteerRange = 0.22f;
     [SerializeField, Min(4f)] private float smoothing = 16f;
@@ -31,7 +32,9 @@ public sealed class TeapotFistRotationController : MonoBehaviour
     private Vector3 fixedAxis = Vector3.right;
     private Quaternion restRotation = Quaternion.identity;
     private float yaw;
+    private float pitch;
     private float yawSpeed;
+    private float pitchSpeed;
     private bool rotating;
 
     private void Awake()
@@ -123,16 +126,20 @@ public sealed class TeapotFistRotationController : MonoBehaviour
             EnsurePivot();
             rotating = true;
             yawSpeed = 0f;
+            pitchSpeed = 0f;
         }
 
-        // Fist left/right. Axis is locked when the fist first closes.
         float steerLeft = ApplyDeadZone(0.5f - fist.PalmCenter.x);
+        float steerUp = ApplyDeadZone(fist.PalmCenter.y - 0.5f);
         float targetYaw = steerLeft * turnYawRate;
+        float targetPitch = steerUp * turnPitchRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         float blend = 1f - Mathf.Exp(-smoothing * dt);
         yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
+        pitchSpeed = Mathf.Lerp(pitchSpeed, targetPitch, blend);
         yaw += yawSpeed * dt;
+        pitch += pitchSpeed * dt;
         ApplyRotation();
     }
 
@@ -184,6 +191,7 @@ public sealed class TeapotFistRotationController : MonoBehaviour
             teapotGestures.SetExternalFistRotationActive(false);
         rotating = false;
         yawSpeed = 0f;
+        pitchSpeed = 0f;
     }
 
     private void ApplyRotation()
@@ -191,8 +199,22 @@ public sealed class TeapotFistRotationController : MonoBehaviour
         if (pivot == null)
             return;
 
+        Vector3 pitchAxis = ResolvePitchAxis(fixedAxis);
         pivot.position = restPosition;
-        pivot.rotation = Quaternion.AngleAxis(yaw, fixedAxis) * restRotation;
+        pivot.rotation =
+            Quaternion.AngleAxis(yaw, fixedAxis) *
+            Quaternion.AngleAxis(pitch, pitchAxis) *
+            restRotation;
+    }
+
+    private Vector3 ResolvePitchAxis(Vector3 yawAxis)
+    {
+        Camera cam = ResolveViewCamera();
+        Vector3 look = cam != null ? cam.transform.forward : Vector3.forward;
+        Vector3 pitchAxis = Vector3.Cross(yawAxis, look);
+        if (pitchAxis.sqrMagnitude < 0.01f)
+            pitchAxis = ResolveViewRight();
+        return pitchAxis.normalized;
     }
 
     private Vector3 ResolveViewRight()

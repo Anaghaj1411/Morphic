@@ -19,6 +19,7 @@ public sealed class KerisFistRotationController : MonoBehaviour
 
     [Header("Hold-to-steer")]
     [SerializeField, Range(40f, 400f)] private float turnYawRate = 110f;
+    [SerializeField, Range(40f, 400f)] private float turnSideRate = 110f;
     [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.06f;
     [SerializeField, Range(0.12f, 0.4f)] private float fullSteerRange = 0.22f;
     [SerializeField, Min(4f)] private float smoothing = 16f;
@@ -27,6 +28,7 @@ public sealed class KerisFistRotationController : MonoBehaviour
 
     private Transform spinRoot;
     private float yawSpeed;
+    private float sideSpeed;
     private bool rotating;
 
     private void Awake()
@@ -93,18 +95,23 @@ public sealed class KerisFistRotationController : MonoBehaviour
             EnsureSpinRoot();
             rotating = true;
             yawSpeed = 0f;
+            sideSpeed = 0f;
         }
 
         if (spinRoot == null)
             return;
 
-        float steerLeft = ApplyDeadZone(0.5f - fist.PalmCenter.x);
-        float targetYaw = steerLeft * turnYawRate;
+        float steerLeftRight = ApplyDeadZone(0.5f - fist.PalmCenter.x);
+        float steerUpDown = ApplyDeadZone(0.5f - fist.PalmCenter.y);
+        float targetYaw = steerUpDown * turnYawRate;
+        float targetSide = steerLeftRight * turnSideRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         float blend = 1f - Mathf.Exp(-smoothing * dt);
         yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
-        spinRoot.Rotate(0f, 0f, yawSpeed * dt, Space.Self);
+        sideSpeed = Mathf.Lerp(sideSpeed, targetSide, blend);
+        spinRoot.Rotate(Vector3.up, yawSpeed * dt, Space.World);
+        spinRoot.Rotate(ResolveViewRight(), sideSpeed * dt, Space.World);
     }
 
     private void EnsureSpinRoot()
@@ -201,6 +208,7 @@ public sealed class KerisFistRotationController : MonoBehaviour
     {
         rotating = false;
         yawSpeed = 0f;
+        sideSpeed = 0f;
     }
 
     private void Bind()
@@ -243,5 +251,18 @@ public sealed class KerisFistRotationController : MonoBehaviour
         if (viewCamera == null)
             viewCamera = Camera.main;
         return viewCamera;
+    }
+
+    private Vector3 ResolveViewRight()
+    {
+        Camera cam = ResolveViewCamera();
+        Vector3 viewForward = cam != null ? cam.transform.forward : Vector3.forward;
+        viewForward = Vector3.ProjectOnPlane(viewForward, Vector3.up);
+        if (viewForward.sqrMagnitude < 0.01f)
+            viewForward = Vector3.forward;
+        Vector3 viewRight = Vector3.Cross(viewForward.normalized, Vector3.up);
+        if (viewRight.sqrMagnitude < 0.01f)
+            viewRight = Vector3.right;
+        return viewRight.normalized;
     }
 }
