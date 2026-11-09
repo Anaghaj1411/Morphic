@@ -1401,7 +1401,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (!KerisCollectionStore.Add(record))
             return false;
 
-        int slotIndex = KerisCollectionStore.Count - 1;
+        int slotIndex = kerisShelf != null ? kerisShelf.NextFreeSlotIndex : 0;
         GameObject clone = Instantiate(source.gameObject);
         clone.name = "KerisCollection_" + record.Id;
         clone.SetActive(true);
@@ -1443,7 +1443,9 @@ public sealed partial class SculptingEnhancementKerisColorController
             return;
 
         EnsureKerisShelfSlots();
-        Transform seat = GetKerisSlot(slotIndex);
+        Transform seat = kerisShelf != null
+            ? kerisShelf.GetSharedSlot(slotIndex)
+            : GetKerisSlot(slotIndex);
         Transform collection = kerisShelf != null ? kerisShelf.CollectionRoot : null;
         Quaternion upright = keris.rotation;
         Vector3 worldScale = keris.lossyScale;

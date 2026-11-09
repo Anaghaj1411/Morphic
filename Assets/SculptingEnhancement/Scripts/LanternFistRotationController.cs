@@ -14,19 +14,21 @@ public sealed class LanternFistRotationController : MonoBehaviour
     public bool suppressDriving;
 
     [Header("Hold-to-steer")]
-    [SerializeField, Range(40f, 400f)] private float turnYawRate = 110f;
-    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 110f;
-    [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.06f;
-    [SerializeField, Range(0.12f, 0.4f)] private float fullSteerRange = 0.22f;
-    [SerializeField, Min(4f)] private float smoothing = 16f;
+    [SerializeField, Range(40f, 400f)] private float turnYawRate = 140f;
+    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 140f;
+    [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.05f;
+    [SerializeField, Range(0.12f, 0.45f)] private float fullSteerRange = 0.28f;
+    [SerializeField, Min(4f)] private float smoothing = 14f;
 
     private Transform pivot;
     private Transform originalParent;
+    private Vector3 restPosition;
     private Quaternion restRotation = Quaternion.identity;
     private float yaw;
     private float pitch;
     private float yawSpeed;
     private float pitchSpeed;
+    private int lockedAxis;
     private bool rotating;
 
     private void Awake()
@@ -102,11 +104,11 @@ public sealed class LanternFistRotationController : MonoBehaviour
             rotating = true;
             yawSpeed = 0f;
             pitchSpeed = 0f;
+            lockedAxis = 0;
         }
 
-        float steerLeft = ApplyDeadZone(0.5f - fist.PalmCenter.x);
-        float steerUp = ApplyDeadZone(fist.PalmCenter.y - 0.5f);
-        float targetYaw = steerLeft * turnYawRate;
+        ResolveSteer(fist, out float steerRight, out float steerUp);
+        float targetYaw = steerRight * turnYawRate;
         float targetPitch = steerUp * turnPitchRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
@@ -146,9 +148,50 @@ public sealed class LanternFistRotationController : MonoBehaviour
 
     private static bool LooksClosed(SculptHandFrame hand)
     {
-        return hand.FingerCurlRatio <= 1.45f &&
-               hand.OtherFingersCurlRatio <= 1.45f &&
-               hand.IndexExtensionAngle < 145f;
+        return hand.FingerCurlRatio <= 1.28f &&
+               hand.OtherFingersCurlRatio <= 1.20f &&
+               hand.IndexExtensionAngle < 125f;
+    }
+
+    private void ResolveSteer(SculptHandFrame fist, out float steerRight, out float steerUp)
+    {
+        // Selfie webcam: image-left is the user's right. Invert X so a
+        // fist held on the right spins the object toward the right.
+        float x = 0.5f - fist.PalmCenter.x;
+        float y = fist.PalmCenter.y - 0.5f;
+
+        steerRight = ApplyDeadZone(x);
+        steerUp = ApplyDeadZone(y);
+        float absRight = Mathf.Abs(steerRight);
+        float absUp = Mathf.Abs(steerUp);
+        if (absRight < 0.001f && absUp < 0.001f)
+        {
+            lockedAxis = 0;
+            return;
+        }
+
+        const float stick = 0.72f;
+        if (lockedAxis == 1 && absRight >= absUp * stick)
+        {
+            steerUp = 0f;
+            return;
+        }
+        if (lockedAxis == 2 && absUp >= absRight * stick)
+        {
+            steerRight = 0f;
+            return;
+        }
+
+        if (absRight >= absUp)
+        {
+            lockedAxis = 1;
+            steerUp = 0f;
+        }
+        else
+        {
+            lockedAxis = 2;
+            steerRight = 0f;
+        }
     }
 
     private float ApplyDeadZone(float value)
@@ -168,6 +211,7 @@ public sealed class LanternFistRotationController : MonoBehaviour
         rotating = false;
         yawSpeed = 0f;
         pitchSpeed = 0f;
+        lockedAxis = 0;
     }
 
     private void ApplyRotation()
@@ -175,27 +219,34 @@ public sealed class LanternFistRotationController : MonoBehaviour
         if (pivot == null)
             return;
 
-        ResolveAxes(out Vector3 yawAxis, out Vector3 pitchAxis);
+        ResolveViewAxes(out Vector3 yawAxis, out Vector3 pitchAxis);
+        pivot.position = restPosition;
+        // Fist on the right spins the front of the object toward the right
+        // of the screen (negative around camera.up). Fist up nods the
+        // front toward the top of the screen (positive around camera.right).
         pivot.rotation =
             Quaternion.AngleAxis(yaw, yawAxis) *
             Quaternion.AngleAxis(pitch, pitchAxis) *
             restRotation;
     }
 
-    private void ResolveAxes(out Vector3 yawAxis, out Vector3 pitchAxis)
+    private void ResolveViewAxes(out Vector3 yawAxis, out Vector3 pitchAxis)
     {
         Camera cam = ResolveViewCamera();
-        Vector3 viewForward = cam != null ? cam.transform.forward : Vector3.forward;
-        viewForward = Vector3.ProjectOnPlane(viewForward, Vector3.up);
-        if (viewForward.sqrMagnitude < 0.01f)
-            viewForward = Vector3.forward;
-        Vector3 viewRight = Vector3.Cross(viewForward.normalized, Vector3.up);
-        if (viewRight.sqrMagnitude < 0.01f)
-            viewRight = Vector3.right;
+        if (cam != null)
+        {
+            yawAxis = cam.transform.up;
+            pitchAxis = cam.transform.right;
+            if (yawAxis.sqrMagnitude > 0.01f && pitchAxis.sqrMagnitude > 0.01f)
+            {
+                yawAxis.Normalize();
+                pitchAxis.Normalize();
+                return;
+            }
+        }
 
-        // Stay in place: tip left/right and nod up/down around the center.
-        yawAxis = viewForward.normalized;
-        pitchAxis = viewRight.normalized;
+        yawAxis = Vector3.up;
+        pitchAxis = Vector3.right;
     }
 
     private void EnsurePivot()
@@ -205,13 +256,14 @@ public sealed class LanternFistRotationController : MonoBehaviour
             return;
 
         originalParent = lanternRotationTarget.parent;
+        restPosition = lanternRenderer.bounds.center;
         pivot = new GameObject("Lantern Fist Rotation Pivot").transform;
         pivot.SetParent(originalParent, false);
-        pivot.position = lanternRenderer.bounds.center;
+        pivot.position = restPosition;
         pivot.rotation = Quaternion.identity;
         pivot.localScale = Vector3.one;
         lanternRotationTarget.SetParent(pivot, true);
-        restRotation = pivot.rotation;
+        restRotation = Quaternion.identity;
     }
 
     private void Bind()

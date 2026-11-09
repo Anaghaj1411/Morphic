@@ -43,6 +43,7 @@ public sealed class LanternShelfController : MonoBehaviour
     public Transform CollectionRoot => EnsureCollectionRoot();
     public int BoundPieceCount => shelfPieces != null ? shelfPieces.Length : 0;
     public int CollectionCount => collectionRoot != null ? collectionRoot.childCount : 0;
+    public int NextFreeSlotIndex => EnsureCollectionRoot().childCount;
 
     public void BindPieces()
     {
@@ -133,6 +134,13 @@ public sealed class LanternShelfController : MonoBehaviour
             placedLantern = root.childCount > 0 ? root.GetChild(root.childCount - 1) : null;
             return;
         }
+    }
+
+    public Transform GetSharedSlot(int slotIndex)
+    {
+        BindPiecesIfNeeded();
+        CreateManualSlots();
+        return GetSlotTransform(slotIndex);
     }
 
     public void SeatAtSlot(Transform lantern, int slotIndex)

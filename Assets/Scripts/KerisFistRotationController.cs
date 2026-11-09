@@ -18,28 +18,39 @@ public sealed class KerisFistRotationController : MonoBehaviour
     [SerializeField] private Camera viewCamera;
 
     [Header("Hold-to-steer")]
-    [SerializeField, Range(40f, 400f)] private float turnYawRate = 110f;
-    [SerializeField, Range(40f, 400f)] private float turnSideRate = 110f;
-    [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.06f;
-    [SerializeField, Range(0.12f, 0.4f)] private float fullSteerRange = 0.22f;
-    [SerializeField, Min(4f)] private float smoothing = 16f;
+    [SerializeField, Range(40f, 400f)] private float turnYawRate = 140f;
+    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 140f;
+    [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.05f;
+    [SerializeField, Range(0.12f, 0.45f)] private float fullSteerRange = 0.28f;
+    [SerializeField, Min(4f)] private float smoothing = 14f;
 
     public bool suppressDriving;
 
-    private Transform spinRoot;
+    private Transform pivot;
+    private Transform originalParent;
+    private Vector3 restPosition;
+    private Quaternion restRotation = Quaternion.identity;
+    private float yaw;
+    private float pitch;
     private float yawSpeed;
-    private float sideSpeed;
+    private float pitchSpeed;
+    private int lockedAxis;
     private bool rotating;
 
     private void Awake()
     {
         Bind();
-        DestroyRuntimePivots();
+        DestroyLegacyAxisPivot();
     }
 
     private void OnDisable()
     {
         PauseRotation();
+    }
+
+    private void OnDestroy()
+    {
+        RestoreTargetParent();
     }
 
     public void BindFrom(SculptHandLandmarkerRunner runner, Renderer renderer)
@@ -75,15 +86,16 @@ public sealed class KerisFistRotationController : MonoBehaviour
         KerisGestureController gestures = GetComponentInChildren<KerisGestureController>(true);
         if (gestures != null && gestures.IsDrivingSculpt)
         {
-            // Allow rotation ONLY while driving handle deformations (two fists)
-            if (!gestures.IsDrivingHandle)
-            {
-                PauseRotation();
-                return;
-            }
+            PauseRotation();
+            return;
         }
 
-        // Remove the two-fist lockout to allow rotation while growing the handle
+        if (hasTwo)
+        {
+            PauseRotation();
+            return;
+        }
+
         if (!TryGetClosedHand(hasOne, hasTwo, first, second, out SculptHandFrame fist))
         {
             PauseRotation();
@@ -92,45 +104,66 @@ public sealed class KerisFistRotationController : MonoBehaviour
 
         if (!rotating)
         {
-            EnsureSpinRoot();
+            EnsurePivot();
             rotating = true;
             yawSpeed = 0f;
-            sideSpeed = 0f;
+            pitchSpeed = 0f;
+            lockedAxis = 0;
         }
 
-        if (spinRoot == null)
+        if (pivot == null)
             return;
 
-        float steerLeftRight = ApplyDeadZone(0.5f - fist.PalmCenter.x);
-        float steerUpDown = ApplyDeadZone(0.5f - fist.PalmCenter.y);
-        float targetYaw = steerUpDown * turnYawRate;
-        float targetSide = steerLeftRight * turnSideRate;
+        ResolveSteer(fist, out float steerRight, out float steerUp);
+        float targetYaw = steerRight * turnYawRate;
+        float targetPitch = steerUp * turnPitchRate;
 
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         float blend = 1f - Mathf.Exp(-smoothing * dt);
         yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
-        sideSpeed = Mathf.Lerp(sideSpeed, targetSide, blend);
-        spinRoot.Rotate(Vector3.up, yawSpeed * dt, Space.World);
-        spinRoot.Rotate(ResolveViewRight(), sideSpeed * dt, Space.World);
+        pitchSpeed = Mathf.Lerp(pitchSpeed, targetPitch, blend);
+        yaw += yawSpeed * dt;
+        pitch += pitchSpeed * dt;
+        ApplyRotation();
     }
 
-    private void EnsureSpinRoot()
+    private void EnsurePivot()
     {
         Bind();
-        DestroyRuntimePivots();
-        if (kerisRotationTarget == null)
+        DestroyLegacyAxisPivot();
+        if (pivot != null || kerisRotationTarget == null)
             return;
 
-        Transform manual = FindManualSpin();
-        if (manual != null)
-        {
-            if (kerisRotationTarget.parent != manual)
-                kerisRotationTarget.SetParent(manual, true);
-            spinRoot = manual;
-            return;
-        }
+        Transform parent = FindManualSpin();
+        if (parent == null)
+            parent = kerisRotationTarget.parent;
+        originalParent = parent;
+        restPosition = RendererWorldCenter(
+            kerisRenderer != null ? kerisRenderer : kerisRotationTarget.GetComponentInChildren<Renderer>(true));
+        pivot = new GameObject("Keris Fist Rotation Pivot").transform;
+        PlacePivotAt(pivot, originalParent, restPosition);
+        kerisRotationTarget.SetParent(pivot, true);
+        restRotation = Quaternion.identity;
+    }
 
-        spinRoot = kerisRotationTarget;
+    private void RestoreTargetParent()
+    {
+        if (pivot == null)
+            return;
+
+        Transform heldPivot = pivot;
+        Transform target = kerisRotationTarget;
+        Transform parent = originalParent;
+        pivot = null;
+        originalParent = null;
+
+        if (target != null && parent != null && target.parent == heldPivot)
+            target.SetParent(parent, true);
+        else if (target != null && target.parent == heldPivot)
+            target.SetParent(FindManualSpin(), true);
+
+        if (heldPivot != null)
+            Destroy(heldPivot.gameObject);
     }
 
     private static Transform FindManualSpin()
@@ -139,26 +172,66 @@ public sealed class KerisFistRotationController : MonoBehaviour
         return named != null ? named.transform : null;
     }
 
-    private void DestroyRuntimePivots()
+    private void DestroyLegacyAxisPivot()
     {
         Transform root = kerisRotationTarget != null ? kerisRotationTarget : transform;
         Transform parent = root.parent;
-        if (parent != null && parent.name == PivotName)
+        if (parent == null || parent.name != PivotName)
+            return;
+
+        Transform keep = FindManualSpin();
+        root.SetParent(keep, true);
+        Destroy(parent.gameObject);
+    }
+
+    private static Vector3 RendererWorldCenter(Renderer renderer)
+    {
+        if (renderer == null)
+            return Vector3.zero;
+
+        Transform tf = renderer.transform;
+        SkinnedMeshRenderer skin = renderer as SkinnedMeshRenderer;
+        if (skin != null && skin.sharedMesh != null)
         {
-            Transform keep = FindManualSpin();
-            root.SetParent(keep, true);
-            Destroy(parent.gameObject);
+            Mesh baked = new Mesh { name = "KerisFistRotBounds" };
+            skin.BakeMesh(baked);
+            baked.RecalculateBounds();
+            Vector3 local = baked.bounds.center;
+            bool valid = baked.bounds.extents.sqrMagnitude > 0.0000001f;
+            UnityEngine.Object.Destroy(baked);
+            if (valid)
+                return tf.TransformPoint(local);
         }
 
-        GameObject leftover = GameObject.Find("Keris Fist Rotation Pivot");
-        if (leftover != null)
-        {
-            Transform held = leftover.transform;
-            Transform keep = FindManualSpin();
-            for (int i = held.childCount - 1; i >= 0; i--)
-                held.GetChild(i).SetParent(keep, true);
-            Destroy(leftover);
-        }
+        MeshFilter filter = renderer.GetComponent<MeshFilter>();
+        if (filter != null && filter.sharedMesh != null)
+            return tf.TransformPoint(filter.sharedMesh.bounds.center);
+
+        return tf.TransformPoint(renderer.localBounds.center);
+    }
+
+    private static void PlacePivotAt(Transform pivot, Transform parent, Vector3 worldCenter)
+    {
+        pivot.SetParent(null, false);
+        pivot.position = worldCenter;
+        pivot.rotation = Quaternion.identity;
+        pivot.localScale = Vector3.one;
+        if (parent == null)
+            return;
+
+        pivot.SetParent(parent, true);
+        Vector3 lossy = parent.lossyScale;
+        pivot.localScale = new Vector3(
+            ReciprocalScale(lossy.x),
+            ReciprocalScale(lossy.y),
+            ReciprocalScale(lossy.z));
+        pivot.position = worldCenter;
+        pivot.rotation = Quaternion.identity;
+    }
+
+    private static float ReciprocalScale(float value)
+    {
+        return Mathf.Abs(value) < 0.0001f ? 1f : 1f / value;
     }
 
     private bool TryGetClosedHand(
@@ -188,10 +261,48 @@ public sealed class KerisFistRotationController : MonoBehaviour
 
     private static bool LooksClosed(SculptHandFrame hand)
     {
-        // A closed hand (fist) for rotation should have a curled index finger (low extension angle).
         return hand.IndexExtensionAngle < 125f &&
-               hand.FingerCurlRatio <= 1.45f &&
-               hand.OtherFingersCurlRatio <= 1.45f;
+               hand.FingerCurlRatio <= 1.28f &&
+               hand.OtherFingersCurlRatio <= 1.20f;
+    }
+
+    private void ResolveSteer(SculptHandFrame fist, out float steerRight, out float steerUp)
+    {
+        float x = 0.5f - fist.PalmCenter.x;
+        float y = fist.PalmCenter.y - 0.5f;
+
+        steerRight = ApplyDeadZone(x);
+        steerUp = ApplyDeadZone(y);
+        float absRight = Mathf.Abs(steerRight);
+        float absUp = Mathf.Abs(steerUp);
+        if (absRight < 0.001f && absUp < 0.001f)
+        {
+            lockedAxis = 0;
+            return;
+        }
+
+        const float stick = 0.72f;
+        if (lockedAxis == 1 && absRight >= absUp * stick)
+        {
+            steerUp = 0f;
+            return;
+        }
+        if (lockedAxis == 2 && absUp >= absRight * stick)
+        {
+            steerRight = 0f;
+            return;
+        }
+
+        if (absRight >= absUp)
+        {
+            lockedAxis = 1;
+            steerUp = 0f;
+        }
+        else
+        {
+            lockedAxis = 2;
+            steerRight = 0f;
+        }
     }
 
     private float ApplyDeadZone(float value)
@@ -208,7 +319,40 @@ public sealed class KerisFistRotationController : MonoBehaviour
     {
         rotating = false;
         yawSpeed = 0f;
-        sideSpeed = 0f;
+        pitchSpeed = 0f;
+        lockedAxis = 0;
+    }
+
+    private void ApplyRotation()
+    {
+        if (pivot == null)
+            return;
+
+        ResolveViewAxes(out Vector3 yawAxis, out Vector3 pitchAxis);
+        pivot.position = restPosition;
+        pivot.rotation =
+            Quaternion.AngleAxis(yaw, yawAxis) *
+            Quaternion.AngleAxis(pitch, pitchAxis) *
+            restRotation;
+    }
+
+    private void ResolveViewAxes(out Vector3 yawAxis, out Vector3 pitchAxis)
+    {
+        Camera cam = ResolveViewCamera();
+        if (cam != null)
+        {
+            yawAxis = cam.transform.up;
+            pitchAxis = cam.transform.right;
+            if (yawAxis.sqrMagnitude > 0.01f && pitchAxis.sqrMagnitude > 0.01f)
+            {
+                yawAxis.Normalize();
+                pitchAxis.Normalize();
+                return;
+            }
+        }
+
+        yawAxis = Vector3.up;
+        pitchAxis = Vector3.right;
     }
 
     private void Bind()
@@ -251,18 +395,5 @@ public sealed class KerisFistRotationController : MonoBehaviour
         if (viewCamera == null)
             viewCamera = Camera.main;
         return viewCamera;
-    }
-
-    private Vector3 ResolveViewRight()
-    {
-        Camera cam = ResolveViewCamera();
-        Vector3 viewForward = cam != null ? cam.transform.forward : Vector3.forward;
-        viewForward = Vector3.ProjectOnPlane(viewForward, Vector3.up);
-        if (viewForward.sqrMagnitude < 0.01f)
-            viewForward = Vector3.forward;
-        Vector3 viewRight = Vector3.Cross(viewForward.normalized, Vector3.up);
-        if (viewRight.sqrMagnitude < 0.01f)
-            viewRight = Vector3.right;
-        return viewRight.normalized;
     }
 }

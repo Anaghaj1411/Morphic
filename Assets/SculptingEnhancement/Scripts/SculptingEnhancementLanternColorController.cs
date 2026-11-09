@@ -1925,7 +1925,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (!LanternCollectionStore.Add(record))
             return false;
 
-        int slotIndex = lanternShelf.CollectionCount;
+        int slotIndex = lanternShelf.NextFreeSlotIndex;
         GameObject clone = UnityEngine.Object.Instantiate(source.gameObject);
         clone.name = "LanternCollection_" + record.Id;
         UniqueCloneMaterials(clone);

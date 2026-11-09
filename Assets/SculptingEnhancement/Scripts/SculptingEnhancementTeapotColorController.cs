@@ -2644,7 +2644,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (!TeapotCollectionStore.Add(record))
             return false;
 
-        int slotIndex = teapotShelf.CollectionCount;
+        int slotIndex = teapotShelf.NextFreeSlotIndex;
         GameObject clone = Instantiate(source.gameObject);
         clone.name = "TeapotCollection_" + record.Id;
         clone.transform.SetPositionAndRotation(source.position, source.rotation);
@@ -2669,7 +2669,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
 
         EnsureTeapotShelfSlots();
-        Transform seat = GetTeapotSlot(slotIndex);
+        Transform seat = teapotShelf != null
+            ? teapotShelf.GetSharedSlot(slotIndex)
+            : GetTeapotSlot(slotIndex);
         Transform collection = teapotShelf != null ? teapotShelf.CollectionRoot : null;
         Quaternion upright = teapot.rotation;
         if (collection != null)
