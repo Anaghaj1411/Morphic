@@ -1,8 +1,9 @@
 using System;
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// Defers an action to the next frame.
+/// Defers an action to the next active frame.
 ///
 /// TextMeshPro builds its mesh during the layout pass, which can
 /// overwrite a colour assigned in the same frame. Scheduling a
@@ -10,6 +11,8 @@ using UnityEngine;
 /// </summary>
 public sealed class TextMeshProUGUIRunner : MonoBehaviour
 {
+    private Action pending;
+
     public static void Run(
         Component context,
         Action action)
@@ -21,23 +24,40 @@ public sealed class TextMeshProUGUIRunner : MonoBehaviour
         }
 
         TextMeshProUGUIRunner runner =
-            context.gameObject.AddComponent<
-                TextMeshProUGUIRunner>();
+            context.GetComponent<TextMeshProUGUIRunner>();
+        if (runner == null)
+            runner = context.gameObject.AddComponent<TextMeshProUGUIRunner>();
 
-        runner.BeginNextFrame(action);
+        runner.pending = action;
+        runner.TryStart();
     }
 
-    private void BeginNextFrame(Action action)
+    private void OnEnable()
     {
-        StartCoroutine(RunNextFrame(action));
+        TryStart();
     }
 
-    private System.Collections.IEnumerator RunNextFrame(
-        Action action)
+    private void TryStart()
     {
+        if (pending == null ||
+            !isActiveAndEnabled)
+        {
+            return;
+        }
+
+        StopAllCoroutines();
+        StartCoroutine(RunNextFrame());
+    }
+
+    private IEnumerator RunNextFrame()
+    {
+        Action action = pending;
+        pending = null;
+
         yield return null;
 
-        action();
+        if (action != null)
+            action();
 
         Destroy(this);
     }

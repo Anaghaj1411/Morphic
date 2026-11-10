@@ -160,6 +160,10 @@ public event Action RestaurantTransitionCompleted;
     private Quaternion startRotation;
     private bool hasRun;
     private bool hasCachedPose;
+    private Coroutine startRunRoutine;
+    private Coroutine potteryMoveRoutine;
+    private Coroutine returnMenuRoutine;
+    private bool isReturningToMenu;
 
     private void Awake()
     {
@@ -425,7 +429,7 @@ public event Action RestaurantTransitionCompleted;
         return;
     }
 
-    StartCoroutine(MoveToPotteryStudio());
+        potteryMoveRoutine = StartCoroutine(MoveToPotteryStudio());
 }
 
   private IEnumerator MoveToPotteryStudio()
@@ -443,6 +447,7 @@ public event Action RestaurantTransitionCompleted;
             this);
 
         isMovingToPotteryStudio = false;
+        potteryMoveRoutine = null;
         yield break;
     }
 
@@ -462,6 +467,7 @@ public event Action RestaurantTransitionCompleted;
             this);
 
         isMovingToPotteryStudio = false;
+        potteryMoveRoutine = null;
         yield break;
     }
 
@@ -572,6 +578,7 @@ public event Action RestaurantTransitionCompleted;
     // ---------------------------------------------------------
 
     isMovingToPotteryStudio = false;
+    potteryMoveRoutine = null;
 
     PotteryStudioTransitionCompleted?.Invoke();
 }
@@ -693,7 +700,117 @@ private IEnumerator MoveToRestaurant()
             return;
         }
 
-        StartCoroutine(Run());
+        startRunRoutine = StartCoroutine(Run());
+    }
+
+    public void ReturnToMainMenu()
+    {
+        if (isReturningToMenu)
+            return;
+
+        if (startRunRoutine != null)
+        {
+            StopCoroutine(startRunRoutine);
+            startRunRoutine = null;
+        }
+
+        if (potteryMoveRoutine != null)
+        {
+            StopCoroutine(potteryMoveRoutine);
+            potteryMoveRoutine = null;
+        }
+
+        isMovingToPotteryStudio = false;
+
+        if (!EnsureCamera())
+        {
+            RestoreMenuButtonsImmediate();
+            hasRun = false;
+            return;
+        }
+
+        if (returnMenuRoutine != null)
+            StopCoroutine(returnMenuRoutine);
+
+        returnMenuRoutine = StartCoroutine(MoveToMainMenu());
+    }
+
+    private IEnumerator MoveToMainMenu()
+    {
+        isReturningToMenu = true;
+
+        if (gameplayUI != null)
+            gameplayUI.SetActive(false);
+
+        Transform cameraTransform = viewCamera.transform;
+        Vector3 fromPosition = cameraTransform.position;
+        Quaternion fromRotation = cameraTransform.rotation;
+        float fromFieldOfView = viewCamera.fieldOfView;
+        float fromNearClip = viewCamera.nearClipPlane;
+
+        Vector3 toPosition = hasCachedPose ? startPosition : menuPosition;
+        Quaternion toRotation = hasCachedPose ? startRotation : menuRotation;
+        float toFieldOfView = menuFieldOfView > 0.01f
+            ? menuFieldOfView
+            : fromFieldOfView;
+        float toNearClip = menuNearClipPlane > 0.001f
+            ? menuNearClipPlane
+            : fromNearClip;
+
+        if (!IsFinite(toPosition))
+            toPosition = fromPosition;
+        if (!IsFinite(toRotation))
+            toRotation = fromRotation;
+
+        float duration = Mathf.Max(0.01f, moveDuration);
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = t * t * (3f - 2f * t);
+
+            cameraTransform.position = Vector3.Lerp(fromPosition, toPosition, eased);
+            cameraTransform.rotation = Quaternion.Slerp(fromRotation, toRotation, eased);
+            viewCamera.fieldOfView = Mathf.Lerp(fromFieldOfView, toFieldOfView, eased);
+            viewCamera.nearClipPlane = Mathf.Lerp(fromNearClip, toNearClip, eased);
+            yield return null;
+        }
+
+        cameraTransform.position = toPosition;
+        cameraTransform.rotation = toRotation;
+        viewCamera.fieldOfView = toFieldOfView;
+        viewCamera.nearClipPlane = toNearClip;
+
+        hasRun = false;
+        fadeGroups = FindFadeGroups();
+        yield return FadeIn();
+        SetMenuInteractable(true);
+
+        isReturningToMenu = false;
+        returnMenuRoutine = null;
+    }
+
+    private void RestoreMenuButtonsImmediate()
+    {
+        if (gameplayUI != null)
+            gameplayUI.SetActive(false);
+
+        fadeGroups = FindFadeGroups();
+        if (fadeGroups == null)
+            return;
+
+        for (int i = 0; i < fadeGroups.Length; i++)
+        {
+            if (fadeGroups[i] == null)
+                continue;
+
+            fadeGroups[i].gameObject.SetActive(true);
+            fadeGroups[i].alpha = 1f;
+            fadeGroups[i].blocksRaycasts = true;
+            fadeGroups[i].interactable = true;
+        }
     }
 
     private CanvasGroup[] FindFadeGroups()
@@ -2071,6 +2188,7 @@ private IEnumerator MoveToRestaurant()
     {
         if (!EnsureCamera())
         {
+            startRunRoutine = null;
             yield break;
         }
 
@@ -2247,6 +2365,8 @@ private IEnumerator MoveToRestaurant()
         {
             gameplayUI.SetActive(true);
         }
+
+        startRunRoutine = null;
     }
 
     private IEnumerator FadeOut()
@@ -2300,6 +2420,50 @@ private IEnumerator MoveToRestaurant()
                 fadeGroups[i].interactable =
                     false;
             }
+        }
+    }
+
+    private IEnumerator FadeIn()
+    {
+        if (fadeGroups == null ||
+            fadeGroups.Length == 0)
+        {
+            yield break;
+        }
+
+        for (int i = 0; i < fadeGroups.Length; i++)
+        {
+            if (fadeGroups[i] == null)
+                continue;
+
+            fadeGroups[i].gameObject.SetActive(true);
+            fadeGroups[i].alpha = 0f;
+        }
+
+        float elapsed = 0f;
+
+        while (elapsed < fadeDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / fadeDuration);
+
+            for (int i = 0; i < fadeGroups.Length; i++)
+            {
+                if (fadeGroups[i] != null)
+                    fadeGroups[i].alpha = t;
+            }
+
+            yield return null;
+        }
+
+        for (int i = 0; i < fadeGroups.Length; i++)
+        {
+            if (fadeGroups[i] == null)
+                continue;
+
+            fadeGroups[i].alpha = 1f;
+            fadeGroups[i].blocksRaycasts = true;
+            fadeGroups[i].interactable = true;
         }
     }
 

@@ -88,8 +88,10 @@ public class DialogueManager : MonoBehaviour
     private MorphicRotationResetUI rotationResetUi;
     private MorphicGestureHelpUI gestureHelpUi;
     private GameObject sculptBackRoot;
+    private GameObject menuBackRoot;
     private GameObject craftExitRoot;
     private MainMenuStartTransition studioCameraTransition;
+    private bool restartDialogueOnMenuStart;
     private DialogueButtonClickSound dialogueButtonSound;
 
     private void Awake()
@@ -155,6 +157,7 @@ public class DialogueManager : MonoBehaviour
         HideAllChoices();
         HideCultureChoices();
         HideRestaurantChoices();
+        BindStartTransition();
 
         // Ensure webcam display is deactivated initially
         if (webcamDisplayController != null)
@@ -242,6 +245,36 @@ public class DialogueManager : MonoBehaviour
             cameraTransition =
                 FindObjectOfType<MainMenuStartTransition>();
         }
+    }
+
+    private void BindStartTransition()
+    {
+        FindMissingReferences();
+        if (cameraTransition == null)
+            return;
+
+        cameraTransition.TransitionCompleted -= OnStartTransitionCompleted;
+        cameraTransition.TransitionCompleted += OnStartTransitionCompleted;
+    }
+
+    private void OnStartTransitionCompleted()
+    {
+        SetMenuBackVisible(true);
+
+        if (!restartDialogueOnMenuStart)
+            return;
+
+        restartDialogueOnMenuStart = false;
+        BeginDialogue();
+    }
+
+    private void OnDestroy()
+    {
+        if (cameraTransition == null)
+            return;
+
+        cameraTransition.TransitionCompleted -= OnStartTransitionCompleted;
+        cameraTransition.PotteryStudioTransitionCompleted -= OnCameraFinished;
     }
 
     private IEnumerator StartDialogueAfterDelay()
@@ -420,15 +453,64 @@ public class DialogueManager : MonoBehaviour
                 ShowCultureChoices();
                 break;
         }
+
+        SetMenuBackVisible(true);
     }
 
     private void SetDialogue(string speaker, string message)
     {
-        if (speakerName != null)
-            speakerName.text = speaker;
+        ApplyDialogueLabel(speakerName, speaker, new Color32(42, 83, 49, 255));
+        ApplyDialogueLabel(dialogueText, message, new Color32(48, 48, 39, 255));
+    }
 
-        if (dialogueText != null)
-            dialogueText.text = message;
+    private static void ApplyDialogueLabel(TMP_Text label, string message, Color32 color)
+    {
+        if (label == null)
+            return;
+
+        label.gameObject.SetActive(true);
+        label.enabled = true;
+        label.text = message;
+        label.color = color;
+        label.alpha = 1f;
+        if (label.rectTransform.rect.width > 1f &&
+            label.rectTransform.rect.height > 1f)
+            label.ForceMeshUpdate();
+
+        TextMeshProUGUIRunner.Run(label, () =>
+        {
+            if (label == null)
+                return;
+            label.text = message;
+            label.color = color;
+            label.alpha = 1f;
+            label.ForceMeshUpdate();
+        });
+    }
+
+    private static void ApplyChoiceLabel(TMP_Text label, string message)
+    {
+        if (label == null)
+            return;
+
+        label.gameObject.SetActive(true);
+        label.enabled = true;
+        label.text = message;
+        label.color = LanguagePageBuilder.Green;
+        label.alpha = 1f;
+        if (label.rectTransform.rect.width > 1f &&
+            label.rectTransform.rect.height > 1f)
+            label.ForceMeshUpdate();
+
+        TextMeshProUGUIRunner.Run(label, () =>
+        {
+            if (label == null)
+                return;
+            label.text = message;
+            label.color = LanguagePageBuilder.Green;
+            label.alpha = 1f;
+            label.ForceMeshUpdate();
+        });
     }
 
     private void StyleDialogueUi()
@@ -586,6 +668,7 @@ public class DialogueManager : MonoBehaviour
         if (fill != null)
         {
             fill.raycastTarget = true;
+            fill.transform.SetAsFirstSibling();
             button.targetGraphic = fill;
         }
 
@@ -603,25 +686,24 @@ public class DialogueManager : MonoBehaviour
         if (label == null)
             return;
 
-        if (fill != null)
-            label.transform.SetParent(fill.transform, false);
+        if (label.transform.parent != button.transform)
+            label.transform.SetParent(button.transform, false);
+        label.transform.SetAsLastSibling();
         label.gameObject.SetActive(true);
         label.enabled = true;
-        label.enableAutoSizing = false;
+        label.enableAutoSizing = true;
+        label.fontSizeMin = compact ? 14f : 16f;
+        label.fontSizeMax = compact ? 20f : 26f;
         label.fontSize = compact ? 20f : 26f;
         label.fontStyle = FontStyles.Bold;
-        label.characterSpacing = 1.5f;
+        label.characterSpacing = 0.4f;
         label.color = LanguagePageBuilder.Green;
+        label.alpha = 1f;
         label.alignment = TextAlignmentOptions.Center;
         label.enableWordWrapping = false;
         label.overflowMode = TextOverflowModes.Overflow;
         label.raycastTarget = false;
-        RectTransform labelRect = label.rectTransform;
-        labelRect.anchorMin = Vector2.zero;
-        labelRect.anchorMax = Vector2.one;
-        labelRect.pivot = new Vector2(0.5f, 0.5f);
-        labelRect.offsetMin = new Vector2(12f, 6f);
-        labelRect.offsetMax = new Vector2(-12f, -6f);
+        LanguagePageBuilder.Stretch(label.rectTransform, new Vector2(12f, 6f));
 
         Outline textOutline = label.GetComponent<Outline>();
         if (textOutline == null)
@@ -629,7 +711,6 @@ public class DialogueManager : MonoBehaviour
         textOutline.effectColor = new Color32(255, 255, 255, 160);
         textOutline.effectDistance = new Vector2(1.2f, -1.2f);
         textOutline.useGraphicAlpha = true;
-        label.ForceMeshUpdate();
     }
 
     private void StyleCultureChoices()
@@ -783,15 +864,17 @@ public class DialogueManager : MonoBehaviour
 
         button.gameObject.SetActive(true);
 
-        TMP_Text labelText = text != null
-            ? text
-            : button.GetComponentInChildren<TMP_Text>(true);
-        if (labelText != null)
-            labelText.text = label;
         bool compact = label == "Start Sculpting";
         StyleChoiceButton(button, compact);
         if (button == choice1Button)
             ApplyChoiceRowSize(compact);
+
+        Canvas.ForceUpdateCanvases();
+
+        TMP_Text labelText = button.GetComponentInChildren<TMP_Text>(true);
+        if (labelText == null)
+            labelText = text;
+        ApplyChoiceLabel(labelText, label);
 
         button.onClick.RemoveAllListeners();
 
@@ -822,6 +905,7 @@ public class DialogueManager : MonoBehaviour
         if (freestyleButton != null)
             freestyleButton.gameObject.SetActive(false);
         SetCraftExitVisible(true);
+        SetMenuBackVisible(true);
     }
 
     private void ConfigureCultureButton(
@@ -854,6 +938,7 @@ public class DialogueManager : MonoBehaviour
     {
         HideAllChoices();
         HideCultureChoices();
+        SetMenuBackVisible(false);
 
         if (cameraTransition == null)
         {
@@ -866,6 +951,7 @@ public class DialogueManager : MonoBehaviour
             Debug.LogWarning(
                 "MORPHIC: MainMenuStartTransition was not found."
             );
+            SetMenuBackVisible(true);
             return;
         }
 
@@ -977,12 +1063,15 @@ public class DialogueManager : MonoBehaviour
                 );
                 break;
         }
+
+        SetMenuBackVisible(true);
     }
 
     private void BeginSculpting(string culture)
     {
         HideAllChoices();
         HideCultureChoices();
+        SetMenuBackVisible(false);
 
         // Hide AI help dialog when switching cultures
         if (aiHelpUi != null)
@@ -1809,6 +1898,110 @@ public class DialogueManager : MonoBehaviour
         sculptBackRoot.SetActive(visible);
         if (visible)
             sculptBackRoot.transform.SetAsLastSibling();
+    }
+
+    private void EnsureMenuBackButton()
+    {
+        if (menuBackRoot != null)
+            return;
+
+        Canvas canvas = null;
+        if (dialoguePanel != null)
+            canvas = dialoguePanel.GetComponentInParent<Canvas>(true);
+        if (canvas == null && cultureChoicesPanel != null)
+            canvas = cultureChoicesPanel.GetComponentInParent<Canvas>(true);
+        if (canvas == null)
+            canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+        if (canvas == null)
+            return;
+
+        Image frame = LanguagePageBuilder.CreateRoundedImage(
+            "MenuBackButton",
+            canvas.transform,
+            28,
+            LanguagePageBuilder.Green);
+        MorphicBackButton.PlaceOnPanelLeft(frame.rectTransform, 88f);
+        frame.raycastTarget = true;
+
+        Image fill = LanguagePageBuilder.CreateRoundedImage(
+            "Fill",
+            frame.transform,
+            24,
+            LanguagePageBuilder.Pink);
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+        fill.raycastTarget = true;
+
+        Sprite icon = MorphicBackButton.LoadSprite();
+        Image iconImage = LanguagePageBuilder.CreateImage(
+            "Icon",
+            fill.transform,
+            icon);
+        LanguagePageBuilder.Stretch(iconImage.rectTransform, new Vector2(10f, 10f));
+        if (icon != null)
+            MorphicBackButton.ApplyIcon(iconImage);
+        else
+            iconImage.color = Color.white;
+        iconImage.raycastTarget = false;
+
+        Button uiButton = frame.gameObject.AddComponent<Button>();
+        uiButton.targetGraphic = fill;
+        uiButton.onClick.AddListener(ReturnToMainMenu);
+        AddHoverEffect(uiButton);
+
+        menuBackRoot = frame.gameObject;
+        menuBackRoot.SetActive(false);
+    }
+
+    private void SetMenuBackVisible(bool visible)
+    {
+        EnsureMenuBackButton();
+        if (menuBackRoot == null)
+            return;
+
+        menuBackRoot.SetActive(visible);
+        if (visible)
+            menuBackRoot.transform.SetAsLastSibling();
+    }
+
+    private void ReturnToMainMenu()
+    {
+        SetMenuBackVisible(false);
+        SetSculptBackVisible(false);
+        SetCraftExitVisible(false);
+        HideAllChoices();
+        HideCultureChoices();
+        HideRestaurantChoices();
+
+        if (dialoguePanel != null)
+            dialoguePanel.SetActive(false);
+
+        if (dialogueCoroutine != null)
+        {
+            StopCoroutine(dialogueCoroutine);
+            dialogueCoroutine = null;
+        }
+
+        dialogueStarted = false;
+        restartDialogueOnMenuStart = true;
+
+        if (aiHelpUi != null)
+            aiHelpUi.SetVisible(false);
+        if (rotationResetUi != null)
+            rotationResetUi.SetVisible(false);
+        if (gestureHelpUi != null)
+            gestureHelpUi.SetVisible(false);
+
+        FindMissingReferences();
+        if (cameraTransition == null)
+        {
+            Debug.LogWarning(
+                "MORPHIC: MainMenuStartTransition was not found."
+            );
+            return;
+        }
+
+        cameraTransition.PotteryStudioTransitionCompleted -= OnCameraFinished;
+        cameraTransition.ReturnToMainMenu();
     }
 
     private void ReturnToCraftSelect()
