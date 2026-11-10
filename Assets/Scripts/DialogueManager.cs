@@ -86,6 +86,7 @@ public class DialogueManager : MonoBehaviour
     private SculptingEnhancementKerisColorController kerisColorController;
     private MorphicAIHelpUI aiHelpUi;
     private MorphicRotationResetUI rotationResetUi;
+    private MorphicGestureHelpUI gestureHelpUi;
     private GameObject sculptBackRoot;
     private GameObject craftExitRoot;
     private MainMenuStartTransition studioCameraTransition;
@@ -119,6 +120,11 @@ public class DialogueManager : MonoBehaviour
         if (rotationResetUi == null)
             rotationResetUi = gameObject.AddComponent<MorphicRotationResetUI>();
         rotationResetUi.SetVisible(false);
+
+        gestureHelpUi = FindFirstObjectByType<MorphicGestureHelpUI>(FindObjectsInactive.Include);
+        if (gestureHelpUi == null)
+            gestureHelpUi = gameObject.AddComponent<MorphicGestureHelpUI>();
+        gestureHelpUi.SetVisible(false);
 
         // The teapot is placed in the scene like the lantern, but stays hidden
         // until the user chooses India and presses Start Sculpting.
@@ -983,6 +989,8 @@ public class DialogueManager : MonoBehaviour
             aiHelpUi.SetVisible(false);
         if (rotationResetUi != null)
             rotationResetUi.SetVisible(false);
+        if (gestureHelpUi != null)
+            gestureHelpUi.SetVisible(false);
 
         if (lanternColorController == null)
         {
@@ -1705,6 +1713,12 @@ public class DialogueManager : MonoBehaviour
         if (rotationResetUi == null)
             rotationResetUi = gameObject.AddComponent<MorphicRotationResetUI>();
         rotationResetUi.SetVisible(true);
+
+        if (gestureHelpUi == null)
+            gestureHelpUi = FindFirstObjectByType<MorphicGestureHelpUI>(FindObjectsInactive.Include);
+        if (gestureHelpUi == null)
+            gestureHelpUi = gameObject.AddComponent<MorphicGestureHelpUI>();
+        gestureHelpUi.SetVisible(true);
     }
 
     private void EnsureCraftExitButton()
@@ -1805,6 +1819,8 @@ public class DialogueManager : MonoBehaviour
             aiHelpUi.SetVisible(false);
         if (rotationResetUi != null)
             rotationResetUi.SetVisible(false);
+        if (gestureHelpUi != null)
+            gestureHelpUi.SetVisible(false);
 
         SculptingGestureTutorial lanternTutorial =
             GetComponent<SculptingGestureTutorial>();
@@ -1896,6 +1912,119 @@ public class DialogueManager : MonoBehaviour
         }
 
         ShowAiHelp();
+    }
+
+    public void OpenGestureCards()
+    {
+        if (taiwanLantern != null && taiwanLantern.activeInHierarchy)
+        {
+            OpenLanternGestureCards();
+            return;
+        }
+
+        if (indiaTeapot != null && indiaTeapot.activeInHierarchy)
+        {
+            OpenTeapotGestureCards();
+            return;
+        }
+
+        if (indonesiaKeris != null && indonesiaKeris.activeInHierarchy)
+            OpenKerisGestureCards();
+    }
+
+    private void OpenLanternGestureCards()
+    {
+        SculptingGestureTutorial tutorial = GetComponent<SculptingGestureTutorial>();
+        if (tutorial == null)
+            tutorial = gameObject.AddComponent<SculptingGestureTutorial>();
+        if (tutorial.IsShowing)
+        {
+            tutorial.RestartCards();
+            return;
+        }
+
+        if (lanternColorController != null)
+            lanternColorController.SetTutorialSculptLock(true);
+        SetLanternSculptDriving(false);
+        tutorial.Begin(ResolveLanternGestures(), FinishLanternGestureReplay, true);
+    }
+
+    private void FinishLanternGestureReplay()
+    {
+        if (lanternColorController != null)
+            lanternColorController.SetTutorialSculptLock(false);
+        SetLanternSculptDriving(true);
+    }
+
+    private TaiwanLanternGestureController ResolveLanternGestures()
+    {
+        return taiwanGestureController != null
+            ? taiwanGestureController.GetComponentInChildren<TaiwanLanternGestureController>(true)
+            : FindFirstObjectByType<TaiwanLanternGestureController>(FindObjectsInactive.Include);
+    }
+
+    private void OpenTeapotGestureCards()
+    {
+        TeapotGestureTutorial tutorial = GetComponent<TeapotGestureTutorial>();
+        if (tutorial == null)
+            tutorial = gameObject.AddComponent<TeapotGestureTutorial>();
+        if (tutorial.IsShowing)
+        {
+            tutorial.RestartCards();
+            return;
+        }
+
+        TeapotGestureController teapotGestures = indiaTeapot != null
+            ? indiaTeapot.GetComponentInChildren<TeapotGestureController>(true)
+            : FindFirstObjectByType<TeapotGestureController>(FindObjectsInactive.Include);
+        if (teapotColorController != null)
+            teapotColorController.SetTutorialSculptLock(true);
+        if (teapotGestures != null)
+            teapotGestures.suppressDriving = true;
+        tutorial.Begin(teapotGestures, FinishTeapotGestureReplay, true);
+    }
+
+    private void FinishTeapotGestureReplay()
+    {
+        TeapotGestureController teapotGestures = indiaTeapot != null
+            ? indiaTeapot.GetComponentInChildren<TeapotGestureController>(true)
+            : null;
+        if (teapotGestures != null)
+            teapotGestures.suppressDriving = false;
+        if (teapotColorController != null)
+            teapotColorController.SetTutorialSculptLock(false);
+    }
+
+    private void OpenKerisGestureCards()
+    {
+        KerisGestureTutorial tutorial = GetComponent<KerisGestureTutorial>();
+        if (tutorial == null)
+            tutorial = gameObject.AddComponent<KerisGestureTutorial>();
+        if (tutorial.IsShowing)
+        {
+            tutorial.RestartCards();
+            return;
+        }
+
+        KerisGestureController kerisGestures = indonesiaKeris != null
+            ? indonesiaKeris.GetComponentInChildren<KerisGestureController>(true)
+            : FindFirstObjectByType<KerisGestureController>(FindObjectsInactive.Include);
+        if (kerisColorController != null)
+            kerisColorController.SetTutorialSculptLock(true);
+        if (kerisGestures != null)
+            kerisGestures.suppressDriving = true;
+        tutorial.Begin(kerisGestures, FinishKerisGestureReplay, true);
+    }
+
+    private void FinishKerisGestureReplay()
+    {
+        KerisGestureController kerisGestures = indonesiaKeris != null
+            ? indonesiaKeris.GetComponentInChildren<KerisGestureController>(true)
+            : null;
+        if (kerisGestures != null)
+            kerisGestures.suppressDriving = false;
+        if (kerisColorController != null)
+            kerisColorController.SetTutorialSculptLock(false);
     }
 
     private void StartLanternGestureTutorial()

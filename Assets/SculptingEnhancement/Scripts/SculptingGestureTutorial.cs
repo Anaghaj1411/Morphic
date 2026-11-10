@@ -90,6 +90,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
     private int stepIndex;
     private float recognizedHold;
     private bool stepRecognized;
+    private bool preserveSculpt;
 
     private GameObject root;
     private TMP_Text titleText;
@@ -97,21 +98,41 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
     private TMP_Text statusText;
     private TMP_Text stepText;
     private RawImage gestureImage;
+    private MorphicGesturePreview gesturePreview;
     private Button nextButton;
+
+    public bool IsShowing => root != null && root.activeSelf;
+
+    public void RestartCards()
+    {
+        stepIndex = 0;
+        EnsureUi();
+        ShowStep();
+        if (root != null)
+        {
+            root.SetActive(true);
+            root.transform.SetAsLastSibling();
+        }
+    }
 
     public void Begin(
         TaiwanLanternGestureController controller,
-        Action finished)
+        Action finished,
+        bool keepSculpt = false)
     {
         gestureController = controller;
         onFinished = finished;
+        preserveSculpt = keepSculpt;
         stepIndex = 0;
-        if (gestureController != null)
+        if (!preserveSculpt && gestureController != null)
             gestureController.CaptureRestState();
         EnsureUi();
         ShowStep();
         if (root != null)
+        {
             root.SetActive(true);
+            root.transform.SetAsLastSibling();
+        }
     }
 
     private void Update()
@@ -184,10 +205,8 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
             "ArtFill", artFrame.transform, 24, new Color32(253, 242, 250, 255));
         LanguagePageBuilder.Stretch(artFill.rectTransform, new Vector2(7f, 7f));
         artFill.raycastTarget = false;
-        gestureImage = CreateRawImage(artFill.transform, "GestureImage", Vector2.zero, new Vector2(220f, 220f));
-        Stretch(gestureImage.rectTransform);
-        gestureImage.rectTransform.offsetMin = new Vector2(8f, 8f);
-        gestureImage.rectTransform.offsetMax = new Vector2(-8f, -8f);
+        gestureImage = CreateRawImage(artFill.transform, "GestureImage", Vector2.zero, new Vector2(196f, 196f));
+        gesturePreview = MorphicGesturePreview.Create(gestureImage);
 
         instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -112f), 640f, 72f, 20);
         instructionText.enableWordWrapping = true;
@@ -212,15 +231,17 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         stepText.text = "GESTURE " + (stepIndex + 1) + " OF " + Steps.Length;
         titleText.text = step.Title;
         instructionText.text = step.Instruction;
-        if (gestureImage != null)
-            gestureImage.texture = LoadTutorialTexture(step.ImagePath);
+        if (gesturePreview != null)
+            gesturePreview.Play(step.Gesture.ToString(), step.ImagePath);
         if (statusText != null)
         {
             statusText.text = "";
             statusText.gameObject.SetActive(false);
         }
         nextButton.GetComponentInChildren<TMP_Text>().text =
-            stepIndex == Steps.Length - 1 ? "START SCULPTING" : "NEXT";
+            stepIndex == Steps.Length - 1
+                ? (preserveSculpt ? "DONE" : "START SCULPTING")
+                : "NEXT";
     }
 
     private void MarkRecognized()
@@ -229,7 +250,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
             return;
         stepRecognized = true;
         statusText.gameObject.SetActive(true);
-        statusText.text = "RECOGNIZED";
+        statusText.text = "GOOD";
         statusText.color = LanguagePageBuilder.Green;
     }
 
@@ -266,7 +287,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
 
     private void Finish()
     {
-        if (gestureController != null)
+        if (!preserveSculpt && gestureController != null)
             gestureController.RestoreRestState();
         if (root != null)
             root.SetActive(false);
@@ -277,7 +298,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
 
     public void Hide()
     {
-        if (root != null && root.activeSelf && gestureController != null)
+        if (!preserveSculpt && root != null && root.activeSelf && gestureController != null)
             gestureController.RestoreRestState();
         if (root != null)
             root.SetActive(false);
