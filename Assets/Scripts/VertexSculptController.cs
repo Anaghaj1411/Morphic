@@ -31,14 +31,14 @@ public class VertexSculptController : MonoBehaviour
     [SerializeField, Min(1f)] private float maxHoldSpeedMultiplier = 1.28f;
     [SerializeField, Min(0.1f)] private float holdAccelerationTime = 0.8f;
     [Header("Stroke Stabilization")]
-    [SerializeField, Range(0f, 1f)] private float stabilization = 0.88f;
-    [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 0.7f;
-    [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.006f;
-    [SerializeField, Range(8f, 72f)] private float pullPixels = 44f;
+    [SerializeField, Range(0f, 1f)] private float stabilization = 0.45f;
+    [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 1.4f;
+    [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.02f;
+    [SerializeField, Range(8f, 72f)] private float pullPixels = 16f;
     [SerializeField, Min(0f)] private float pinchStartDistance = 0.055f;
     [SerializeField, Min(0f)] private float pinchReleaseDistance = 0.08f;
-    [SerializeField, Min(0f)] private float handTrackingGracePeriod = 0.2f;
-    [SerializeField, Min(0f)] private float cursorMissGracePeriod = 0.2f;
+    [SerializeField, Min(0f)] private float handTrackingGracePeriod = 0.4f;
+    [SerializeField, Min(0f)] private float cursorMissGracePeriod = 0.35f;
 
     [Header("Debug")]
     [SerializeField] private bool showDebugVisuals = true;
@@ -103,6 +103,10 @@ public class VertexSculptController : MonoBehaviour
             sculptingCamera = Camera.main;
         if (handRunner == null)
             handRunner = FindFirstObjectByType<SculptHandLandmarkerRunner>();
+        handTrackingGracePeriod = 0.4f;
+        cursorMissGracePeriod = 0.35f;
+        stabilization = 0.45f;
+        pullPixels = 16f;
         InitializeMesh();
         CreateBrushIndicator();
     }
@@ -153,7 +157,6 @@ public class VertexSculptController : MonoBehaviour
                 ResetStabilizer();
                 HideBrush();
             }
-            SetDebugStatus("Vertex Sculpt: Waiting for a tracked hand frame.");
             return;
         }
 
@@ -201,18 +204,16 @@ public class VertexSculptController : MonoBehaviour
                 SetDebugStatus("Vertex Sculpt: Fingertip ray hits target; brush cursor is active.");
             }
         }
-        else
+        else if (lastSuccessfulRayTime < 0f ||
+                 Time.unscaledTime - lastSuccessfulRayTime > cursorMissGracePeriod)
         {
-            if (lastSuccessfulRayTime < 0f ||
-                Time.unscaledTime - lastSuccessfulRayTime > cursorMissGracePeriod)
-                HideBrush();
-            SetDebugStatus("Vertex Sculpt: Hand frame received, but fingertip ray misses target.");
+            HideBrush();
         }
     }
 
     private void SetDebugStatus(string status)
     {
-        if (status == lastDebugStatus)
+        if (!showDebugVisuals || status == lastDebugStatus)
             return;
 
         lastDebugStatus = status;
@@ -772,7 +773,8 @@ public class VertexSculptController : MonoBehaviour
         if (brushIndicator == null)
             return;
 
-        brushIndicator.SetActive(sculptingEnabled);
+        if (!brushIndicator.activeSelf)
+            brushIndicator.SetActive(true);
         brushIndicator.transform.position = worldPosition;
         brushIndicator.transform.localScale = Vector3.one * GetWorldBrushIndicatorDiameter();
     }
@@ -905,7 +907,7 @@ public class VertexSculptController : MonoBehaviour
 
     public void HideBrush()
     {
-        if (brushIndicator != null)
+        if (brushIndicator != null && brushIndicator.activeSelf)
             brushIndicator.SetActive(false);
     }
 

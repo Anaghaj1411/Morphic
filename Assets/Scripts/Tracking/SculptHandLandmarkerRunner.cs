@@ -167,12 +167,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
         [Header("Landmark Smoothing")]
         [Range(1f, 100f)]
-        [SerializeField] private float landmarkSmoothingSpeed = 32f;
+        [SerializeField] private float landmarkSmoothingSpeed = 72f;
 
         [Range(0f, 0.02f)]
-        [SerializeField] private float landmarkDeadZone = 0.002f;
+        [SerializeField] private float landmarkDeadZone = 0.0004f;
 
-        [SerializeField] private float landmarkJumpLimit = 0.12f;
+        [SerializeField] private float landmarkJumpLimit = 0.2f;
 
         private Experimental.TextureFramePool textureFramePool;
 
@@ -255,9 +255,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             config.NumHands = 2;
 
-            config.MinHandDetectionConfidence = 0.45f;
-            config.MinHandPresenceConfidence = 0.50f;
-            config.MinTrackingConfidence = 0.50f;
+            config.MinHandDetectionConfidence = 0.25f;
+            config.MinHandPresenceConfidence = 0.30f;
+            config.MinTrackingConfidence = 0.30f;
+            landmarkSmoothingSpeed = 72f;
+            landmarkDeadZone = 0.0004f;
+            landmarkJumpLimit = 0.2f;
 
             // Try to use assigned webcam screen first, otherwise search
             if (webcamScreen == null)
@@ -281,7 +284,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             hand = latestHand;
 
             return hasLatestHand &&
-                   Time.unscaledTime - lastResultTime < 0.75f;
+                   Time.unscaledTime - lastResultTime < 0.5f;
         }
 
         public bool TryGetLatestTwoHands(
@@ -294,7 +297,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             return hasLatestHand &&
                    hasSecondHand &&
-                   Time.unscaledTime - lastResultTime < 0.75f;
+                   Time.unscaledTime - lastResultTime < 0.5f;
         }
 
         public override void Stop()
@@ -422,8 +425,6 @@ Debug.Log("MORPHIC: Camera resolution = " +
             var waitForReadback = new WaitUntil(
                 () => readbackRequest.done
             );
-            var waitForEndOfFrame = new WaitForEndOfFrame();
-
             while (true)
             {
                 if (isPaused)
@@ -437,7 +438,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     out var textureFrame
                 ))
                 {
-                    yield return waitForEndOfFrame;
+                    yield return null;
                     continue;
                 }
 
@@ -447,7 +448,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
                 if (inferenceInFlight)
                 {
                     textureFrame.Release();
-                    yield return waitForEndOfFrame;
+                    yield return null;
                     continue;
                 }
 
@@ -582,7 +583,6 @@ Debug.Log("MORPHIC: Camera resolution = " +
             if (latestLandmarks == null || latestLandmarks.Length == 0)
             {
                 ClearHandTracking();
-                skeletonOverlay?.SetHands(null);
                 return;
             }
 
@@ -863,14 +863,16 @@ Debug.Log("MORPHIC: Camera resolution = " +
 
         private void ClearHandTracking()
         {
+            // Keep the last pose through brief MediaPipe misses so the
+            // sculpt cursor and draw band do not blink off.
+            if (Time.unscaledTime - lastResultTime <= 0.4f)
+                return;
+
             hasLatestHand = false;
             hasSecondHand = false;
-
-            if (Time.unscaledTime - lastResultTime > 1.0f)
-            {
-                hasSmoothedLatestHand = false;
-                hasSmoothedSecondHand = false;
-            }
+            hasSmoothedLatestHand = false;
+            hasSmoothedSecondHand = false;
+            skeletonOverlay?.SetHands(null);
         }
 
         private SculptHandFrame SmoothHandFrame(

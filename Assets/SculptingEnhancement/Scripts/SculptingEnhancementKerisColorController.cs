@@ -373,17 +373,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 patternPainter.SetClayCoilMode(true);
                 patternPainter.SetPaintingEnabled(true);
                 patternPainter.ProcessPointer(screenPosition, hasHand, Input.GetMouseButton(0));
-                if (instructionText != null)
-                {
-                    if (patternPainter.IsLocked)
-                        instructionText.text = "CLAY LOCKED. Open palm again to unlock.";
-                    else if (patternPainter.IsDrawing)
-                        instructionText.text = "LAYING CLAY... Trace your index finger.";
-                    else if (patternPainter.IsOverSurface)
-                        instructionText.text = "Point index finger and draw clay on the keris.";
-                    else
-                        instructionText.text = "Aim at the keris. Point index finger to draw clay.";
-                }
             }
         }
 
@@ -659,6 +648,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         TMP_Text cursorText = CreateText("CursorDot", cursorRect, Vector2.zero, new Vector2(46f, 46f),
             "●", 34f, TextAlignmentOptions.Center, FontStyles.Normal);
         Stretch(cursorText.rectTransform);
+        cursorText.raycastTarget = false;
         cursorText.color = LanguagePageBuilder.Pink;
         Outline outline = cursorText.gameObject.AddComponent<Outline>();
         outline.effectColor = LanguagePageBuilder.Green;
@@ -768,8 +758,10 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         SetHeaderBackLabel("← BACK");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
-        instructionText.gameObject.SetActive(true);
-        instructionText.text = "Pick coil size and height, then point your index finger and draw clay.";
+        if (instructionText != null)
+            instructionText.gameObject.SetActive(false);
+        if (uiRoot != null)
+            uiRoot.transform.SetAsLastSibling();
         ApplyCoilSettings();
         RefreshCoilButtons();
         if (patternPainter != null)
@@ -2320,8 +2312,11 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void SetCursorVisible(bool visible)
     {
-        if (cursorRect != null)
-            cursorRect.gameObject.SetActive(visible && mode != ColorMode.Hidden);
+        if (cursorRect == null)
+            return;
+        bool show = visible && mode != ColorMode.Hidden;
+        if (cursorRect.gameObject.activeSelf != show)
+            cursorRect.gameObject.SetActive(show);
     }
 
     private void RegisterHitTarget(Button button, bool isColor, bool isPersistentChoice, Color previewColor, bool isFreeColorPalette = false)

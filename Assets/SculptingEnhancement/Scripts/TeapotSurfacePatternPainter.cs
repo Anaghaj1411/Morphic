@@ -28,10 +28,10 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     [SerializeField] private Color strokeColor = Color.white;
 
     [Header("Stroke Stabilization")]
-    [SerializeField, Range(0f, 1f)] private float stabilization = 0.78f;
-    [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 0.85f;
-    [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.008f;
-    [SerializeField, Range(8f, 72f)] private float pullPixels = 34f;
+    [SerializeField, Range(0f, 1f)] private float stabilization = 0.42f;
+    [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 1.4f;
+    [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.02f;
+    [SerializeField, Range(8f, 72f)] private float pullPixels = 14f;
 
     private readonly List<StrokeRecord> completedStrokes = new List<StrokeRecord>();
     private readonly List<StrokeRecord> clayStrokes = new List<StrokeRecord>();
@@ -76,6 +76,9 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private bool paintingEnabled;
     private int lastProcessedFrame = -1;
+    private float lastOnSurfaceTime = -1f;
+    private float lostPointHold;
+    private readonly RaycastHit[] rayHits = new RaycastHit[16];
 
     private bool pointerFilterReady;
     private float filteredPointerX;
@@ -249,8 +252,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             ResetStabilizer();
         }
 
-        if (cursorObject != null)
-            cursorObject.SetActive(enabled && isPointerOnSurface);
+        if (cursorObject != null && !enabled && cursorObject.activeSelf)
+            cursorObject.SetActive(false);
     }
 
     public void SetDrawingLocked(bool locked)
@@ -475,6 +478,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private void Awake()
     {
+        stabilization = 0.42f;
+        pullPixels = 14f;
         Physics.queriesHitBackfaces = true;
         if (teapotRenderer != null && teapotRenderer.sharedMesh != null)
             cachedTriangles = teapotRenderer.sharedMesh.triangles;
@@ -521,8 +526,6 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
         SculptHandFrame hand = default;
         bool hasHandData = isHandTracked && handRunner != null && handRunner.TryGetLatestHand(out hand);
-        UpdateOpenPalmLock(hasHandData, hand);
-
         bool pointingNow = hasHandData && IsIndexPointing(hand, isDrawingActive, clayCoilMode);
         Ray ray = StabilizedRay(viewCamera, screenPosition);
         PerformRaycast(ray);
@@ -566,8 +569,6 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             rawScreen = viewCamera.ViewportToScreenPoint(
                 new Vector3(hand.IndexTip.x, hand.IndexTip.y, 0f));
         }
-
-        UpdateOpenPalmLock(hasHand, hand);
 
         bool pointingNow = hasHand && IsIndexPointing(hand, isDrawingActive, clayCoilMode);
         Ray ray = StabilizedRay(viewCamera, rawScreen);
@@ -673,35 +674,25 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public static bool IsIndexPointing(SculptHandFrame hand, bool alreadyDrawing, bool easyMode)
     {
+        if (IsOpenPalm(hand))
+            return false;
+
         float palm = Mathf.Max(hand.PalmWidth, 0.001f);
-        float minAngle;
-        float minIndexReach;
-        float maxOtherReach;
-        float maxMiddleReach;
-        float minPinch;
-        if (easyMode)
-        {
-            minAngle = alreadyDrawing ? 58f : 70f;
-            minIndexReach = alreadyDrawing ? 0.62f : 0.72f;
-            maxOtherReach = alreadyDrawing ? 2.35f : 2.10f;
-            maxMiddleReach = alreadyDrawing ? 1.85f : 1.55f;
-            minPinch = alreadyDrawing ? palm * 0.05f : palm * 0.08f;
-        }
-        else
-        {
-            minAngle = alreadyDrawing ? 62f : 72f;
-            minIndexReach = alreadyDrawing ? 0.64f : 0.74f;
-            maxOtherReach = alreadyDrawing ? 2.20f : 2.00f;
-            maxMiddleReach = alreadyDrawing ? 1.70f : 1.48f;
-            minPinch = alreadyDrawing ? palm * 0.06f : palm * 0.10f;
-        }
+        bool clay = alreadyDrawing || easyMode;
+        float minAngle = clay ? 48f : 58f;
+        float minIndexReach = clay ? 0.52f : 0.64f;
+        float maxMiddle = clay ? 1.10f : 0.98f;
+        float maxOthers = clay ? 1.30f : 1.12f;
+        float minLead = clay ? 0.08f : 0.12f;
+        float minPinch = alreadyDrawing ? palm * 0.04f : palm * 0.07f;
 
         bool indexOut = hand.IndexExtensionAngle >= minAngle &&
                         hand.IndexTipPalmRatio >= minIndexReach;
-        bool othersOk = hand.OtherFingersCurlRatio <= maxOtherReach &&
-                        hand.MiddleTipPalmRatio <= maxMiddleReach;
+        bool othersCurled = hand.MiddleTipPalmRatio <= maxMiddle &&
+                            hand.OtherFingersCurlRatio <= maxOthers;
+        bool indexLeads = hand.IndexTipPalmRatio >= hand.MiddleTipPalmRatio + minLead;
         bool notPinching = hand.PinchDistance >= minPinch;
-        return indexOut && othersOk && notPinching;
+        return indexOut && othersCurled && indexLeads && notPinching;
     }
 
     public static bool IsOpenPalm(SculptHandFrame hand)
@@ -716,14 +707,14 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private void PerformRaycast(Ray ray)
     {
-        RaycastHit[] hits = Physics.RaycastAll(ray, 100f);
+        int hitCount = Physics.RaycastNonAlloc(ray, rayHits, 100f);
         RaycastHit closestHit = default;
         float minDistance = float.MaxValue;
         bool hitFound = false;
 
-        for (int i = 0; i < hits.Length; i++)
+        for (int i = 0; i < hitCount; i++)
         {
-            RaycastHit h = hits[i];
+            RaycastHit h = rayHits[i];
             bool isTeapotHit = false;
 
             if (surfaceCollider != null && h.collider == surfaceCollider)
@@ -750,6 +741,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         if (hitFound)
         {
             isPointerOnSurface = true;
+            lastOnSurfaceTime = Time.unscaledTime;
             currentSurfacePoint = closestHit.point;
             currentSurfaceNormal = closestHit.normal.sqrMagnitude > 0.001f
                 ? closestHit.normal.normalized
@@ -757,11 +749,10 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             lastHitTriangleIndex = closestHit.triangleIndex;
             lastHitBarycentric = closestHit.barycentricCoordinate;
         }
-        else
+        else if (lastOnSurfaceTime < 0f ||
+                 Time.unscaledTime - lastOnSurfaceTime > 0.28f)
         {
             isPointerOnSurface = false;
-            lastHitTriangleIndex = -1;
-            lastHitBarycentric = Vector3.zero;
         }
     }
 
@@ -770,36 +761,30 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         if (cursorObject == null)
             return;
 
-        if (!isPointerOnSurface || !paintingEnabled)
+        bool showCursor = paintingEnabled &&
+            (isPointerOnSurface ||
+             (lastOnSurfaceTime >= 0f &&
+              Time.unscaledTime - lastOnSurfaceTime < 0.28f));
+        if (!showCursor)
         {
-            cursorObject.SetActive(false);
+            if (cursorObject.activeSelf)
+                cursorObject.SetActive(false);
             return;
         }
 
-        cursorObject.SetActive(true);
+        if (!cursorObject.activeSelf)
+            cursorObject.SetActive(true);
         cursorObject.transform.position = currentSurfacePoint + currentSurfaceNormal * 0.006f;
         if (currentSurfaceNormal.sqrMagnitude > 0.001f)
             cursorObject.transform.rotation = Quaternion.LookRotation(currentSurfaceNormal);
 
         Color cursorColor;
-        if (isDrawingLocked)
-        {
-            // Amber/Gold indicates locked state
-            cursorColor = new Color(1f, 0.78f, 0.15f, 0.95f);
-        }
-        else if (clayCoilMode)
-        {
+        if (clayCoilMode)
             cursorColor = new Color(clayColor.r, clayColor.g, clayColor.b, isDrawingActive ? 0.95f : 0.9f);
-        }
         else if (isDrawingActive)
-        {
             cursorColor = new Color(0.2f, 1f, 0.35f, 0.95f);
-        }
         else
-        {
-            // Cyan hover
             cursorColor = new Color(0.1f, 0.85f, 1f, 0.9f);
-        }
 
         if (cursorRing != null)
         {
@@ -1154,14 +1139,26 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private void ApplyDrawIntent(bool hasHandData, SculptHandFrame hand, bool mouseHeld)
     {
-        bool shouldDraw = false;
-        if (isPointerOnSurface && !isDrawingLocked)
+        bool openPalm = hasHandData && IsOpenPalm(hand);
+        bool pointing = false;
+        if (!isDrawingLocked && !openPalm)
         {
             if (hasHandData)
-                shouldDraw = IsIndexPointing(hand, isDrawingActive, clayCoilMode);
+                pointing = IsIndexPointing(hand, isDrawingActive, clayCoilMode);
             else
-                shouldDraw = mouseHeld;
+                pointing = mouseHeld;
         }
+
+        if (openPalm)
+            lostPointHold = 1f;
+        else if (pointing)
+            lostPointHold = 0f;
+        else if (isDrawingActive)
+            lostPointHold += Time.unscaledDeltaTime;
+
+        bool shouldDraw = !isDrawingLocked && !openPalm &&
+            (isPointerOnSurface || isDrawingActive) &&
+            (pointing || (isDrawingActive && lostPointHold < 0.18f));
 
         if (shouldDraw)
         {
@@ -1171,11 +1168,14 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
                 BeginNewStroke();
             }
 
-            AppendPointToStroke(
-                currentSurfacePoint,
-                currentSurfaceNormal,
-                lastHitTriangleIndex,
-                lastHitBarycentric);
+            if (isPointerOnSurface || lastHitTriangleIndex >= 0)
+            {
+                AppendPointToStroke(
+                    currentSurfacePoint,
+                    currentSurfaceNormal,
+                    lastHitTriangleIndex,
+                    lastHitBarycentric);
+            }
         }
         else if (isDrawingActive)
         {
@@ -1185,21 +1185,6 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private void UpdateOpenPalmLock(bool hasHandData, SculptHandFrame hand)
     {
-        if (!hasHandData)
-            return;
-
-        if (IsOpenPalm(hand))
-        {
-            openPalmTimer += Time.deltaTime;
-            if (!isDrawingLocked && openPalmTimer >= 0.35f)
-                SetDrawingLocked(true);
-            else if (isDrawingLocked && openPalmTimer >= 0.6f)
-                SetDrawingLocked(false);
-        }
-        else
-        {
-            openPalmTimer = Mathf.Max(0f, openPalmTimer - Time.deltaTime * 2f);
-        }
     }
 
     private Ray StabilizedRay(Camera viewCamera, Vector2 rawScreen)

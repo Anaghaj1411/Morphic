@@ -466,15 +466,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 patternPainter.SetClayCoilMode(true);
                 patternPainter.SetPaintingEnabled(true);
                 patternPainter.ProcessPointer(screenPosition, hasHand, Input.GetMouseButton(0));
-
-                if (patternPainter.IsLocked)
-                    instructionText.text = "CLAY LOCKED. Open palm again to unlock.";
-                else if (patternPainter.IsDrawing)
-                    instructionText.text = "LAYING CLAY... Trace your index finger.";
-                else if (patternPainter.IsOverSurface)
-                    instructionText.text = "Point index finger and draw clay on the lantern.";
-                else
-                    instructionText.text = "Aim at the lantern. Point index finger to draw clay.";
             }
         }
 
@@ -690,8 +681,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetHeaderBackLabel("← BACK");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
-        instructionText.gameObject.SetActive(true);
-        instructionText.text = "Pick coil size and height, then point your index finger and draw clay.";
+        if (instructionText != null)
+            instructionText.gameObject.SetActive(false);
+        if (uiRoot != null)
+            uiRoot.transform.SetAsLastSibling();
         RefreshVertexSculptButtons();
         ResetDwell();
         SetHoveredTarget(null);
@@ -1029,8 +1022,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         selectedVertexSculptSizeIndex = Mathf.Clamp(sizeIdx, 0, vertexSculptBrushSizes.Length - 1);
         ApplyVertexSculptSettings();
         RefreshVertexSculptButtons();
-        instructionText.text = "Coil size: " + vertexSculptBrushSizeLabels[selectedVertexSculptSizeIndex] +
-            ". Point index finger and draw.";
     }
 
     private void SelectVertexSculptStrength(int strengthIdx)
@@ -1038,10 +1029,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         selectedVertexSculptStrengthIndex = Mathf.Clamp(strengthIdx, 0, vertexSculptStrengths.Length - 1);
         ApplyVertexSculptSettings();
         RefreshVertexSculptButtons();
-        instructionText.text = selectedVertexSculptStrengthIndex == vertexSculptStrengths.Length - 1
-            ? "MAX height: puffy clay coil. Point index finger and draw."
-            : "Coil height: " + vertexSculptStrengthLabels[selectedVertexSculptStrengthIndex] +
-                ". Point index finger and draw.";
     }
 
     private void ApplyVertexSculptSettings()
@@ -2423,6 +2410,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             "CursorDot", cursorRect, Vector2.zero, new Vector2(46f, 46f),
             "●", 34f, TextAlignmentOptions.Center, FontStyles.Normal);
         Stretch(cursorText.rectTransform);
+        cursorText.raycastTarget = false;
         cursorText.color = LanguagePageBuilder.Pink;
         Outline outline = cursorText.gameObject.AddComponent<Outline>();
         outline.effectColor = LanguagePageBuilder.Green;
@@ -5278,7 +5266,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void SetCursorVisible(bool visible)
     {
-        if (cursorRect != null && cursorRect.gameObject.activeSelf != visible)
+        if (cursorRect == null)
+            return;
+        if (cursorRect.gameObject.activeSelf != visible)
             cursorRect.gameObject.SetActive(visible);
     }
 
