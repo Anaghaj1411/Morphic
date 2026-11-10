@@ -85,6 +85,7 @@ public class DialogueManager : MonoBehaviour
     private SculptingEnhancementTeapotColorController teapotColorController;
     private SculptingEnhancementKerisColorController kerisColorController;
     private MorphicAIHelpUI aiHelpUi;
+    private MorphicRotationResetUI rotationResetUi;
     private GameObject sculptBackRoot;
     private GameObject craftExitRoot;
     private MainMenuStartTransition studioCameraTransition;
@@ -113,6 +114,11 @@ public class DialogueManager : MonoBehaviour
         if (aiHelpUi == null)
             aiHelpUi = gameObject.AddComponent<MorphicAIHelpUI>();
         aiHelpUi.SetVisible(false);
+
+        rotationResetUi = FindFirstObjectByType<MorphicRotationResetUI>(FindObjectsInactive.Include);
+        if (rotationResetUi == null)
+            rotationResetUi = gameObject.AddComponent<MorphicRotationResetUI>();
+        rotationResetUi.SetVisible(false);
 
         // The teapot is placed in the scene like the lantern, but stays hidden
         // until the user chooses India and presses Start Sculpting.
@@ -975,6 +981,8 @@ public class DialogueManager : MonoBehaviour
         // Hide AI help dialog when switching cultures
         if (aiHelpUi != null)
             aiHelpUi.SetVisible(false);
+        if (rotationResetUi != null)
+            rotationResetUi.SetVisible(false);
 
         if (lanternColorController == null)
         {
@@ -1691,6 +1699,12 @@ public class DialogueManager : MonoBehaviour
         if (aiHelpUi == null)
             aiHelpUi = gameObject.AddComponent<MorphicAIHelpUI>();
         aiHelpUi.SetVisible(true);
+
+        if (rotationResetUi == null)
+            rotationResetUi = FindFirstObjectByType<MorphicRotationResetUI>(FindObjectsInactive.Include);
+        if (rotationResetUi == null)
+            rotationResetUi = gameObject.AddComponent<MorphicRotationResetUI>();
+        rotationResetUi.SetVisible(true);
     }
 
     private void EnsureCraftExitButton()
@@ -1789,6 +1803,8 @@ public class DialogueManager : MonoBehaviour
 
         if (aiHelpUi != null)
             aiHelpUi.SetVisible(false);
+        if (rotationResetUi != null)
+            rotationResetUi.SetVisible(false);
 
         SculptingGestureTutorial lanternTutorial =
             GetComponent<SculptingGestureTutorial>();

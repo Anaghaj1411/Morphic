@@ -204,6 +204,14 @@ public sealed class LanternFistRotationController : MonoBehaviour
         return Mathf.Sign(value) * Mathf.Clamp01((magnitude - centerDeadZone) / (range - centerDeadZone));
     }
 
+    public void ResetToRestPose()
+    {
+        PauseRotation();
+        yaw = 0f;
+        pitch = 0f;
+        ApplyRotation();
+    }
+
     private void PauseRotation()
     {
         if (rotating && originalGestureController != null)
