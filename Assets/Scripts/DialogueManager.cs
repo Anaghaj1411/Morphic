@@ -87,6 +87,7 @@ public class DialogueManager : MonoBehaviour
     private MorphicAIHelpUI aiHelpUi;
     private MorphicRotationResetUI rotationResetUi;
     private MorphicGestureHelpUI gestureHelpUi;
+    private MorphicSculptZoomUI zoomUi;
     private GameObject sculptBackRoot;
     private GameObject menuBackRoot;
     private GameObject craftExitRoot;
@@ -127,6 +128,11 @@ public class DialogueManager : MonoBehaviour
         if (gestureHelpUi == null)
             gestureHelpUi = gameObject.AddComponent<MorphicGestureHelpUI>();
         gestureHelpUi.SetVisible(false);
+
+        zoomUi = FindFirstObjectByType<MorphicSculptZoomUI>(FindObjectsInactive.Include);
+        if (zoomUi == null)
+            zoomUi = gameObject.AddComponent<MorphicSculptZoomUI>();
+        zoomUi.SetVisible(false);
 
         // The teapot is placed in the scene like the lantern, but stays hidden
         // until the user chooses India and presses Start Sculpting.
@@ -1080,6 +1086,8 @@ public class DialogueManager : MonoBehaviour
             rotationResetUi.SetVisible(false);
         if (gestureHelpUi != null)
             gestureHelpUi.SetVisible(false);
+        if (zoomUi != null)
+            zoomUi.SetVisible(false);
 
         if (lanternColorController == null)
         {
@@ -1808,6 +1816,12 @@ public class DialogueManager : MonoBehaviour
         if (gestureHelpUi == null)
             gestureHelpUi = gameObject.AddComponent<MorphicGestureHelpUI>();
         gestureHelpUi.SetVisible(true);
+
+        if (zoomUi == null)
+            zoomUi = FindFirstObjectByType<MorphicSculptZoomUI>(FindObjectsInactive.Include);
+        if (zoomUi == null)
+            zoomUi = gameObject.AddComponent<MorphicSculptZoomUI>();
+        zoomUi.SetVisible(true);
     }
 
     private void EnsureCraftExitButton()
@@ -1990,6 +2004,8 @@ public class DialogueManager : MonoBehaviour
             rotationResetUi.SetVisible(false);
         if (gestureHelpUi != null)
             gestureHelpUi.SetVisible(false);
+        if (zoomUi != null)
+            zoomUi.SetVisible(false);
 
         FindMissingReferences();
         if (cameraTransition == null)
@@ -2014,6 +2030,8 @@ public class DialogueManager : MonoBehaviour
             rotationResetUi.SetVisible(false);
         if (gestureHelpUi != null)
             gestureHelpUi.SetVisible(false);
+        if (zoomUi != null)
+            zoomUi.SetVisible(false);
 
         SculptingGestureTutorial lanternTutorial =
             GetComponent<SculptingGestureTutorial>();

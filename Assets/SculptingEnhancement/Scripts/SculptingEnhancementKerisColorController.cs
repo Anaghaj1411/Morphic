@@ -62,6 +62,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private static readonly Vector3 KerisSculptCamPos = new Vector3(-26.13f, 2.553f, -6.1627f);
     private static readonly Vector3 KerisSculptCamEuler = new Vector3(3.238f, -256.979f, 90.748f);
     private const float KerisSculptCamFov = 50f;
+    private const float KerisSculptZoomBlend = 0.22f;
 
     private static readonly Color CardCream = new Color32(255, 239, 214, 255);
     private static readonly Color PillPink = LanguagePageBuilder.Pink;
@@ -803,12 +804,17 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (cam == null)
             return;
 
+        MorphicSculptZoomUI.HandOffToVertexSculpt(
+            ref hasStoredSculptCam,
+            ref storedSculptCamPos,
+            ref storedSculptCamRot,
+            ref storedSculptCamFov,
+            ref storedSculptCamNear);
+
         if (!hasStoredSculptCam)
             CaptureStudioCamera();
 
-        Vector3 targetPos = KerisSculptCamPos;
-        Quaternion targetRot = Quaternion.Euler(KerisSculptCamEuler);
-        float targetFov = KerisSculptCamFov;
+        GetMinimizedKerisSculptPose(out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
 
         vertexSculptCameraZoomed = true;
@@ -840,25 +846,32 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         hasStoredSculptCam = true;
     }
 
+    private void GetMinimizedKerisSculptPose(
+        out Vector3 pos,
+        out Quaternion rot,
+        out float fov)
+    {
+        if (!hasStoredSculptCam)
+        {
+            pos = KerisSculptCamPos;
+            rot = Quaternion.Euler(KerisSculptCamEuler);
+            fov = KerisSculptCamFov;
+            return;
+        }
+
+        pos = Vector3.Lerp(storedSculptCamPos, KerisSculptCamPos, KerisSculptZoomBlend);
+        rot = storedSculptCamRot;
+        fov = storedSculptCamFov;
+    }
+
     private void ApplyKerisSculptCameraPose(Camera cam)
     {
-        ApplyCameraPose(
-            cam,
-            KerisSculptCamPos,
-            Quaternion.Euler(KerisSculptCamEuler),
-            KerisSculptCamFov,
-            0.05f);
+        GetMinimizedKerisSculptPose(out Vector3 pos, out Quaternion rot, out float fov);
+        ApplyCameraPose(cam, pos, rot, fov, 0.05f);
 
         Camera named = FindNamedMainCamera();
         if (named != null && named != cam)
-        {
-            ApplyCameraPose(
-                named,
-                KerisSculptCamPos,
-                Quaternion.Euler(KerisSculptCamEuler),
-                KerisSculptCamFov,
-                0.05f);
-        }
+            ApplyCameraPose(named, pos, rot, fov, 0.05f);
     }
 
     private static void ApplyCameraPose(Camera cam, Vector3 pos, Quaternion rot, float fov, float near)
@@ -909,6 +922,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void RestoreVertexSculptCamera()
     {
+        MorphicSculptZoomUI.ReleaseIfPresent();
         if (!hasStoredSculptCam)
             return;
 
@@ -938,6 +952,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void SnapRestoreVertexSculptCamera()
     {
+        MorphicSculptZoomUI.ReleaseIfPresent();
         if (!hasStoredSculptCam)
             return;
 

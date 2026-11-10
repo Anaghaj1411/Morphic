@@ -2138,6 +2138,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (cam == null || focusRenderer == null)
             return;
 
+        MorphicSculptZoomUI.HandOffToVertexSculpt(
+            ref hasStoredSculptCam,
+            ref storedSculptCamPos,
+            ref storedSculptCamRot,
+            ref storedSculptCamFov,
+            ref storedSculptCamNear);
+
         if (!hasStoredSculptCam)
         {
             storedSculptCamPos = cam.transform.position;
@@ -2177,22 +2184,16 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             dist = 2f;
         }
 
-        float targetDist = dist * 0.72f;
-        float minDist = Mathf.Max(0.32f, bounds.extents.magnitude * 0.42f);
-        if (minDist > dist * 0.85f)
-            minDist = dist * 0.58f;
-        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.88f);
+        float targetDist = dist * 0.90f;
+        float minDist = Mathf.Max(0.45f, bounds.extents.magnitude * 0.85f);
+        if (minDist > dist * 0.95f)
+            minDist = dist * 0.88f;
+        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.95f);
 
         Vector3 back = offset.normalized;
-        Vector3 camRight = storedSculptCamRot * Vector3.right;
-        if (camRight.sqrMagnitude < 0.0001f)
-            camRight = cam.transform.right;
-        else
-            camRight.Normalize();
-
-        targetPos = focus + back * targetDist + camRight * (targetDist * 0.10f);
+        targetPos = focus + back * targetDist;
         targetRot = storedSculptCamRot;
-        targetFov = Mathf.Max(34f, storedSculptCamFov * 0.92f);
+        targetFov = storedSculptCamFov;
     }
 
     [ContextMenu("Capture Current View As Sculpt Camera")]
@@ -2228,6 +2229,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void RestoreVertexSculptCamera()
     {
+        MorphicSculptZoomUI.ReleaseIfPresent();
         if (!hasStoredSculptCam)
             return;
 
@@ -2257,6 +2259,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void SnapRestoreVertexSculptCamera()
     {
+        MorphicSculptZoomUI.ReleaseIfPresent();
         if (!hasStoredSculptCam)
             return;
 

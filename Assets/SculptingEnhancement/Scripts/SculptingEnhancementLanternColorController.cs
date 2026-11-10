@@ -717,6 +717,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (cam == null || focusRenderer == null)
             return;
 
+        MorphicSculptZoomUI.HandOffToVertexSculpt(
+            ref hasStoredSculptCam,
+            ref storedSculptCamPos,
+            ref storedSculptCamRot,
+            ref storedSculptCamFov,
+            ref storedSculptCamNear);
+
         if (!hasStoredSculptCam)
         {
             storedSculptCamPos = cam.transform.position;
@@ -756,22 +763,16 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             dist = 2f;
         }
 
-        float targetDist = dist * 0.62f;
-        float minDist = Mathf.Max(0.28f, bounds.extents.magnitude * 0.36f);
-        if (minDist > dist * 0.8f)
-            minDist = dist * 0.50f;
-        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.78f);
+        float targetDist = dist * 0.88f;
+        float minDist = Mathf.Max(0.45f, bounds.extents.magnitude * 0.85f);
+        if (minDist > dist * 0.95f)
+            minDist = dist * 0.86f;
+        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.94f);
 
         Vector3 back = offset.normalized;
-        Vector3 camRight = storedSculptCamRot * Vector3.right;
-        if (camRight.sqrMagnitude < 0.0001f)
-            camRight = cam.transform.right;
-        else
-            camRight.Normalize();
-
-        targetPos = focus + back * targetDist + camRight * (targetDist * 0.10f);
+        targetPos = focus + back * targetDist;
         targetRot = storedSculptCamRot;
-        targetFov = Mathf.Max(32f, storedSculptCamFov * 0.86f);
+        targetFov = storedSculptCamFov;
     }
 
     [ContextMenu("Capture Current View As Sculpt Camera")]
@@ -807,6 +808,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void RestoreVertexSculptCamera()
     {
+        MorphicSculptZoomUI.ReleaseIfPresent();
         if (!hasStoredSculptCam)
             return;
 
@@ -836,6 +838,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void SnapRestoreVertexSculptCamera()
     {
+        MorphicSculptZoomUI.ReleaseIfPresent();
         if (!hasStoredSculptCam)
             return;
 
