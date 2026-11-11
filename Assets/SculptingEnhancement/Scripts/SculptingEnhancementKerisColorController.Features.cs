@@ -490,11 +490,13 @@ public sealed partial class SculptingEnhancementKerisColorController
             historyBar.SetActive(true);
         if (bodyActionGroup != null)
             bodyActionGroup.SetActive(true);
-        headerText.text = "KERIS BODY";
+        MorphicLoc.Apply(headerText, "KERIS BODY");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = appliedDesignTexture != null
-            ? "Change the blade color, add another stamp, or draw a band."
-            : "Change the blade color, add a stamped design, or draw a band.";
+        MorphicLoc.Apply(
+            instructionText,
+            appliedDesignTexture != null
+                ? "Change the blade color, add another stamp, or draw a band."
+                : "Change the blade color, add a stamped design, or draw a band.");
         SetHeaderBackLabel("← PARTS");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -566,11 +568,13 @@ public sealed partial class SculptingEnhancementKerisColorController
             selfieEntryButton.gameObject.SetActive(false);
         if (designGroup != null)
             designGroup.SetActive(true);
-        headerText.text = "ADD DESIGN";
+        MorphicLoc.Apply(headerText, "ADD DESIGN");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = kerisStamps == null || kerisStamps.Length == 0
-            ? "No stamps found in StampPatterns."
-            : "Choose a stamp. Then tint it with Change Color.";
+        MorphicLoc.Apply(
+            instructionText,
+            kerisStamps == null || kerisStamps.Length == 0
+                ? "No stamps found in StampPatterns."
+                : "Choose a stamp. Then tint it with Change Color.");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -621,7 +625,7 @@ public sealed partial class SculptingEnhancementKerisColorController
     private void ClearKerisDesign()
     {
         HideKerisDesign();
-        instructionText.text = "Design cleared.";
+        MorphicLoc.Apply(instructionText, "Design cleared.");
         PushHistory();
     }
 
@@ -656,12 +660,14 @@ public sealed partial class SculptingEnhancementKerisColorController
     {
         if (stamp == null)
         {
-            instructionText.text = "That stamp is missing.";
+            MorphicLoc.Apply(instructionText, "That stamp is missing.");
             return;
         }
 
         ApplyKerisStamp(stamp, committedDesignTint);
-        instructionText.text = PatternLabel(stamp) + " applied. Change Color tints the stamp.";
+        instructionText.text = MorphicLoc.T(PatternLabel(stamp)) +
+            MorphicLoc.T(" applied. Change Color tints the stamp.");
+        MorphicLoc.ApplyFont(instructionText);
         PushHistory();
     }
 
@@ -706,9 +712,9 @@ public sealed partial class SculptingEnhancementKerisColorController
             historyBar.SetActive(true);
         if (bandGroup != null)
             bandGroup.SetActive(true);
-        headerText.text = "DRAW BAND";
+        MorphicLoc.Apply(headerText, "DRAW BAND");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Select a motif, adjust size & color, then trace on the keris.";
+        MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on the keris.");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -769,7 +775,8 @@ public sealed partial class SculptingEnhancementKerisColorController
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
             TextMeshProUGUI labelText = labelObj.GetComponent<TextMeshProUGUI>();
-            labelText.text = "BAND " + (i + 1);
+            labelText.text = MorphicLoc.F("BAND {0}", i + 1);
+            MorphicLoc.ApplyFont(labelText);
             labelText.fontSize = 18f;
             labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
@@ -852,7 +859,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         {
             if (patternPainter != null)
                 patternPainter.ClearAllStrokes();
-            instructionText.text = "All drawings cleared.";
+            MorphicLoc.Apply(instructionText, "All drawings cleared.");
         });
         RegisterHitTarget(clearStrokes, false, false, Color.white);
 
@@ -922,14 +929,15 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (historyBar != null)
             historyBar.SetActive(false);
         SetPanelHeight(330f);
-        headerText.text = "DRAW: " + motifName.ToUpperInvariant();
+        headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motifName.ToUpperInvariant()));
+        MorphicLoc.ApplyFont(headerText);
         SetHeaderBackLabel("← MOTIFS");
         SetHeaderBackVisible(true);
         instructionText.gameObject.SetActive(true);
         instructionText.fontSize = 20f;
         instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
-        instructionText.text = "Trace index finger across the keris to draw. Open palm to lock.";
+        MorphicLoc.Apply(instructionText, "Trace index finger across the keris to draw. Open palm to lock.");
         ResetDwell();
         SetHoveredTarget(null);
         BeginVertexSculptCameraZoom();
@@ -946,7 +954,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         }
 
         RefreshBandSizeButtons();
-        instructionText.text = "Band width: " + bandSizeLabels[selectedBandSizeIndex] + ".";
+        instructionText.text = MorphicLoc.F("SIZE: {0}", MorphicLoc.T(bandSizeLabels[selectedBandSizeIndex]));
+        MorphicLoc.ApplyFont(instructionText);
     }
 
     private void RefreshBandSizeButtons()
@@ -964,7 +973,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         {
             TMP_Text label = targetingSizeBtn.GetComponentInChildren<TMP_Text>();
             if (label != null)
-                label.text = "SIZE: " + bandSizeLabels[selectedBandSizeIndex];
+                MorphicLoc.Apply(label, "SIZE: " + bandSizeLabels[selectedBandSizeIndex]);
         }
     }
 
@@ -985,7 +994,7 @@ public sealed partial class SculptingEnhancementKerisColorController
                 bandPreviews[i].texture = kerisBands[i];
             TMP_Text label = bandButtons[i].GetComponentInChildren<TMP_Text>();
             if (label != null)
-                label.text = PatternLabel(kerisBands[i]);
+                MorphicLoc.Apply(label, PatternLabel(kerisBands[i]));
         }
     }
 
@@ -997,9 +1006,9 @@ public sealed partial class SculptingEnhancementKerisColorController
         designTintActive = false;
         selectedPart = PartBody;
         ShowColorSelection();
-        headerText.text = "BAND COLOR";
+        MorphicLoc.Apply(headerText, "BAND COLOR");
         SetHeaderBackLabel(returnToBandDrawing ? "← DRAW" : "← MOTIFS");
-        instructionText.text = "Point and hold on a color to tint the band designs.";
+        MorphicLoc.Apply(instructionText, "Point and hold on a color to tint the band designs.");
     }
 
     private void EnsureBandTargetingBar()
@@ -1039,7 +1048,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         {
             if (patternPainter != null)
                 patternPainter.UndoLastStroke();
-            instructionText.text = "Last stroke undone.";
+            MorphicLoc.Apply(instructionText, "Last stroke undone.");
         });
         RegisterHitTarget(undoBtn, false, false, Color.white);
 
@@ -1050,7 +1059,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         {
             if (patternPainter != null)
                 patternPainter.RedoLastStroke();
-            instructionText.text = "Last stroke redone.";
+            MorphicLoc.Apply(instructionText, "Last stroke redone.");
         });
         RegisterHitTarget(redoBtn, false, false, Color.white);
 
@@ -1061,7 +1070,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         {
             if (patternPainter != null)
                 patternPainter.ClearAllStrokes();
-            instructionText.text = "All drawings cleared.";
+            MorphicLoc.Apply(instructionText, "All drawings cleared.");
         });
         RegisterHitTarget(clearBtn, false, false, Color.white);
         bandTargetingBar.SetActive(false);
@@ -1089,11 +1098,13 @@ public sealed partial class SculptingEnhancementKerisColorController
         SetSelfieReviewControls(hasPhoto);
         if (selfieInstructionText != null)
         {
-            selfieInstructionText.text = hasPhoto
-                ? appliedSelfieTexture != null
-                    ? "Remove the selfie, retake it, or press DONE."
-                    : "Attach the photo to the keris, retake it, or press DONE."
-                : "Frame your photo, then point and hold TAKE SELFIE.";
+            MorphicLoc.Apply(
+                selfieInstructionText,
+                hasPhoto
+                    ? appliedSelfieTexture != null
+                        ? "Remove the selfie, retake it, or press DONE."
+                        : "Attach the photo to the keris, retake it, or press DONE."
+                    : "Frame your photo, then point and hold TAKE SELFIE.");
         }
 
         ShowLiveSelfiePreview();
@@ -1122,7 +1133,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         var imageSource = ImageSourceProvider.ImageSource;
         if (imageSource == null || !imageSource.isPrepared)
         {
-            if (selfieInstructionText != null) selfieInstructionText.text = "Camera is not ready yet.";
+            if (selfieInstructionText != null)
+                MorphicLoc.Apply(selfieInstructionText, "Camera is not ready yet.");
             return;
         }
         
@@ -1130,7 +1142,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         Texture2D readable = MorphicOverlayShaders.CaptureWebcamFrame(source);
         if (readable == null)
         {
-            if (selfieInstructionText != null) selfieInstructionText.text = "Could not capture camera image.";
+            if (selfieInstructionText != null)
+                MorphicLoc.Apply(selfieInstructionText, "Could not capture camera image.");
             return;
         }
 
@@ -1147,7 +1160,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         SetSelfiePreviewTexture(capturedSelfieTexture);
         SetSelfieReviewControls(true);
         if (selfieInstructionText != null)
-            selfieInstructionText.text = "Attach the photo to the keris, retake it, or press DONE.";
+            MorphicLoc.Apply(selfieInstructionText, "Attach the photo to the keris, retake it, or press DONE.");
     }
 
     private void BeginSelfieRetake()
@@ -1157,7 +1170,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         SetSelfieReviewControls(false);
         ShowLiveSelfiePreview();
         if (selfieInstructionText != null)
-            selfieInstructionText.text = "Frame your photo, then point and hold TAKE SELFIE.";
+            MorphicLoc.Apply(selfieInstructionText, "Frame your photo, then point and hold TAKE SELFIE.");
     }
 
     private void KeepSelfie()
@@ -1187,7 +1200,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         SetSelfieReviewControls(false);
         ShowLiveSelfiePreview();
         if (selfieInstructionText != null)
-            selfieInstructionText.text = "Selfie removed. Take a new one, or press BACK.";
+            MorphicLoc.Apply(selfieInstructionText, "Selfie removed. Take a new one, or press BACK.");
     }
 
     private void ForgetTimedSelfie()
@@ -1218,9 +1231,9 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (selfiePanel != null) selfiePanel.SetActive(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
-        headerText.text = "REVIEW";
+        MorphicLoc.Apply(headerText, "REVIEW");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Go back, or put this keris on the shelf.";
+        MorphicLoc.Apply(instructionText, "Go back, or put this keris on the shelf.");
         SetHeaderBackLabel("← PALETTE");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -1244,9 +1257,9 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (selfiePanel != null) selfiePanel.SetActive(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
-        headerText.text = "SHELF";
+        MorphicLoc.Apply(headerText, "SHELF");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Take it back, delete it, or go back when you are done.";
+        MorphicLoc.Apply(instructionText, "Take it back, delete it, or go back when you are done.");
         SetHeaderBackLabel("← REVIEW");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -1268,21 +1281,21 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (kerisShelf == null || ResolveKerisRoot() == null)
         {
             if (instructionText != null)
-                instructionText.text = "The shelf is not ready yet.";
+                MorphicLoc.Apply(instructionText, "The shelf is not ready yet.");
             return;
         }
 
         if (KerisCollectionStore.IsFull)
         {
             if (instructionText != null)
-                instructionText.text = "The shelf is full.";
+                MorphicLoc.Apply(instructionText, "The shelf is full.");
             return;
         }
 
         if (!CommitShelfCopy())
         {
             if (instructionText != null)
-                instructionText.text = "Could not place this keris on the shelf.";
+                MorphicLoc.Apply(instructionText, "Could not place this keris on the shelf.");
             return;
         }
 
@@ -1325,9 +1338,9 @@ public sealed partial class SculptingEnhancementKerisColorController
             shelfGroup.SetActive(false);
         if (confirmDeleteGroup != null)
             confirmDeleteGroup.SetActive(true);
-        headerText.text = "DELETE";
+        MorphicLoc.Apply(headerText, "DELETE");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "This removes the keris from the shelf.";
+        MorphicLoc.Apply(instructionText, "This removes the keris from the shelf.");
         SetHeaderBackVisible(true);
         ResetDwell();
         SetHoveredTarget(null);
@@ -1443,9 +1456,9 @@ public sealed partial class SculptingEnhancementKerisColorController
             return;
 
         EnsureKerisShelfSlots();
-        Transform seat = kerisShelf != null
-            ? kerisShelf.GetSharedSlot(slotIndex)
-            : GetKerisSlot(slotIndex);
+        Transform seat = GetKerisSlot(slotIndex);
+        if (seat == null && kerisShelf != null)
+            seat = kerisShelf.GetSharedSlot(slotIndex);
         Transform collection = kerisShelf != null ? kerisShelf.CollectionRoot : null;
         Quaternion upright = keris.rotation;
         Vector3 worldScale = keris.lossyScale;
@@ -1510,6 +1523,9 @@ public sealed partial class SculptingEnhancementKerisColorController
 
             found.Add(slot);
         }
+
+        for (int i = 0; i < found.Count; i++)
+            MorphicShelfSlotMarker.EnsureOn(found[i]);
 
         kerisSlots = found.ToArray();
     }
@@ -1898,7 +1914,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (instructionText != null)
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Selfie removed.";
+            MorphicLoc.Apply(instructionText, "Selfie removed.");
         }
         return true;
     }
@@ -1916,7 +1932,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (instructionText != null)
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Selfie restored.";
+            MorphicLoc.Apply(instructionText, "Selfie restored.");
         }
         return true;
     }
@@ -3221,7 +3237,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (text == null)
             return;
 
-        text.text = label;
+        MorphicLoc.Apply(text, label);
         text.fontSize = 16f;
         RectTransform labelRect = text.rectTransform;
         labelRect.anchorMin = new Vector2(0f, 0f);

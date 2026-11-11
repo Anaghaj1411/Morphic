@@ -22,7 +22,10 @@ public class MorphicAIHelpUI : MonoBehaviour
         if (visible)
             root.transform.SetAsLastSibling();
         else
+        {
+            MorphicLisaVoice.Stop();
             HideAskCard();
+        }
     }
 
     private void Awake()
@@ -283,7 +286,10 @@ public class MorphicAIHelpUI : MonoBehaviour
         GameObject go = new GameObject(name, typeof(RectTransform));
         go.transform.SetParent(parent, false);
         TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
-        tmp.text = text;
+        if (!string.IsNullOrEmpty(text))
+            MorphicLoc.Bind(tmp, text);
+        else
+            tmp.text = text;
         tmp.fontSize = 22f;
         tmp.alignment = TextAlignmentOptions.MidlineLeft;
         tmp.raycastTarget = false;
@@ -313,7 +319,7 @@ public class MorphicAIHelpUI : MonoBehaviour
         GameObject go = new GameObject("Label", typeof(RectTransform));
         go.transform.SetParent(parent, false);
         TMP_Text tmp = go.AddComponent<TextMeshProUGUI>();
-        tmp.text = text;
+        MorphicLoc.Bind(tmp, text);
         tmp.fontSize = size;
         tmp.alignment = align;
         tmp.color = LanguagePageBuilder.Green;
@@ -374,7 +380,7 @@ public class MorphicAIHelpUI : MonoBehaviour
 
         ShowMessage("LISA: Asking...");
         MorphicCraftHelpState state = BuildHelpState();
-        state.userQuestion = question;
+        state.userQuestion = MorphicLoc.WithAiLanguage(question);
         EnsureAi();
         if (trigger == null || !trigger.RequestSculptHelp(state))
             ShowMessage("LISA: Could not reach help. Try again.");
@@ -458,8 +464,10 @@ public class MorphicAIHelpUI : MonoBehaviour
         {
             bool hasText = !string.IsNullOrWhiteSpace(message);
             helpText.gameObject.SetActive(hasText);
-            helpText.text = message;
+            MorphicLoc.ApplyFont(helpText);
+            helpText.text = MorphicLoc.LocalizeAiReply(message);
             UpdateAskCardHeight();
+            MorphicLisaVoice.SpeakReply(helpText.text);
         }
 
         MorphicAIFeedbackUI feedback =

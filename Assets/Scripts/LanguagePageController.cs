@@ -32,8 +32,9 @@ public class LanguagePageController : MonoBehaviour
     {
         CurrentLanguageCode =
             PlayerPrefs.GetString(
-                "Morphic.Language",
+                MorphicLoc.PrefsKey,
                 "en");
+        MorphicLoc.SetCode(CurrentLanguageCode, false);
     }
 
     public void OpenLanguagePage()
@@ -114,12 +115,7 @@ public class LanguagePageController : MonoBehaviour
     public void SelectLanguage(LanguageChoice choice)
     {
         CurrentLanguageCode = choice.code;
-
-        PlayerPrefs.SetString(
-            "Morphic.Language",
-            choice.code);
-
-        PlayerPrefs.Save();
+        MorphicLoc.SetCode(choice.code);
 
         if (LanguageChanged != null)
         {

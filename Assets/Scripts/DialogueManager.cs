@@ -93,6 +93,8 @@ public class DialogueManager : MonoBehaviour
     private GameObject craftExitRoot;
     private MainMenuStartTransition studioCameraTransition;
     private bool restartDialogueOnMenuStart;
+    private int currentDialogueNode = -1;
+    private string currentCraftIntro;
     private DialogueButtonClickSound dialogueButtonSound;
 
     private void Awake()
@@ -164,6 +166,8 @@ public class DialogueManager : MonoBehaviour
         HideCultureChoices();
         HideRestaurantChoices();
         BindStartTransition();
+        MorphicLoc.Changed -= RefreshLocalizedUi;
+        MorphicLoc.Changed += RefreshLocalizedUi;
 
         // Ensure webcam display is deactivated initially
         if (webcamDisplayController != null)
@@ -276,11 +280,18 @@ public class DialogueManager : MonoBehaviour
 
     private void OnDestroy()
     {
+        MorphicLoc.Changed -= RefreshLocalizedUi;
         if (cameraTransition == null)
             return;
 
         cameraTransition.TransitionCompleted -= OnStartTransitionCompleted;
         cameraTransition.PotteryStudioTransitionCompleted -= OnCameraFinished;
+    }
+
+    private void RefreshLocalizedUi()
+    {
+        if (currentDialogueNode >= 0 && dialogueStarted)
+            ShowNode(currentDialogueNode);
     }
 
     private IEnumerator StartDialogueAfterDelay()
@@ -304,6 +315,8 @@ public class DialogueManager : MonoBehaviour
 
     private void ShowNode(int node)
     {
+        currentDialogueNode = node;
+        currentCraftIntro = null;
         HideAllChoices();
         HideCultureChoices();
         HideRestaurantChoices();
@@ -467,6 +480,7 @@ public class DialogueManager : MonoBehaviour
     {
         ApplyDialogueLabel(speakerName, speaker, new Color32(42, 83, 49, 255));
         ApplyDialogueLabel(dialogueText, message, new Color32(48, 48, 39, 255));
+        MorphicLisaVoice.SpeakLine(message);
     }
 
     private static void ApplyDialogueLabel(TMP_Text label, string message, Color32 color)
@@ -476,7 +490,7 @@ public class DialogueManager : MonoBehaviour
 
         label.gameObject.SetActive(true);
         label.enabled = true;
-        label.text = message;
+        MorphicLoc.Bind(label, message);
         label.color = color;
         label.alpha = 1f;
         if (label.rectTransform.rect.width > 1f &&
@@ -487,7 +501,7 @@ public class DialogueManager : MonoBehaviour
         {
             if (label == null)
                 return;
-            label.text = message;
+            MorphicLoc.Bind(label, message);
             label.color = color;
             label.alpha = 1f;
             label.ForceMeshUpdate();
@@ -501,9 +515,8 @@ public class DialogueManager : MonoBehaviour
 
         label.gameObject.SetActive(true);
         label.enabled = true;
-        label.text = message;
-        label.color = LanguagePageBuilder.Green;
-        label.alpha = 1f;
+        MorphicLoc.Bind(label, message);
+        FinishChoiceLabel(label);
         if (label.rectTransform.rect.width > 1f &&
             label.rectTransform.rect.height > 1f)
             label.ForceMeshUpdate();
@@ -512,9 +525,8 @@ public class DialogueManager : MonoBehaviour
         {
             if (label == null)
                 return;
-            label.text = message;
-            label.color = LanguagePageBuilder.Green;
-            label.alpha = 1f;
+            MorphicLoc.Bind(label, message);
+            FinishChoiceLabel(label);
             label.ForceMeshUpdate();
         });
     }
@@ -697,10 +709,10 @@ public class DialogueManager : MonoBehaviour
         label.transform.SetAsLastSibling();
         label.gameObject.SetActive(true);
         label.enabled = true;
-        label.enableAutoSizing = true;
+        label.enableAutoSizing = false;
         label.fontSizeMin = compact ? 14f : 16f;
         label.fontSizeMax = compact ? 20f : 26f;
-        label.fontSize = compact ? 20f : 26f;
+        label.fontSize = compact ? 20f : 24f;
         label.fontStyle = FontStyles.Bold;
         label.characterSpacing = 0.4f;
         label.color = LanguagePageBuilder.Green;
@@ -712,11 +724,21 @@ public class DialogueManager : MonoBehaviour
         LanguagePageBuilder.Stretch(label.rectTransform, new Vector2(12f, 6f));
 
         Outline textOutline = label.GetComponent<Outline>();
-        if (textOutline == null)
-            textOutline = label.gameObject.AddComponent<Outline>();
-        textOutline.effectColor = new Color32(255, 255, 255, 160);
-        textOutline.effectDistance = new Vector2(1.2f, -1.2f);
-        textOutline.useGraphicAlpha = true;
+        if (textOutline != null)
+            textOutline.enabled = false;
+    }
+
+    private static void FinishChoiceLabel(TMP_Text label)
+    {
+        if (label == null)
+            return;
+        label.enableAutoSizing = false;
+        if (label.fontSize < 16f)
+            label.fontSize = 22f;
+        label.color = LanguagePageBuilder.Green;
+        label.alpha = 1f;
+        label.overflowMode = TextOverflowModes.Overflow;
+        label.enableWordWrapping = false;
     }
 
     private void StyleCultureChoices()
@@ -772,7 +794,7 @@ public class DialogueManager : MonoBehaviour
             GameObject labelObject = new GameObject("Label", typeof(RectTransform));
             labelObject.transform.SetParent(titleFill.transform, false);
             TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
-            label.text = "CHOOSE A CRAFT";
+            MorphicLoc.Bind(label, "CHOOSE A CRAFT");
             label.fontSize = 24f;
             label.fontStyle = FontStyles.Bold;
             label.alignment = TextAlignmentOptions.Center;
@@ -905,6 +927,10 @@ public class DialogueManager : MonoBehaviour
 
         cultureChoicesPanel.SetActive(true);
 
+        Transform title = cultureChoicesPanel.transform.Find("Title/Fill/Label");
+        if (title != null)
+            MorphicLoc.Apply(title.GetComponent<TMP_Text>(), "CHOOSE A CRAFT");
+
         ConfigureCultureButton(taiwanButton, "Taiwan");
         ConfigureCultureButton(indiaButton, "India");
         ConfigureCultureButton(indonesiaButton, "Indonesia");
@@ -997,6 +1023,7 @@ public class DialogueManager : MonoBehaviour
 
     private void StartSculpting(string culture)
     {
+        currentCraftIntro = culture;
         HideAllChoices();
         HideCultureChoices();
 
@@ -1075,6 +1102,7 @@ public class DialogueManager : MonoBehaviour
 
     private void BeginSculpting(string culture)
     {
+        MorphicLisaVoice.Stop();
         HideAllChoices();
         HideCultureChoices();
         SetMenuBackVisible(false);
@@ -1121,6 +1149,7 @@ public class DialogueManager : MonoBehaviour
                     // Preserve the manually configured Transform.
                     // The lantern uses BlendShapes, not ParametricSkyLantern.
                     taiwanLantern.SetActive(true);
+                    ShowWorkingLantern(true);
 
                     Debug.Log("MORPHIC: Taiwan Lantern activated.");
                 }
@@ -1255,6 +1284,7 @@ public class DialogueManager : MonoBehaviour
                 if (indonesiaKeris != null)
                     indonesiaKeris.SetActive(false);
                 HideKerisPalette();
+                ShowWorkingLantern(false);
 
                 // India and Taiwan share the configured hand-tracking source,
                 // but only the selected craft's gesture controller should be
@@ -1357,6 +1387,7 @@ public class DialogueManager : MonoBehaviour
                     taiwanLantern.SetActive(false);
                 if (indiaTeapot != null)
                     indiaTeapot.SetActive(false);
+                ShowWorkingLantern(false);
 
                 GameObject teapotGestureStatus = FindSceneObject("Teapot Gesture Status");
                 if (teapotGestureStatus != null)
@@ -1714,6 +1745,19 @@ public class DialogueManager : MonoBehaviour
             kerisColorController.SetPaletteAvailable(false);
     }
 
+    private void ShowWorkingLantern(bool visible)
+    {
+        if (lanternColorController == null)
+        {
+            lanternColorController =
+                FindFirstObjectByType<SculptingEnhancementLanternColorController>(
+                    FindObjectsInactive.Include);
+        }
+
+        if (lanternColorController != null)
+            lanternColorController.SetWorkingLanternVisible(visible);
+    }
+
     private void SnapViewToPotteryStudio()
     {
         if (studioCameraTransition == null)
@@ -2016,6 +2060,7 @@ public class DialogueManager : MonoBehaviour
             return;
         }
 
+        MorphicLisaVoice.Stop();
         cameraTransition.PotteryStudioTransitionCompleted -= OnCameraFinished;
         cameraTransition.ReturnToMainMenu();
     }
@@ -2054,6 +2099,7 @@ public class DialogueManager : MonoBehaviour
         if (teapotColorController != null)
             teapotColorController.SetPaletteAvailable(false);
         HideKerisPalette();
+        ShowWorkingLantern(false);
 
         SetLanternSculptDriving(false);
         if (taiwanGestureIndicator != null)

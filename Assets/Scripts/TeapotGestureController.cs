@@ -1075,7 +1075,10 @@ public sealed class TeapotGestureController : MonoBehaviour
     private void SetStatus(string message)
     {
         if (gestureStatus != null)
-            gestureStatus.text = message;
+        {
+            MorphicLoc.ApplyFont(gestureStatus);
+            gestureStatus.text = MorphicLoc.T(message);
+        }
     }
 
     private void EnsureTeapotFistRotator()

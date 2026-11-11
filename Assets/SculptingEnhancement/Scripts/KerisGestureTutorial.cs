@@ -209,9 +209,10 @@ public sealed class KerisGestureTutorial : MonoBehaviour
         stepRecognized = false;
         recognizedHold = 0f;
         Step step = Steps[stepIndex];
-        stepText.text = "GESTURE " + (stepIndex + 1) + " OF " + Steps.Length;
-        titleText.text = step.Title;
-        instructionText.text = step.Instruction;
+        MorphicLoc.ApplyFont(stepText);
+        stepText.text = MorphicLoc.F("GESTURE {0} OF {1}", stepIndex + 1, Steps.Length);
+        MorphicLoc.Bind(titleText, step.Title);
+        MorphicLoc.Bind(instructionText, step.Instruction);
         if (gesturePreview != null)
             gesturePreview.Play(step.Gesture.ToString(), step.ImagePath);
         if (statusText != null)
@@ -219,10 +220,11 @@ public sealed class KerisGestureTutorial : MonoBehaviour
             statusText.text = "";
             statusText.gameObject.SetActive(false);
         }
-        nextButton.GetComponentInChildren<TMP_Text>().text =
+        MorphicLoc.Bind(
+            nextButton.GetComponentInChildren<TMP_Text>(),
             stepIndex == Steps.Length - 1
                 ? (preserveSculpt ? "DONE" : "START SCULPTING")
-                : "NEXT";
+                : "NEXT");
     }
 
     private void MarkRecognized()
@@ -231,7 +233,7 @@ public sealed class KerisGestureTutorial : MonoBehaviour
             return;
         stepRecognized = true;
         statusText.gameObject.SetActive(true);
-        statusText.text = "GOOD";
+        MorphicLoc.Bind(statusText, "GOOD");
         statusText.color = LanguagePageBuilder.Green;
     }
 
@@ -443,7 +445,7 @@ public sealed class KerisGestureTutorial : MonoBehaviour
         button.onClick.AddListener(() => onClick());
         TMP_Text text = CreateLabel(fill.transform, "Label", Vector2.zero, size.x - 12f, size.y, 20f);
         Stretch(text.rectTransform);
-        text.text = label;
+        MorphicLoc.Bind(text, label);
         return button;
     }
 }

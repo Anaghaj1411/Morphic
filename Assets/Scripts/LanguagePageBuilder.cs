@@ -404,7 +404,7 @@ public static class LanguagePageBuilder
         TMPro.TextMeshProUGUI label =
             go.AddComponent<TMPro.TextMeshProUGUI>();
 
-        label.text = text;
+        MorphicLoc.Bind(label, text);
         label.fontSize = fontSize;
         label.alignment = TMPro.TextAlignmentOptions.Center;
         label.color = Green;

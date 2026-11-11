@@ -64,10 +64,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     [Header("Vertex Sculpt Camera")]
     [Tooltip("On = use the pose below during vertex sculpt and band drawing.")]
-    [SerializeField] private bool useCustomSculptCamera;
-    [SerializeField] private Vector3 sculptCameraPosition;
-    [SerializeField] private Vector3 sculptCameraRotation;
+    [SerializeField] private bool useCustomSculptCamera = true;
+    [SerializeField] private Vector3 sculptCameraPosition = new Vector3(-26.391f, 2.606268f, -6.205743f);
+    [SerializeField] private Vector3 sculptCameraRotation = new Vector3(0f, -257f, 90f);
     [SerializeField] private float sculptCameraFov = 40f;
+    private static readonly Vector3 TeapotSculptCamPos = new Vector3(-26.391f, 2.606268f, -6.205743f);
+    private static readonly Vector3 TeapotSculptCamEuler = new Vector3(0f, -257f, 90f);
 
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -470,19 +472,19 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
                 if (patternPainter.IsLocked)
                 {
-                    instructionText.text = "DRAWING LOCKED (Open palm detected). Show open palm again to unlock, or tap <- MOTIFS.";
+                    MorphicLoc.Apply(instructionText, "DRAWING LOCKED (Open palm detected). Show open palm again to unlock, or tap <- MOTIFS.");
                 }
                 else if (patternPainter.IsDrawing)
                 {
-                    instructionText.text = "DRAWING... Trace index finger across teapot to draw!";
+                    MorphicLoc.Apply(instructionText, "DRAWING... Trace index finger across teapot to draw!");
                 }
                 else if (patternPainter.IsOverSurface)
                 {
-                    instructionText.text = "Point index finger to draw. Open palm to lock.";
+                    MorphicLoc.Apply(instructionText, "Point index finger to draw. Open palm to lock.");
                 }
                 else
                 {
-                    instructionText.text = "Aim at teapot. Point index finger to draw, open palm to lock.";
+                    MorphicLoc.Apply(instructionText, "Aim at teapot. Point index finger to draw, open palm to lock.");
                 }
             }
         }
@@ -902,7 +904,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         HideReviewAndShelf();
         if (historyBar != null)
             historyBar.SetActive(true);
-        headerText.text = "COLOR PALETTE";
+        MorphicLoc.Apply(headerText, "COLOR PALETTE");
         instructionText.gameObject.SetActive(false);
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(false);
@@ -934,6 +936,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         SetPanelHeight(PartSelectionPanelHeight);
         mainActionGroup.SetActive(false);
         partGroup.SetActive(true);
+        MorphicLoc.BindTree(partGroup.transform);
         HideExtraCustomizeGroups();
         HideReviewAndShelf();
         colorGroup.SetActive(false);
@@ -942,11 +945,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
-        headerText.text = "SELECT PART";
+        MorphicLoc.Apply(headerText, "SELECT PART");
         SetHeaderBackLabel("← SCULPT");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
-        instructionText.text = "Choose the whole teapot or one part.";
+        MorphicLoc.Apply(instructionText, "Choose the whole teapot or one part.");
         Transform leftoverColors = partGroup != null ? partGroup.transform.Find("NextColors") : null;
         if (leftoverColors != null)
             leftoverColors.gameObject.SetActive(false);
@@ -986,7 +989,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             if (mode == ColorMode.SelectVariant)
             {
-                instructionText.text = "Choose a shape first.";
+                MorphicLoc.Apply(instructionText, "Choose a shape first.");
                 return;
             }
 
@@ -1009,8 +1012,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         headerText.text = string.IsNullOrEmpty(selectedVariantLabel)
-            ? partNames[selectedPart]
-            : partNames[selectedPart] + " · " + selectedVariantLabel;
+            ? MorphicLoc.T(partNames[selectedPart])
+            : MorphicLoc.T(partNames[selectedPart]) + " · " + MorphicLoc.T(selectedVariantLabel);
+        MorphicLoc.ApplyFont(headerText);
         if (colorBackToDesigns)
             SetHeaderBackLabel("← DESIGNS");
         else if (selectedPart == 1)
@@ -1019,11 +1023,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             SetHeaderBackLabel(PartNeedsVariant(selectedPart) ? "← SHAPE" : "← PARTS");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
-        instructionText.text = designTintActive
-            ? "Point at a color to tint the stamp."
-            : bandTintActive
-                ? "Point and hold on a color to tint the band."
-                : "Point and hold until the border completes.";
+        MorphicLoc.Apply(
+            instructionText,
+            designTintActive
+                ? "Point at a color to tint the stamp."
+                : bandTintActive
+                    ? "Point and hold on a color to tint the band."
+                    : "Point and hold until the border completes.");
         SetHoveredTarget(null);
         RefreshColorSelectionMarks();
     }
@@ -1058,9 +1064,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             reviewGroup.SetActive(true);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
-        headerText.text = "REVIEW";
+        MorphicLoc.Apply(headerText, "REVIEW");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Go back, or put this teapot on the shelf.";
+        MorphicLoc.Apply(instructionText, "Go back, or put this teapot on the shelf.");
         SetHeaderBackLabel("← PALETTE");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -1072,19 +1078,19 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         EnsureTeapotShelf();
         if (teapotShelf == null || ResolveTeapotRoot() == null)
         {
-            instructionText.text = "The shelf is not ready yet.";
+            MorphicLoc.Apply(instructionText, "The shelf is not ready yet.");
             return;
         }
 
         if (TeapotCollectionStore.IsFull)
         {
-            instructionText.text = "The shelf is full.";
+            MorphicLoc.Apply(instructionText, "The shelf is full.");
             return;
         }
 
         if (!CommitShelfCopy())
         {
-            instructionText.text = "Could not place this teapot on the shelf.";
+            MorphicLoc.Apply(instructionText, "Could not place this teapot on the shelf.");
             return;
         }
 
@@ -1113,9 +1119,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         HideReviewAndShelf();
         if (shelfGroup != null)
             shelfGroup.SetActive(true);
-        headerText.text = "SHELF";
+        MorphicLoc.Apply(headerText, "SHELF");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Take it back, delete it, or go back when you are done.";
+        MorphicLoc.Apply(instructionText, "Take it back, delete it, or go back when you are done.");
         SetHeaderBackLabel("← REVIEW");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -1159,9 +1165,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             shelfGroup.SetActive(false);
         if (confirmDeleteGroup != null)
             confirmDeleteGroup.SetActive(true);
-        headerText.text = "DELETE";
+        MorphicLoc.Apply(headerText, "DELETE");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "This removes the teapot from the shelf.";
+        MorphicLoc.Apply(instructionText, "This removes the teapot from the shelf.");
         SetHeaderBackVisible(true);
         ResetDwell();
         SetHoveredTarget(null);
@@ -1195,16 +1201,18 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         selfiePanel.SetActive(true);
-        selfieHeaderText.text = "SELFIE";
+        MorphicLoc.Apply(selfieHeaderText, "SELFIE");
         if (capturedSelfieTexture == null && appliedSelfieTexture != null)
             capturedSelfieTexture = Instantiate(appliedSelfieTexture);
         bool hasPhoto = capturedSelfieTexture != null;
         SetSelfieReviewControls(hasPhoto);
-        selfieInstructionText.text = hasPhoto
-            ? appliedSelfieTexture != null
-                ? "Remove the selfie, retake it, or press DONE."
-                : "Attach the photo to the teapot, retake it, or press DONE."
-            : "Frame your photo, then point and hold TAKE SELFIE.";
+        MorphicLoc.Apply(
+            selfieInstructionText,
+            hasPhoto
+                ? appliedSelfieTexture != null
+                    ? "Remove the selfie, retake it, or press DONE."
+                    : "Attach the photo to the teapot, retake it, or press DONE."
+                : "Frame your photo, then point and hold TAKE SELFIE.");
         if (hasPhoto && selfiePreviewImage != null)
             selfiePreviewImage.texture = capturedSelfieTexture;
         else
@@ -1249,7 +1257,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         var imageSource = ImageSourceProvider.ImageSource;
         if (imageSource == null || !imageSource.isPrepared)
         {
-            selfieInstructionText.text = "Camera is not ready yet.";
+            MorphicLoc.Apply(selfieInstructionText, "Camera is not ready yet.");
             return;
         }
 
@@ -1257,7 +1265,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         Texture2D readable = MorphicOverlayShaders.CaptureWebcamFrame(source);
         if (readable == null)
         {
-            selfieInstructionText.text = "Could not capture the camera image. Please try again.";
+            MorphicLoc.Apply(selfieInstructionText, "Could not capture the camera image. Please try again.");
             return;
         }
 
@@ -1265,7 +1273,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         capturedSelfieTexture = readable;
         selfiePreviewImage.texture = capturedSelfieTexture;
         SetSelfieReviewControls(true);
-        selfieInstructionText.text = "Attach the photo to the teapot, retake it, or press DONE.";
+        MorphicLoc.Apply(selfieInstructionText, "Attach the photo to the teapot, retake it, or press DONE.");
         ResetDwell();
     }
 
@@ -1275,7 +1283,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         capturedSelfieTexture = null;
         SetSelfieReviewControls(false);
         ShowLiveSelfiePreview();
-        selfieInstructionText.text = "Frame your photo, then point and hold TAKE SELFIE.";
+        MorphicLoc.Apply(selfieInstructionText, "Frame your photo, then point and hold TAKE SELFIE.");
         ResetDwell();
     }
 
@@ -1283,7 +1291,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (capturedSelfieTexture == null || teapotRenderer == null)
         {
-            selfieInstructionText.text = "Take a selfie before attaching it.";
+            MorphicLoc.Apply(selfieInstructionText, "Take a selfie before attaching it.");
             return;
         }
 
@@ -1299,7 +1307,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         EnsureSelfieSurfaceOverlay();
         ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
 
-        selfieInstructionText.text = "Selfie attached to the teapot body.";
+        MorphicLoc.Apply(selfieInstructionText, "Selfie attached to the teapot body.");
         SetSelfieReviewControls(true);
     }
 
@@ -1314,7 +1322,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         capturedSelfieTexture = null;
         SetSelfieReviewControls(false);
         ShowLiveSelfiePreview();
-        selfieInstructionText.text = "Selfie removed. Take a new one, or press BACK.";
+        MorphicLoc.Apply(selfieInstructionText, "Selfie removed. Take a new one, or press BACK.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -1924,9 +1932,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         colorGroup.SetActive(false);
         if (reviewGroup != null)
             reviewGroup.SetActive(false);
-        headerText.text = "RESET";
+        MorphicLoc.Apply(headerText, "RESET");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "This clears sculpt, color, design, and selfie.";
+        MorphicLoc.Apply(instructionText, "This clears sculpt, color, design, and selfie.");
         SetHeaderBackVisible(true);
         SetHoveredTarget(null);
     }
@@ -1962,7 +1970,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         ClearWorkingSelfieAndDesign();
         CaptureBaseline();
         HideConfirmReset();
-        instructionText.text = "Teapot reset.";
+        MorphicLoc.Apply(instructionText, "Teapot reset.");
     }
 
     private void UndoHistory()
@@ -1975,7 +1983,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             patternPainter.UndoLastClayStroke();
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Last clay coil undone.";
+            MorphicLoc.Apply(instructionText, "Last clay coil undone.");
             return;
         }
 
@@ -1983,7 +1991,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             vertexSculptController.UndoLastStroke())
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Last sculpt stroke undone.";
+            MorphicLoc.Apply(instructionText, "Last sculpt stroke undone.");
             return;
         }
 
@@ -1991,7 +1999,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             patternPainter.UndoLastStroke();
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Last drawing stroke undone.";
+            MorphicLoc.Apply(instructionText, "Last drawing stroke undone.");
             return;
         }
 
@@ -2001,7 +2009,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (history.Count < 2)
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Nothing to undo.";
+            MorphicLoc.Apply(instructionText, "Nothing to undo.");
             return;
         }
 
@@ -2009,7 +2017,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         history.RemoveAt(history.Count - 1);
         ApplySnapshot(history[history.Count - 1]);
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Last change undone.";
+        MorphicLoc.Apply(instructionText, "Last change undone.");
     }
 
     private void RedoHistory()
@@ -2022,7 +2030,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             patternPainter.RedoLastClayStroke();
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Last clay coil redone.";
+            MorphicLoc.Apply(instructionText, "Last clay coil redone.");
             return;
         }
 
@@ -2030,7 +2038,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             vertexSculptController.RedoLastStroke())
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Last sculpt stroke redone.";
+            MorphicLoc.Apply(instructionText, "Last sculpt stroke redone.");
             return;
         }
 
@@ -2038,7 +2046,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             patternPainter.RedoLastStroke();
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Last drawing stroke redone.";
+            MorphicLoc.Apply(instructionText, "Last drawing stroke redone.");
             return;
         }
 
@@ -2048,7 +2056,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (redoHistory.Count == 0)
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Nothing to redo.";
+            MorphicLoc.Apply(instructionText, "Nothing to redo.");
             return;
         }
 
@@ -2057,7 +2065,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         history.Add(snapshot);
         ApplySnapshot(snapshot);
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Last change redone.";
+        MorphicLoc.Apply(instructionText, "Last change redone.");
     }
 
     private void ShowVertexSculpt()
@@ -2098,7 +2106,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (historyBar != null)
             historyBar.SetActive(true);
 
-        headerText.text = "VERTEX SCULPT";
+        MorphicLoc.Apply(headerText, "VERTEX SCULPT");
         SetHeaderBackLabel("← BACK");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
@@ -2166,34 +2174,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         out Quaternion targetRot,
         out float targetFov)
     {
-        if (useCustomSculptCamera)
-        {
-            targetPos = sculptCameraPosition;
-            targetRot = Quaternion.Euler(sculptCameraRotation);
-            targetFov = Mathf.Max(10f, sculptCameraFov);
-            return;
-        }
-
-        Bounds bounds = focusRenderer.bounds;
-        Vector3 focus = bounds.center;
-        Vector3 offset = storedSculptCamPos - focus;
-        float dist = offset.magnitude;
-        if (dist < 0.05f)
-        {
-            offset = -cam.transform.forward;
-            dist = 2f;
-        }
-
-        float targetDist = dist * 0.90f;
-        float minDist = Mathf.Max(0.45f, bounds.extents.magnitude * 0.85f);
-        if (minDist > dist * 0.95f)
-            minDist = dist * 0.88f;
-        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.95f);
-
-        Vector3 back = offset.normalized;
-        targetPos = focus + back * targetDist;
-        targetRot = storedSculptCamRot;
-        targetFov = storedSculptCamFov;
+        targetPos = TeapotSculptCamPos;
+        targetRot = Quaternion.Euler(TeapotSculptCamEuler);
+        targetFov = storedSculptCamFov > 1f ? storedSculptCamFov : Mathf.Max(10f, sculptCameraFov);
     }
 
     [ContextMenu("Capture Current View As Sculpt Camera")]
@@ -2656,9 +2639,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
 
         EnsureTeapotShelfSlots();
-        Transform seat = teapotShelf != null
-            ? teapotShelf.GetSharedSlot(slotIndex)
-            : GetTeapotSlot(slotIndex);
+        Transform seat = GetTeapotSlot(slotIndex);
+        if (seat == null && teapotShelf != null)
+            seat = teapotShelf.GetSharedSlot(slotIndex);
         Transform collection = teapotShelf != null ? teapotShelf.CollectionRoot : null;
         Quaternion upright = teapot.rotation;
         if (collection != null)
@@ -2713,6 +2696,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
             found.Add(slot);
         }
+
+        for (int i = 0; i < found.Count; i++)
+            MorphicShelfSlotMarker.EnsureOn(found[i]);
 
         teapotSlots = found.ToArray();
     }
@@ -2856,7 +2842,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (selfieSurfaceRoot != null)
             selfieSurfaceRoot.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Selfie removed.";
+        MorphicLoc.Apply(instructionText, "Selfie removed.");
         return true;
     }
 
@@ -2872,7 +2858,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
         SyncSelfieSurfaceRenderer();
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Selfie restored.";
+        MorphicLoc.Apply(instructionText, "Selfie restored.");
         return true;
     }
 
@@ -3246,7 +3232,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             if (clayColorChip != null)
                 clayColorChip.color = color;
             PushHistory();
-            instructionText.text = "Clay color selected. Pick another color or press DONE.";
+            MorphicLoc.Apply(instructionText, "Clay color selected. Pick another color or press DONE.");
             MarkColorSwatch(color);
             return;
         }
@@ -3259,7 +3245,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             if (bandColorChip != null)
                 bandColorChip.color = color;
             PushHistory();
-            instructionText.text = "Band color selected. Pick another color or press DONE.";
+            MorphicLoc.Apply(instructionText, "Band color selected. Pick another color or press DONE.");
             MarkColorSwatch(color);
             return;
         }
@@ -3277,9 +3263,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         else
             CommitTargetColor(selectedPart, color);
         PushHistory();
-        instructionText.text = designTintActive
-            ? "Stamp tint selected. Choose another color or press DONE."
-            : "Color selected. Choose another color or press DONE.";
+        MorphicLoc.Apply(
+            instructionText,
+            designTintActive
+                ? "Stamp tint selected. Choose another color or press DONE."
+                : "Color selected. Choose another color or press DONE.");
         MarkColorSwatch(color);
     }
 
@@ -3515,10 +3503,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         for (int i = 0; i < variantButtons.Length; i++)
         {
             if (variantButtonLabels[i] != null)
-                variantButtonLabels[i].text = labels[i];
+                MorphicLoc.Apply(variantButtonLabels[i], labels[i]);
         }
 
-        headerText.text = partNames[partIndex];
+        MorphicLoc.Apply(headerText, partNames[partIndex]);
         SetHeaderBackLabel("← PARTS");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -3526,16 +3514,19 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (TryAdoptVisibleVariant(partIndex))
         {
             ArmSelectedVariant();
-            instructionText.text = selectedVariantLabel +
-                " is already showing. Change color, or pick another shape.";
+            instructionText.text = MorphicLoc.T(selectedVariantLabel) +
+                MorphicLoc.T(" is already showing. Change color, or pick another shape.");
+            MorphicLoc.ApplyFont(instructionText);
         }
         else
         {
-            instructionText.text = partIndex == 4
-                ? "Choose Handle 1 or Handle 2."
-                : partIndex == 3
-                    ? "Choose Spout 1 or Spout 2."
-                    : "Choose Lid 1 or Lid 2.";
+            MorphicLoc.Apply(
+                instructionText,
+                partIndex == 4
+                    ? "Choose Handle 1 or Handle 2."
+                    : partIndex == 3
+                        ? "Choose Spout 1 or Spout 2."
+                        : "Choose Lid 1 or Lid 2.");
         }
 
         ResetDwell();
@@ -3547,21 +3538,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         selectedVariant = variantIndex;
         string[] labels = GetVariantLabels(selectedPart);
         selectedVariantLabel = labels[variantIndex];
-        headerText.text = partNames[selectedPart];
+        MorphicLoc.Apply(headerText, partNames[selectedPart]);
         ArmSelectedVariant();
 
         if (selectedPart == 2)
-            instructionText.text =
-                "Pinch with your right hand and lift to raise " +
-                selectedVariantLabel.ToLowerInvariant() + ".";
+            MorphicLoc.Apply(instructionText, "Pinch with your right hand and lift to raise the lid.");
         else if (selectedPart == 3)
-            instructionText.text =
-                "Pinch with your left hand and lift to pull " +
-                selectedVariantLabel.ToLowerInvariant() + ".";
+            MorphicLoc.Apply(instructionText, "Pinch with your left hand and lift to pull the spout.");
         else
-            instructionText.text =
-                "Make two fists and pull them down to bring " +
-                selectedVariantLabel.ToLowerInvariant() + " out.";
+            MorphicLoc.Apply(instructionText, "Make two fists and pull them down to bring the handle out.");
         SetSculptControllersEnabled(true);
         SetHoveredTarget(null);
     }
@@ -3692,12 +3677,14 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         SetTitleBurstsVisible(false);
-        headerText.text = "TEAPOT BODY";
+        MorphicLoc.Apply(headerText, "TEAPOT BODY");
         SetHeaderBackLabel("← PARTS");
         SetHeaderBackVisible(true);
-        instructionText.text = appliedDesignTexture != null
-            ? "Change the pot color, or add another design."
-            : "Change the pot color, or add a stamped design.";
+        MorphicLoc.Apply(
+            instructionText,
+            appliedDesignTexture != null
+                ? "Change the pot color, or add another design."
+                : "Change the pot color, or add a stamped design.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -3726,12 +3713,14 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         SetTitleBurstsVisible(false);
-        headerText.text = "ADD DESIGN";
+        MorphicLoc.Apply(headerText, "ADD DESIGN");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
-        instructionText.text = stampPatterns == null || stampPatterns.Length == 0
-            ? "No stamps found in StampPatterns."
-            : "Choose a stamp. Then tint it with Change Color.";
+        MorphicLoc.Apply(
+            instructionText,
+            stampPatterns == null || stampPatterns.Length == 0
+                ? "No stamps found in StampPatterns."
+                : "Choose a stamp. Then tint it with Change Color.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -3748,7 +3737,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (appliedDesignTexture == null)
         {
-            instructionText.text = "Choose a stamp first.";
+            MorphicLoc.Apply(instructionText, "Choose a stamp first.");
             return;
         }
 
@@ -3774,7 +3763,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         ApplyDesignTint(committedDesignTint);
         if (designSurfaceRenderer != null)
             designSurfaceRenderer.enabled = true;
-        instructionText.text = stamp.name + " applied. Change Color tints the stamp.";
+        instructionText.text = MorphicLoc.T(stamp.name) +
+            MorphicLoc.T(" applied. Change Color tints the stamp.");
+        MorphicLoc.ApplyFont(instructionText);
         PushHistory();
     }
 
@@ -3789,7 +3780,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             designSurfaceRenderer.enabled = false;
         if (patternPainter != null)
             patternPainter.ClearAllStrokes();
-        instructionText.text = "Design cleared.";
+        MorphicLoc.Apply(instructionText, "Design cleared.");
         PushHistory();
     }
 
@@ -3884,7 +3875,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
             TextMeshProUGUI labelText = labelObj.GetComponent<TextMeshProUGUI>();
-            labelText.text = "BAND " + (i + 1);
+            labelText.text = MorphicLoc.F("BAND {0}", i + 1);
+            MorphicLoc.ApplyFont(labelText);
             labelText.fontSize = 18f;
             labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
@@ -3971,7 +3963,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.ClearAllStrokes();
-            instructionText.text = "All drawings cleared.";
+            MorphicLoc.Apply(instructionText, "All drawings cleared.");
         });
         RegisterHitTarget(clearStrokes, false, false, default);
 
@@ -4000,7 +3992,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             patternPainter.SetStrokeWidth(width, true);
 
         RefreshBandSizeButtons();
-        instructionText.text = "Band width: " + bandSizeLabels[selectedBandSizeIndex] + " (" + Mathf.RoundToInt(width * 100f) + " cm).";
+        instructionText.text = MorphicLoc.F("SIZE: {0}", MorphicLoc.T(bandSizeLabels[selectedBandSizeIndex]));
+        MorphicLoc.ApplyFont(instructionText);
     }
 
     private void RefreshBandSizeButtons()
@@ -4026,7 +4019,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             TMP_Text label = targetingSizeBtn.GetComponentInChildren<TMP_Text>();
             if (label != null)
             {
-                label.text = "SIZE: " + bandSizeLabels[selectedBandSizeIndex];
+                MorphicLoc.Apply(label, "SIZE: " + bandSizeLabels[selectedBandSizeIndex]);
                 label.fontSize = 17f;
                 label.fontStyle = FontStyles.Bold;
                 label.color = DarkTextGreen;
@@ -4043,9 +4036,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         designTintActive = false;
         selectedPart = 1;
         ContinueToColorSelection();
-        headerText.text = "BAND COLOR";
+        MorphicLoc.Apply(headerText, "BAND COLOR");
         SetHeaderBackLabel(mode == ColorMode.DrawBandTargeting ? "← DRAW" : "← MOTIFS");
-        instructionText.text = "Point and hold on a color to tint the band designs.";
+        MorphicLoc.Apply(instructionText, "Point and hold on a color to tint the band designs.");
     }
 
     private void OpenClayColorSelection()
@@ -4057,9 +4050,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         designTintActive = false;
         selectedPart = 1;
         ContinueToColorSelection();
-        headerText.text = "CLAY COLOR";
+        MorphicLoc.Apply(headerText, "CLAY COLOR");
         SetHeaderBackLabel("← SCULPT");
-        instructionText.text = "Point and hold on a color to tint the clay.";
+        MorphicLoc.Apply(instructionText, "Point and hold on a color to tint the clay.");
     }
 
     private void OnColorDoneClicked()
@@ -4167,7 +4160,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.UndoLastStroke();
-            instructionText.text = "Last stroke undone.";
+            MorphicLoc.Apply(instructionText, "Last stroke undone.");
         });
         RegisterHitTarget(undoBtn, false, false, default);
 
@@ -4188,7 +4181,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.RedoLastStroke();
-            instructionText.text = "Last stroke redone.";
+            MorphicLoc.Apply(instructionText, "Last stroke redone.");
         });
         RegisterHitTarget(redoBtn, false, false, default);
 
@@ -4210,7 +4203,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.ClearAllStrokes();
-            instructionText.text = "All drawings cleared.";
+            MorphicLoc.Apply(instructionText, "All drawings cleared.");
         });
         RegisterHitTarget(clearBtn, false, false, default);
 
@@ -4234,10 +4227,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         }
         SetPanelHeight(330f);
         string motifName = appliedBandTexture != null ? appliedBandTexture.name.Replace("Band_", "").ToUpper() : "BAND";
-        headerText.text = "DRAW: " + motifName;
+        headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motifName));
+        MorphicLoc.ApplyFont(headerText);
         SetHeaderBackLabel("← MOTIFS");
         SetHeaderBackVisible(true);
-        instructionText.text = "Trace index finger across teapot to draw. Open palm to lock.";
+        MorphicLoc.Apply(instructionText, "Trace index finger across teapot to draw. Open palm to lock.");
         instructionText.fontSize = 20f;
         instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
@@ -4281,10 +4275,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         SetTitleBurstsVisible(false);
-        headerText.text = "DRAW BAND";
+        MorphicLoc.Apply(headerText, "DRAW BAND");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
-        instructionText.text = "Select a motif, adjust size & color, then trace on teapot.";
+        MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on teapot.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -4309,7 +4303,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 string bName = bandPatterns[i].name;
                 if (bName.StartsWith("Band_"))
                     bName = bName.Substring(5);
-                label.text = bName.ToUpper();
+                MorphicLoc.Apply(label, bName.ToUpper());
                 label.fontSize = 18f;
                 label.fontStyle = FontStyles.Bold;
                 label.color = DarkTextGreen;
@@ -4351,10 +4345,11 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             bandTargetingBar.SetActive(true);
 
         SetPanelHeight(330f);
-        headerText.text = "DRAW: " + motif.name.Replace("Band_", "").ToUpper();
+        headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motif.name.Replace("Band_", "").ToUpperInvariant()));
+        MorphicLoc.ApplyFont(headerText);
         SetHeaderBackLabel("← MOTIFS");
         SetHeaderBackVisible(true);
-        instructionText.text = "Trace index finger across teapot to draw. Open palm to lock.";
+        MorphicLoc.Apply(instructionText, "Trace index finger across teapot to draw. Open palm to lock.");
         instructionText.fontSize = 20f;
         instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
@@ -4462,7 +4457,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             TMP_Text label = designButtons[i].GetComponentInChildren<TMP_Text>();
             if (label != null)
             {
-                label.text = stampPatterns[i].name;
+                MorphicLoc.Apply(label, stampPatterns[i].name.Replace('_', ' '));
                 RectTransform labelRect = label.rectTransform;
                 labelRect.anchorMin = new Vector2(0f, 0f);
                 labelRect.anchorMax = new Vector2(1f, 0.28f);
@@ -4956,7 +4951,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 patternPainter.UndoLastClayStroke();
                 trackedClayCount = patternPainter.ClayStrokeCount;
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last clay coil undone.";
+                MorphicLoc.Apply(instructionText, "Last clay coil undone.");
                 return true;
             case TimedUndo.Sculpt:
                 if (vertexSculptController == null || !vertexSculptController.HasUndo)
@@ -4964,7 +4959,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 vertexSculptController.UndoLastStroke();
                 trackedSculptCount = vertexSculptController.UndoDepth;
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last sculpt stroke undone.";
+                MorphicLoc.Apply(instructionText, "Last sculpt stroke undone.");
                 return true;
             case TimedUndo.Band:
                 if (patternPainter == null || patternPainter.StrokeCount <= 0)
@@ -4972,7 +4967,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 patternPainter.UndoLastStroke();
                 trackedBandCount = patternPainter.StrokeCount;
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last drawing stroke undone.";
+                MorphicLoc.Apply(instructionText, "Last drawing stroke undone.");
                 return true;
             case TimedUndo.Selfie:
                 return TryUndoSelfie();
@@ -4983,7 +4978,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 history.RemoveAt(history.Count - 1);
                 ApplySnapshot(history[history.Count - 1]);
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last change undone.";
+                MorphicLoc.Apply(instructionText, "Last change undone.");
                 return true;
             default:
                 return false;
@@ -5000,7 +4995,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 patternPainter.RedoLastClayStroke();
                 trackedClayCount = patternPainter.ClayStrokeCount;
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last clay coil redone.";
+                MorphicLoc.Apply(instructionText, "Last clay coil redone.");
                 return true;
             case TimedUndo.Sculpt:
                 if (vertexSculptController == null || !vertexSculptController.HasRedo)
@@ -5008,7 +5003,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 vertexSculptController.RedoLastStroke();
                 trackedSculptCount = vertexSculptController.UndoDepth;
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last sculpt stroke redone.";
+                MorphicLoc.Apply(instructionText, "Last sculpt stroke redone.");
                 return true;
             case TimedUndo.Band:
                 if (patternPainter == null || patternPainter.RedoStrokeCount <= 0)
@@ -5016,7 +5011,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 patternPainter.RedoLastStroke();
                 trackedBandCount = patternPainter.StrokeCount;
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last drawing stroke redone.";
+                MorphicLoc.Apply(instructionText, "Last drawing stroke redone.");
                 return true;
             case TimedUndo.Selfie:
                 return TryRedoSelfie();
@@ -5028,7 +5023,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 history.Add(snapshot);
                 ApplySnapshot(snapshot);
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last change redone.";
+                MorphicLoc.Apply(instructionText, "Last change redone.");
                 return true;
             default:
                 return false;
@@ -5541,6 +5536,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             if (texts[i] != null)
                 texts[i].alignment = TextAlignmentOptions.Center;
         }
+        MorphicLoc.BindTree(uiRoot.transform);
     }
 
     private Image[] CreateDwellFrame(Transform parent)
@@ -5648,7 +5644,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (headerBackText != null)
         {
-            headerBackText.text = label;
+            MorphicLoc.Bind(headerBackText, label);
             headerBackText.fontSize = 17.5f;
             headerBackText.fontStyle = FontStyles.Bold;
             headerBackText.color = DarkTextGreen;
@@ -5762,7 +5758,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         rect.anchoredPosition = anchoredPosition;
         rect.sizeDelta = size;
         TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
-        text.text = value;
+        MorphicLoc.Bind(text, value);
         text.fontSize = fontSize;
         text.alignment = alignment;
         text.fontStyle = style;

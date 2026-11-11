@@ -12,6 +12,12 @@ public class MorphicSculptZoomUI : MonoBehaviour
     private const float ZoomPullFraction = 0.22f;
     private const float MinPull = 0.28f;
     private const float MaxPull = 0.65f;
+    private static readonly Vector3 LanternZoomPos = new Vector3(-26.469f, 2.5f, -6.191f);
+    private static readonly Vector3 LanternZoomEuler = new Vector3(0f, -257f, 90f);
+    private static readonly Vector3 TeapotZoomPos = new Vector3(-26.448f, 2.517f, -6.203913f);
+    private static readonly Vector3 TeapotZoomEuler = new Vector3(0f, -257f, 90f);
+    private static readonly Vector3 KerisZoomPos = new Vector3(-26.06807f, 2.537f, -6.085f);
+    private static readonly Vector3 KerisZoomEuler = new Vector3(0f, -257f, 90f);
 
     private GameObject root;
     private Button zoomButton;
@@ -23,6 +29,7 @@ public class MorphicSculptZoomUI : MonoBehaviour
     private Quaternion restRotation;
     private float restFieldOfView;
     private float restNearClip;
+    private static bool vertexSculptOwnsCamera;
 
     public bool IsZoomed => zoomed;
 
@@ -32,8 +39,8 @@ public class MorphicSculptZoomUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Vertex sculpt owns the camera now. Keep the studio rest pose for it
-    /// and drop the ZOOM button's extra dolly without moving the camera.
+    /// Vertex sculpt owns the camera now. Use the studio rest pose (not the
+    /// ZOOM dolly) so the two zooms never stack, then drop the ZOOM button.
     /// </summary>
     public static void HandOffToVertexSculpt(
         ref bool hasStored,
@@ -42,11 +49,12 @@ public class MorphicSculptZoomUI : MonoBehaviour
         ref float storedFieldOfView,
         ref float storedNearClip)
     {
+        vertexSculptOwnsCamera = true;
         MorphicSculptZoomUI zoomUi = FindInstance();
         if (zoomUi == null)
             return;
 
-        if (!hasStored && zoomUi.hasRestPose)
+        if (zoomUi.hasRestPose)
         {
             storedPosition = zoomUi.restPosition;
             storedRotation = zoomUi.restRotation;
@@ -60,6 +68,7 @@ public class MorphicSculptZoomUI : MonoBehaviour
 
     public static void ReleaseIfPresent()
     {
+        vertexSculptOwnsCamera = false;
         MorphicSculptZoomUI zoomUi = FindInstance();
         if (zoomUi != null)
             zoomUi.ReleaseWithoutRestore();
@@ -172,6 +181,9 @@ public class MorphicSculptZoomUI : MonoBehaviour
 
     private void ToggleZoom()
     {
+        if (vertexSculptOwnsCamera)
+            return;
+
         Camera view = ResolveViewCamera();
         if (view == null)
             return;
@@ -182,13 +194,13 @@ public class MorphicSculptZoomUI : MonoBehaviour
             return;
         }
 
-        if (!TryGetZoomTarget(view, out Vector3 zoomPosition))
+        if (!TryGetZoomTarget(view, out Vector3 zoomPosition, out Quaternion zoomRotation))
             return;
 
         CaptureRestPose(view);
         zoomed = true;
         UpdateLabel();
-        StartMove(view, zoomPosition, view.transform.rotation, view.fieldOfView);
+        StartMove(view, zoomPosition, zoomRotation, view.fieldOfView);
     }
 
     private void RestoreRestPose(bool animate)
@@ -275,8 +287,35 @@ public class MorphicSculptZoomUI : MonoBehaviour
         moveRoutine = null;
     }
 
-    private static bool TryGetZoomTarget(Camera view, out Vector3 zoomPosition)
+    private static bool TryGetZoomTarget(
+        Camera view,
+        out Vector3 zoomPosition,
+        out Quaternion zoomRotation)
     {
+        zoomRotation = view.transform.rotation;
+
+        CraftKind craft = GetActiveCraftKind();
+        if (craft == CraftKind.Lantern)
+        {
+            zoomPosition = LanternZoomPos;
+            zoomRotation = Quaternion.Euler(LanternZoomEuler);
+            return true;
+        }
+
+        if (craft == CraftKind.Teapot)
+        {
+            zoomPosition = TeapotZoomPos;
+            zoomRotation = Quaternion.Euler(TeapotZoomEuler);
+            return true;
+        }
+
+        if (craft == CraftKind.Keris)
+        {
+            zoomPosition = KerisZoomPos;
+            zoomRotation = Quaternion.Euler(KerisZoomEuler);
+            return true;
+        }
+
         Vector3 position = view.transform.position;
         Vector3 forward = view.transform.forward;
         forward.y = 0f;
@@ -285,14 +324,18 @@ public class MorphicSculptZoomUI : MonoBehaviour
         else
             forward.Normalize();
 
-        float pull = 0.45f;
+        float pullFraction = ZoomPullFraction;
+        float minPull = MinPull;
+        float maxPull = MaxPull;
+
+        float pull = Mathf.Clamp(0.55f, minPull, maxPull);
         if (TryGetActiveCraftBounds(out Bounds bounds))
         {
             Vector3 toCraft = bounds.center - position;
             toCraft.y = 0f;
             float horizontal = toCraft.magnitude;
             if (horizontal > 0.2f)
-                pull = Mathf.Clamp(horizontal * ZoomPullFraction, MinPull, MaxPull);
+                pull = Mathf.Clamp(horizontal * pullFraction, minPull, maxPull);
         }
 
         zoomPosition = position + forward * pull;
@@ -334,6 +377,34 @@ public class MorphicSculptZoomUI : MonoBehaviour
         return hasBounds;
     }
 
+    private enum CraftKind
+    {
+        None,
+        Lantern,
+        Teapot,
+        Keris
+    }
+
+    private static CraftKind GetActiveCraftKind()
+    {
+        LanternFistRotationController lantern =
+            FindFirstObjectByType<LanternFistRotationController>(FindObjectsInactive.Exclude);
+        if (lantern != null && lantern.isActiveAndEnabled)
+            return CraftKind.Lantern;
+
+        TeapotFistRotationController teapot =
+            FindFirstObjectByType<TeapotFistRotationController>(FindObjectsInactive.Exclude);
+        if (teapot != null && teapot.isActiveAndEnabled)
+            return CraftKind.Teapot;
+
+        KerisFistRotationController keris =
+            FindFirstObjectByType<KerisFistRotationController>(FindObjectsInactive.Exclude);
+        if (keris != null && keris.isActiveAndEnabled)
+            return CraftKind.Keris;
+
+        return CraftKind.None;
+    }
+
     private static Transform FindActiveCraft()
     {
         LanternFistRotationController lantern =
@@ -372,7 +443,7 @@ public class MorphicSculptZoomUI : MonoBehaviour
     {
         if (zoomLabel == null)
             return;
-        zoomLabel.text = zoomed ? "ZOOM OUT" : "ZOOM";
+        MorphicLoc.Bind(zoomLabel, zoomed ? "ZOOM OUT" : "ZOOM");
     }
 
     private static void PlaceTopLeft(RectTransform button)

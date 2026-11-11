@@ -17,12 +17,11 @@ public sealed class KerisFistRotationController : MonoBehaviour
     [SerializeField] private Transform kerisRotationTarget;
     [SerializeField] private Camera viewCamera;
 
-    [Header("Hold-to-steer")]
-    [SerializeField, Range(40f, 400f)] private float turnYawRate = 140f;
-    [SerializeField, Range(40f, 400f)] private float turnPitchRate = 140f;
-    [SerializeField, Range(0.02f, 0.12f)] private float centerDeadZone = 0.05f;
-    [SerializeField, Range(0.12f, 0.45f)] private float fullSteerRange = 0.28f;
-    [SerializeField, Min(4f)] private float smoothing = 14f;
+    [Header("Hold-to-turn")]
+    [SerializeField, Range(40f, 720f)] private float yawPerScreen = 400f;
+    [SerializeField, Range(40f, 720f)] private float pitchPerScreen = 400f;
+    [SerializeField, Range(0.001f, 0.02f)] private float moveDeadZone = 0.002f;
+    [SerializeField, Min(4f)] private float smoothing = 18f;
 
     public bool suppressDriving;
 
@@ -32,8 +31,9 @@ public sealed class KerisFistRotationController : MonoBehaviour
     private Quaternion restRotation = Quaternion.identity;
     private float yaw;
     private float pitch;
-    private float yawSpeed;
-    private float pitchSpeed;
+    private Vector2 lastPalm;
+    private Vector2 moveSmoothed;
+    private bool hasPalm;
     private int lockedAxis;
     private bool rotating;
 
@@ -106,24 +106,26 @@ public sealed class KerisFistRotationController : MonoBehaviour
         {
             EnsurePivot();
             rotating = true;
-            yawSpeed = 0f;
-            pitchSpeed = 0f;
+            lastPalm = fist.PalmCenter;
+            hasPalm = true;
+            moveSmoothed = Vector2.zero;
             lockedAxis = 0;
+            ApplyRotation();
+            return;
         }
 
         if (pivot == null)
             return;
 
-        ResolveSteer(fist, out float steerRight, out float steerUp);
-        float targetYaw = steerRight * turnYawRate;
-        float targetPitch = steerUp * turnPitchRate;
-
+        ResolveMove(fist, out float moveRight, out float moveUp);
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         float blend = 1f - Mathf.Exp(-smoothing * dt);
-        yawSpeed = Mathf.Lerp(yawSpeed, targetYaw, blend);
-        pitchSpeed = Mathf.Lerp(pitchSpeed, targetPitch, blend);
-        yaw += yawSpeed * dt;
-        pitch += pitchSpeed * dt;
+        moveSmoothed.x = Mathf.Lerp(moveSmoothed.x, moveRight, blend);
+        moveSmoothed.y = Mathf.Lerp(moveSmoothed.y, moveUp, blend);
+        float yawGain = Mathf.Max(yawPerScreen, 400f);
+        float pitchGain = Mathf.Max(pitchPerScreen, 400f);
+        yaw += (moveSmoothed.x * 0.25f + moveRight * 0.75f) * yawGain;
+        pitch += (moveSmoothed.y * 0.25f + moveUp * 0.75f) * pitchGain;
         ApplyRotation();
     }
 
@@ -266,16 +268,30 @@ public sealed class KerisFistRotationController : MonoBehaviour
                hand.OtherFingersCurlRatio <= 1.20f;
     }
 
-    private void ResolveSteer(SculptHandFrame fist, out float steerRight, out float steerUp)
+    private void ResolveMove(SculptHandFrame fist, out float moveRight, out float moveUp)
     {
-        float x = 0.5f - fist.PalmCenter.x;
-        float y = fist.PalmCenter.y - 0.5f;
+        Vector2 palm = fist.PalmCenter;
+        if (!hasPalm)
+        {
+            lastPalm = palm;
+            hasPalm = true;
+            moveRight = 0f;
+            moveUp = 0f;
+            return;
+        }
 
-        steerRight = ApplyDeadZone(x);
-        steerUp = ApplyDeadZone(y);
-        float absRight = Mathf.Abs(steerRight);
-        float absUp = Mathf.Abs(steerUp);
-        if (absRight < 0.001f && absUp < 0.001f)
+        moveRight = lastPalm.x - palm.x;
+        moveUp = palm.y - lastPalm.y;
+        lastPalm = palm;
+
+        if (Mathf.Abs(moveRight) < moveDeadZone)
+            moveRight = 0f;
+        if (Mathf.Abs(moveUp) < moveDeadZone)
+            moveUp = 0f;
+
+        float absRight = Mathf.Abs(moveRight);
+        float absUp = Mathf.Abs(moveUp);
+        if (absRight < 0.0001f && absUp < 0.0001f)
         {
             lockedAxis = 0;
             return;
@@ -284,35 +300,25 @@ public sealed class KerisFistRotationController : MonoBehaviour
         const float stick = 0.72f;
         if (lockedAxis == 1 && absRight >= absUp * stick)
         {
-            steerUp = 0f;
+            moveUp = 0f;
             return;
         }
         if (lockedAxis == 2 && absUp >= absRight * stick)
         {
-            steerRight = 0f;
+            moveRight = 0f;
             return;
         }
 
         if (absRight >= absUp)
         {
             lockedAxis = 1;
-            steerUp = 0f;
+            moveUp = 0f;
         }
         else
         {
             lockedAxis = 2;
-            steerRight = 0f;
+            moveRight = 0f;
         }
-    }
-
-    private float ApplyDeadZone(float value)
-    {
-        float magnitude = Mathf.Abs(value);
-        if (magnitude <= centerDeadZone)
-            return 0f;
-
-        float range = Mathf.Max(fullSteerRange, centerDeadZone + 0.02f);
-        return Mathf.Sign(value) * Mathf.Clamp01((magnitude - centerDeadZone) / (range - centerDeadZone));
     }
 
     public void ResetToRestPose()
@@ -326,8 +332,8 @@ public sealed class KerisFistRotationController : MonoBehaviour
     private void PauseRotation()
     {
         rotating = false;
-        yawSpeed = 0f;
-        pitchSpeed = 0f;
+        hasPalm = false;
+        moveSmoothed = Vector2.zero;
         lockedAxis = 0;
     }
 

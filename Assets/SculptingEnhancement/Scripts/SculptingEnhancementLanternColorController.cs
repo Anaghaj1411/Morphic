@@ -484,19 +484,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
                 if (patternPainter.IsLocked)
                 {
-                    instructionText.text = "DRAWING LOCKED (Open palm detected). Show open palm again to unlock, or tap ← MOTIFS.";
+                    MorphicLoc.Apply(instructionText, "DRAWING LOCKED (Open palm detected). Show open palm again to unlock, or tap ← MOTIFS.");
                 }
                 else if (patternPainter.IsDrawing)
                 {
-                    instructionText.text = "DRAWING... Trace index finger across lantern to draw!";
+                    MorphicLoc.Apply(instructionText, "DRAWING... Trace index finger across lantern to draw!");
                 }
                 else if (patternPainter.IsOverSurface)
                 {
-                    instructionText.text = "Point index finger to draw. Open palm to lock.";
+                    MorphicLoc.Apply(instructionText, "Point index finger to draw. Open palm to lock.");
                 }
                 else
                 {
-                    instructionText.text = "Aim at lantern. Point index finger to draw, open palm to lock.";
+                    MorphicLoc.Apply(instructionText, "Aim at lantern. Point index finger to draw, open palm to lock.");
                 }
             }
         }
@@ -677,7 +677,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (historyBar != null)
             historyBar.SetActive(true);
 
-        headerText.text = "VERTEX SCULPT";
+        MorphicLoc.Apply(headerText, "VERTEX SCULPT");
         SetHeaderBackLabel("← BACK");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
@@ -763,14 +763,20 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             dist = 2f;
         }
 
-        float targetDist = dist * 0.88f;
-        float minDist = Mathf.Max(0.45f, bounds.extents.magnitude * 0.85f);
-        if (minDist > dist * 0.95f)
-            minDist = dist * 0.86f;
-        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.94f);
+        float targetDist = dist * 0.62f;
+        float minDist = Mathf.Max(0.28f, bounds.extents.magnitude * 0.36f);
+        if (minDist > dist * 0.8f)
+            minDist = dist * 0.50f;
+        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.78f);
 
         Vector3 back = offset.normalized;
-        targetPos = focus + back * targetDist;
+        Vector3 camRight = storedSculptCamRot * Vector3.right;
+        if (camRight.sqrMagnitude < 0.0001f)
+            camRight = cam.transform.right;
+        else
+            camRight.Normalize();
+
+        targetPos = focus + back * targetDist + camRight * (targetDist * 0.10f);
         targetRot = storedSculptCamRot;
         targetFov = storedSculptCamFov;
     }
@@ -1715,9 +1721,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         HideReviewAndShelf();
         if (reviewGroup != null)
             reviewGroup.SetActive(true);
-        headerText.text = "REVIEW";
+        MorphicLoc.Apply(headerText, "REVIEW");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Go back, or put this lantern on the shelf.";
+        MorphicLoc.Apply(instructionText, "Go back, or put this lantern on the shelf.");
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(true);
         ResetDwell();
@@ -1730,21 +1736,21 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (lanternShelf == null || ResolveLanternRoot() == null)
         {
             if (instructionText != null)
-                instructionText.text = "The shelf is not ready yet.";
+                MorphicLoc.Apply(instructionText, "The shelf is not ready yet.");
             return;
         }
 
         if (LanternCollectionStore.IsFull)
         {
             if (instructionText != null)
-                instructionText.text = "The shelf is full.";
+                MorphicLoc.Apply(instructionText, "The shelf is full.");
             return;
         }
 
         if (!CommitShelfCopy())
         {
             if (instructionText != null)
-                instructionText.text = "Could not place this lantern on the shelf.";
+                MorphicLoc.Apply(instructionText, "Could not place this lantern on the shelf.");
             return;
         }
 
@@ -1793,9 +1799,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         HideReviewAndShelf();
         if (shelfGroup != null)
             shelfGroup.SetActive(true);
-        headerText.text = "SHELF";
+        MorphicLoc.Apply(headerText, "SHELF");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Take it back, delete it, or go back when you are done.";
+        MorphicLoc.Apply(instructionText, "Take it back, delete it, or go back when you are done.");
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(true);
         ResetDwell();
@@ -1841,9 +1847,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             shelfGroup.SetActive(false);
         if (confirmDeleteGroup != null)
             confirmDeleteGroup.SetActive(true);
-        headerText.text = "DELETE";
+        MorphicLoc.Apply(headerText, "DELETE");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "This removes the lantern from the shelf.";
+        MorphicLoc.Apply(instructionText, "This removes the lantern from the shelf.");
         SetHeaderBackVisible(true);
         ResetDwell();
         SetHoveredTarget(null);
@@ -1926,7 +1932,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         return true;
     }
 
-    private void SetWorkingLanternVisible(bool visible)
+    public void SetWorkingLanternVisible(bool visible)
     {
         Transform root = ResolveLanternRoot();
         if (root != null)
@@ -1998,7 +2004,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (instructionText != null)
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Selfie removed.";
+            MorphicLoc.Apply(instructionText, "Selfie removed.");
         }
         return true;
     }
@@ -2017,7 +2023,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (instructionText != null)
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Selfie restored.";
+            MorphicLoc.Apply(instructionText, "Selfie restored.");
         }
         return true;
     }
@@ -2469,7 +2475,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         HideReviewAndShelf();
         if (historyBar != null)
             historyBar.SetActive(true);
-        headerText.text = "COLOR PALETTE";
+        MorphicLoc.Apply(headerText, "COLOR PALETTE");
         instructionText.gameObject.SetActive(false);
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(false);
@@ -2529,6 +2535,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetPanelHeight(PartSelectionPanelHeight);
         mainActionGroup.SetActive(false);
         partGroup.SetActive(true);
+        MorphicLoc.BindTree(partGroup.transform);
         if (variantGroup != null)
             variantGroup.SetActive(false);
         if (bodyActionGroup != null)
@@ -2552,11 +2559,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
-        headerText.text = "SELECT PART";
+        MorphicLoc.Apply(headerText, "SELECT PART");
         SetHeaderBackLabel("← SCULPT");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
-        instructionText.text = "Choose the whole lantern or one part.";
+        MorphicLoc.Apply(instructionText, "Choose the whole lantern or one part.");
         Transform leftoverColors = partGroup != null ? partGroup.transform.Find("NextColors") : null;
         if (leftoverColors != null)
             leftoverColors.gameObject.SetActive(false);
@@ -2623,10 +2630,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         for (int i = 0; i < variantButtons.Length; i++)
         {
             if (variantButtonLabels[i] != null)
-                variantButtonLabels[i].text = labels[i];
+                MorphicLoc.Apply(variantButtonLabels[i], labels[i]);
         }
 
-        headerText.text = partNames[partIndex];
+        MorphicLoc.Apply(headerText, partNames[partIndex]);
         SetHeaderBackLabel("← PARTS");
         instructionText.gameObject.SetActive(true);
         if (TryAdoptVisibleVariant(partIndex))
@@ -2639,14 +2646,17 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                     originalGestureController.ArmTasselVariant(selectedVariant == 1);
             }
 
-            instructionText.text = selectedVariantLabel +
-                " is already showing. Change color, or pick another shape.";
+            instructionText.text = MorphicLoc.T(selectedVariantLabel) +
+                MorphicLoc.T(" is already showing. Change color, or pick another shape.");
+            MorphicLoc.ApplyFont(instructionText);
         }
         else
         {
-            instructionText.text = partIndex == 4
-                ? "Choose one tassel or three tassels."
-                : "Choose Circle or Rectangle, then pinch and lift.";
+            MorphicLoc.Apply(
+                instructionText,
+                partIndex == 4
+                    ? "Choose one tassel or three tassels."
+                    : "Choose Circle or Rectangle, then pinch and lift.");
         }
         ResetDwell();
         SetHoveredTarget(null);
@@ -2657,7 +2667,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         selectedVariant = variantIndex;
         string[] labels = GetVariantLabels(selectedPart);
         selectedVariantLabel = labels[variantIndex];
-        headerText.text = partNames[selectedPart];
+        MorphicLoc.Apply(headerText, partNames[selectedPart]);
 
         if (selectedPart == 2 || selectedPart == 3)
         {
@@ -2671,11 +2681,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (originalGestureController != null)
                 originalGestureController.ArmPopVariant(selectedPart == 2, variantIndex == 1);
 
-            instructionText.text = selectedPart == 2
-                ? "Pinch with your right hand and lift to pop the " +
-                  selectedVariantLabel.ToLowerInvariant() + " top."
-                : "Pinch with your left hand and lift to pop the " +
-                  selectedVariantLabel.ToLowerInvariant() + " bottom.";
+            MorphicLoc.Apply(
+                instructionText,
+                selectedPart == 2
+                    ? "Pinch with your right hand and lift to pop the shape."
+                    : "Pinch with your left hand and lift to pop the shape.");
             SetHoveredTarget(null);
             return;
         }
@@ -2693,15 +2703,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (originalGestureController != null)
                 originalGestureController.ArmTasselVariant(variantIndex == 1);
 
-            instructionText.text =
-                "Make two fists and pull them down to bring the " +
-                selectedVariantLabel.ToLowerInvariant() + " out.";
+            MorphicLoc.Apply(instructionText, "Make two fists and pull them down to bring the tassel out.");
             SetHoveredTarget(null);
             return;
         }
 
         ApplyPartVariantShapes(selectedPart, variantIndex);
-        instructionText.text = selectedVariantLabel + " selected.";
+        instructionText.text = MorphicLoc.T(selectedVariantLabel) + MorphicLoc.T(" selected.");
+        MorphicLoc.ApplyFont(instructionText);
         if (originalGestureController != null)
             originalGestureController.SyncCurrentFromRenderer();
         SetHoveredTarget(null);
@@ -2925,7 +2934,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             if (mode == ColorMode.SelectVariant)
             {
-                instructionText.text = "Choose a shape first.";
+                MorphicLoc.Apply(instructionText, "Choose a shape first.");
                 return;
             }
 
@@ -2964,19 +2973,22 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         headerText.text = string.IsNullOrEmpty(selectedVariantLabel)
-            ? partNames[selectedPart]
-            : partNames[selectedPart] + " · " + selectedVariantLabel;
+            ? MorphicLoc.T(partNames[selectedPart])
+            : MorphicLoc.T(partNames[selectedPart]) + " · " + MorphicLoc.T(selectedVariantLabel);
+        MorphicLoc.ApplyFont(headerText);
         if (colorBackToDesigns)
             SetHeaderBackLabel("← DESIGNS");
         else if (selectedPart == 1)
             SetHeaderBackLabel("← BODY");
         else
             SetHeaderBackLabel(PartNeedsVariant(selectedPart) ? "← SHAPE" : "← PARTS");
-        instructionText.text = designTintActive
-            ? "Point at a color to tint the stamp."
-            : bandTintActive
-                ? "Point and hold on a color to tint the band."
-                : "Point and hold until the border completes.";
+        MorphicLoc.Apply(
+            instructionText,
+            designTintActive
+                ? "Point at a color to tint the stamp."
+                : bandTintActive
+                    ? "Point and hold on a color to tint the band."
+                    : "Point and hold until the border completes.");
         Transform colorBack = colorGroup != null ? colorGroup.transform.Find("Back") : null;
         TMP_Text colorBackLabel = colorBack != null
             ? colorBack.GetComponentInChildren<TMP_Text>()
@@ -2984,11 +2996,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (colorBackLabel != null)
         {
             if (colorBackToDesigns)
-                colorBackLabel.text = "DESIGNS";
+                MorphicLoc.Apply(colorBackLabel, "DESIGNS");
             else if (selectedPart == 1)
-                colorBackLabel.text = "LANTERN BODY";
+                MorphicLoc.Apply(colorBackLabel, "LANTERN BODY");
             else
-                colorBackLabel.text = PartNeedsVariant(selectedPart) ? "SELECT SHAPE" : "SELECT PART";
+                MorphicLoc.Apply(
+                    colorBackLabel,
+                    PartNeedsVariant(selectedPart) ? "SELECT SHAPE" : "SELECT PART");
         }
         SetHoveredTarget(null);
         RefreshColorSelectionMarks();
@@ -3007,16 +3021,18 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         selfiePanel.SetActive(true);
         selfieGroup.SetActive(true);
         selfieInstructionText.gameObject.SetActive(true);
-        selfieHeaderText.text = "SELFIE";
+        MorphicLoc.Apply(selfieHeaderText, "SELFIE");
         if (capturedSelfieTexture == null && appliedSelfieTexture != null)
             capturedSelfieTexture = Instantiate(appliedSelfieTexture);
         bool hasPhoto = capturedSelfieTexture != null;
         SetSelfieReviewControls(hasPhoto);
-        selfieInstructionText.text = hasPhoto
-            ? appliedSelfieTexture != null
-                ? "Remove the selfie, retake it, or press DONE."
-                : "Attach the photo to the lantern, retake it, or press DONE."
-            : "Frame your photo, then point and hold TAKE SELFIE.";
+        MorphicLoc.Apply(
+            selfieInstructionText,
+            hasPhoto
+                ? appliedSelfieTexture != null
+                    ? "Remove the selfie, retake it, or press DONE."
+                    : "Attach the photo to the lantern, retake it, or press DONE."
+                : "Frame your photo, then point and hold TAKE SELFIE.");
         if (hasPhoto)
             SetSelfiePreviewTexture(capturedSelfieTexture);
         else
@@ -3070,7 +3086,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (imageSource == null || !imageSource.isPrepared)
         {
             selfiePreviewImage.texture = null;
-            selfieInstructionText.text = "Camera is not ready yet. Please try again in a moment.";
+            MorphicLoc.Apply(selfieInstructionText, "Camera is not ready yet. Please try again in a moment.");
             return;
         }
 
@@ -3082,7 +3098,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         Texture2D captured = CaptureCurrentCameraFrame();
         if (captured == null)
         {
-            selfieInstructionText.text = "Could not capture the camera image. Please try again.";
+            MorphicLoc.Apply(selfieInstructionText, "Could not capture the camera image. Please try again.");
             return;
         }
 
@@ -3090,7 +3106,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         capturedSelfieTexture = captured;
         SetSelfiePreviewTexture(capturedSelfieTexture);
         SetSelfieReviewControls(true);
-        selfieInstructionText.text = "Attach the photo to the lantern, retake it, or press DONE.";
+        MorphicLoc.Apply(selfieInstructionText, "Attach the photo to the lantern, retake it, or press DONE.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -3214,7 +3230,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         capturedSelfieTexture = null;
         SetSelfieReviewControls(false);
         ShowLiveSelfiePreview();
-        selfieInstructionText.text = "Frame your photo, then point and hold TAKE SELFIE.";
+        MorphicLoc.Apply(selfieInstructionText, "Frame your photo, then point and hold TAKE SELFIE.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -3224,7 +3240,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         Texture2D selectedTexture = capturedSelfieTexture;
         if (selectedTexture == null || lanternRenderer == null)
         {
-            selfieInstructionText.text = "Take a selfie before attaching it to the lantern.";
+            MorphicLoc.Apply(selfieInstructionText, "Take a selfie before attaching it to the lantern.");
             return;
         }
 
@@ -3239,7 +3255,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         EnsureSelfieSurfaceOverlay();
         ConfigureSelfieSurfaceMaterial(appliedSelfieTexture);
         SyncSelfieSurfaceRenderer();
-        selfieInstructionText.text = "Selfie attached to the lantern body.";
+        MorphicLoc.Apply(selfieInstructionText, "Selfie attached to the lantern body.");
         SetSelfieReviewControls(true);
     }
 
@@ -3254,7 +3270,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         capturedSelfieTexture = null;
         SetSelfieReviewControls(false);
         ShowLiveSelfiePreview();
-        selfieInstructionText.text = "Selfie removed. Take a new one, or press BACK.";
+        MorphicLoc.Apply(selfieInstructionText, "Selfie removed. Take a new one, or press BACK.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -3806,7 +3822,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (clayColorChip != null)
                 clayColorChip.color = color;
             PushHistory();
-            instructionText.text = "Clay color selected. Pick another color or press DONE.";
+            MorphicLoc.Apply(instructionText, "Clay color selected. Pick another color or press DONE.");
             MarkColorSwatch(color);
             return;
         }
@@ -3819,7 +3835,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (bandColorChip != null)
                 bandColorChip.color = color;
             PushHistory();
-            instructionText.text = "Band color selected. Pick another color or press DONE.";
+            MorphicLoc.Apply(instructionText, "Band color selected. Pick another color or press DONE.");
             MarkColorSwatch(color);
             return;
         }
@@ -3838,9 +3854,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             CommitTargetColor(selectedPart, color);
         PushHistory();
         colorSelectionLocked = false;
-        instructionText.text = designTintActive
-            ? "Stamp tint selected. Choose another color or press DONE."
-            : "Color selected. Choose another color or press DONE.";
+        MorphicLoc.Apply(
+            instructionText,
+            designTintActive
+                ? "Stamp tint selected. Choose another color or press DONE."
+                : "Color selected. Choose another color or press DONE.");
         MarkColorSwatch(color);
     }
 
@@ -4009,7 +4027,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     {
         if (headerBackText != null)
         {
-            headerBackText.text = label;
+            MorphicLoc.Bind(headerBackText, label);
             headerBackText.fontSize = 17.5f;
             headerBackText.fontStyle = FontStyles.Bold;
             headerBackText.color = DarkTextGreen;
@@ -4069,6 +4087,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (texts[i] != null)
                 texts[i].alignment = TextAlignmentOptions.Center;
         }
+        MorphicLoc.BindTree(uiRoot.transform);
     }
 
     private void SetPanelHeight(float height)
@@ -5235,7 +5254,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
         if (gestureIndicator != null)
             text.font = gestureIndicator.font;
-        text.text = content;
+        MorphicLoc.Bind(text, content);
         text.fontSize = fontSize;
         text.fontStyle = style;
         text.alignment = alignment;
@@ -5313,11 +5332,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         SetTitleBurstsVisible(false);
-        headerText.text = "LANTERN BODY";
+        MorphicLoc.Apply(headerText, "LANTERN BODY");
         SetHeaderBackLabel("← PARTS");
-        instructionText.text = appliedDesignTexture != null
-            ? "Change the paper color, or add another design."
-            : "Change the paper color, or add a stamped design.";
+        MorphicLoc.Apply(
+            instructionText,
+            appliedDesignTexture != null
+                ? "Change the paper color, or add another design."
+                : "Change the paper color, or add a stamped design.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -5353,11 +5374,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         SetTitleBurstsVisible(false);
-        headerText.text = "ADD DESIGN";
+        MorphicLoc.Apply(headerText, "ADD DESIGN");
         SetHeaderBackLabel("← BODY");
-        instructionText.text = stampPatterns == null || stampPatterns.Length == 0
-            ? "No stamps found in StampPatterns."
-            : "Choose a stamp. Then tint it with Change Color.";
+        MorphicLoc.Apply(
+            instructionText,
+            stampPatterns == null || stampPatterns.Length == 0
+                ? "No stamps found in StampPatterns."
+                : "Choose a stamp. Then tint it with Change Color.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -5374,7 +5397,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     {
         if (appliedDesignTexture == null)
         {
-            instructionText.text = "Choose a stamp first.";
+            MorphicLoc.Apply(instructionText, "Choose a stamp first.");
             return;
         }
 
@@ -5400,7 +5423,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         ApplyDesignTint(committedDesignTint);
         if (designSurfaceRenderer != null)
             designSurfaceRenderer.enabled = true;
-        instructionText.text = stamp.name + " applied. Change Color tints the stamp.";
+        instructionText.text = MorphicLoc.T(stamp.name) +
+            MorphicLoc.T(" applied. Change Color tints the stamp.");
+        MorphicLoc.ApplyFont(instructionText);
         PushHistory();
     }
 
@@ -5415,7 +5440,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             designSurfaceRenderer.enabled = false;
         if (patternPainter != null)
             patternPainter.ClearAllStrokes();
-        instructionText.text = "Design cleared.";
+        MorphicLoc.Apply(instructionText, "Design cleared.");
         PushHistory();
     }
 
@@ -5510,7 +5535,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
             TextMeshProUGUI labelText = labelObj.GetComponent<TextMeshProUGUI>();
-            labelText.text = "BAND " + (i + 1);
+            labelText.text = MorphicLoc.F("BAND {0}", i + 1);
+            MorphicLoc.ApplyFont(labelText);
             labelText.fontSize = 18f;
             labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
@@ -5597,7 +5623,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.ClearAllStrokes();
-            instructionText.text = "All drawings cleared.";
+            MorphicLoc.Apply(instructionText, "All drawings cleared.");
         });
         RegisterHitTarget(clearStrokes, false, false, default);
 
@@ -5626,7 +5652,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             patternPainter.SetStrokeWidth(width, true);
 
         RefreshBandSizeButtons();
-        instructionText.text = "Band width: " + bandSizeLabels[selectedBandSizeIndex] + " (" + Mathf.RoundToInt(width * 100f) + " cm).";
+        instructionText.text = MorphicLoc.F("SIZE: {0}", MorphicLoc.T(bandSizeLabels[selectedBandSizeIndex]));
+        MorphicLoc.ApplyFont(instructionText);
     }
 
     private void RefreshBandSizeButtons()
@@ -5652,7 +5679,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             TMP_Text label = targetingSizeBtn.GetComponentInChildren<TMP_Text>();
             if (label != null)
             {
-                label.text = "SIZE: " + bandSizeLabels[selectedBandSizeIndex];
+                MorphicLoc.Apply(label, "SIZE: " + bandSizeLabels[selectedBandSizeIndex]);
                 label.fontSize = 17f;
                 label.fontStyle = FontStyles.Bold;
                 label.color = DarkTextGreen;
@@ -5669,9 +5696,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         designTintActive = false;
         selectedPart = 1;
         ContinueToColorSelection();
-        headerText.text = "BAND COLOR";
+        MorphicLoc.Apply(headerText, "BAND COLOR");
         SetHeaderBackLabel(mode == ColorMode.DrawBandTargeting ? "← DRAW" : "← MOTIFS");
-        instructionText.text = "Point and hold on a color to tint the band designs.";
+        MorphicLoc.Apply(instructionText, "Point and hold on a color to tint the band designs.");
     }
 
     private void OpenClayColorSelection()
@@ -5683,9 +5710,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         designTintActive = false;
         selectedPart = 1;
         ContinueToColorSelection();
-        headerText.text = "CLAY COLOR";
+        MorphicLoc.Apply(headerText, "CLAY COLOR");
         SetHeaderBackLabel("← SCULPT");
-        instructionText.text = "Point and hold on a color to tint the clay.";
+        MorphicLoc.Apply(instructionText, "Point and hold on a color to tint the clay.");
     }
 
     private void OnColorDoneClicked()
@@ -5793,7 +5820,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.UndoLastStroke();
-            instructionText.text = "Last stroke undone.";
+            MorphicLoc.Apply(instructionText, "Last stroke undone.");
         });
         RegisterHitTarget(undoBtn, false, false, default);
 
@@ -5814,7 +5841,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.RedoLastStroke();
-            instructionText.text = "Last stroke redone.";
+            MorphicLoc.Apply(instructionText, "Last stroke redone.");
         });
         RegisterHitTarget(redoBtn, false, false, default);
 
@@ -5836,7 +5863,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             if (patternPainter != null)
                 patternPainter.ClearAllStrokes();
-            instructionText.text = "All drawings cleared.";
+            MorphicLoc.Apply(instructionText, "All drawings cleared.");
         });
         RegisterHitTarget(clearBtn, false, false, default);
 
@@ -5862,10 +5889,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
         SetPanelHeight(330f);
         string motifName = appliedBandTexture != null ? appliedBandTexture.name.Replace("Band_", "").ToUpper() : "BAND";
-        headerText.text = "DRAW: " + motifName;
+        headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motifName));
+        MorphicLoc.ApplyFont(headerText);
         SetHeaderBackLabel("← MOTIFS");
         SetHeaderBackVisible(true);
-        instructionText.text = "Trace index finger across lantern to draw. Open palm to lock.";
+        MorphicLoc.Apply(instructionText, "Trace index finger across lantern to draw. Open palm to lock.");
         instructionText.fontSize = 20f;
         instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
@@ -5909,10 +5937,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         instructionText.gameObject.SetActive(true);
         SetTitleBurstsVisible(false);
-        headerText.text = "DRAW BAND";
+        MorphicLoc.Apply(headerText, "DRAW BAND");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
-        instructionText.text = "Select a motif, adjust size & color, then trace on lantern.";
+        MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on lantern.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -5937,7 +5965,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 string bName = bandPatterns[i].name;
                 if (bName.StartsWith("Band_"))
                     bName = bName.Substring(5);
-                label.text = bName.ToUpper();
+                MorphicLoc.Apply(label, bName.ToUpper());
                 label.fontSize = 18f;
                 label.fontStyle = FontStyles.Bold;
                 label.color = DarkTextGreen;
@@ -5981,10 +6009,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             bandTargetingBar.SetActive(true);
 
         SetPanelHeight(330f);
-        headerText.text = "DRAW: " + motif.name.Replace("Band_", "").ToUpper();
+        headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motif.name.Replace("Band_", "").ToUpperInvariant()));
+        MorphicLoc.ApplyFont(headerText);
         SetHeaderBackLabel("← MOTIFS");
         SetHeaderBackVisible(true);
-        instructionText.text = "Trace index finger across lantern to draw. Open palm to lock.";
+        MorphicLoc.Apply(instructionText, "Trace index finger across lantern to draw. Open palm to lock.");
         instructionText.fontSize = 20f;
         instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
@@ -6144,7 +6173,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             TMP_Text label = designButtons[i].GetComponentInChildren<TMP_Text>();
             if (label != null)
             {
-                label.text = stampPatterns[i].name;
+                MorphicLoc.Apply(label, stampPatterns[i].name.Replace('_', ' '));
                 RectTransform labelRect = label.rectTransform;
                 labelRect.anchorMin = new Vector2(0f, 0f);
                 labelRect.anchorMax = new Vector2(1f, 0.28f);
@@ -6473,7 +6502,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last clay coil undone.";
+                    MorphicLoc.Apply(instructionText, "Last clay coil undone.");
                 }
                 return true;
             case TimedUndo.Sculpt:
@@ -6484,7 +6513,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last sculpt stroke undone.";
+                    MorphicLoc.Apply(instructionText, "Last sculpt stroke undone.");
                 }
                 return true;
             case TimedUndo.Band:
@@ -6495,7 +6524,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last drawing stroke undone.";
+                    MorphicLoc.Apply(instructionText, "Last drawing stroke undone.");
                 }
                 return true;
             case TimedUndo.Selfie:
@@ -6507,7 +6536,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 history.RemoveAt(history.Count - 1);
                 ApplySnapshot(history[history.Count - 1]);
                 if (instructionText != null)
-                    instructionText.text = "Last change undone.";
+                    MorphicLoc.Apply(instructionText, "Last change undone.");
                 return true;
             default:
                 return false;
@@ -6526,7 +6555,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last clay coil redone.";
+                    MorphicLoc.Apply(instructionText, "Last clay coil redone.");
                 }
                 return true;
             case TimedUndo.Sculpt:
@@ -6537,7 +6566,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last sculpt stroke redone.";
+                    MorphicLoc.Apply(instructionText, "Last sculpt stroke redone.");
                 }
                 return true;
             case TimedUndo.Band:
@@ -6548,7 +6577,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last drawing stroke redone.";
+                    MorphicLoc.Apply(instructionText, "Last drawing stroke redone.");
                 }
                 return true;
             case TimedUndo.Selfie:
@@ -6561,7 +6590,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 history.Add(snapshot);
                 ApplySnapshot(snapshot);
                 if (instructionText != null)
-                    instructionText.text = "Last change redone.";
+                    MorphicLoc.Apply(instructionText, "Last change redone.");
                 return true;
             default:
                 return false;
@@ -6579,7 +6608,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last clay coil undone.";
+                MorphicLoc.Apply(instructionText, "Last clay coil undone.");
             }
             return;
         }
@@ -6590,7 +6619,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last sculpt stroke undone.";
+                MorphicLoc.Apply(instructionText, "Last sculpt stroke undone.");
             }
             return;
         }
@@ -6601,7 +6630,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last drawing stroke undone.";
+                MorphicLoc.Apply(instructionText, "Last drawing stroke undone.");
             }
             return;
         }
@@ -6612,7 +6641,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (history.Count < 2)
         {
             if (instructionText != null)
-                instructionText.text = "Nothing to undo.";
+                MorphicLoc.Apply(instructionText, "Nothing to undo.");
             return;
         }
 
@@ -6620,7 +6649,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         history.RemoveAt(history.Count - 1);
         ApplySnapshot(history[history.Count - 1]);
         if (instructionText != null)
-            instructionText.text = "Last change undone.";
+            MorphicLoc.Apply(instructionText, "Last change undone.");
     }
 
     private void RedoHistory()
@@ -6634,7 +6663,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last clay coil redone.";
+                MorphicLoc.Apply(instructionText, "Last clay coil redone.");
             }
             return;
         }
@@ -6645,7 +6674,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last sculpt stroke redone.";
+                MorphicLoc.Apply(instructionText, "Last sculpt stroke redone.");
             }
             return;
         }
@@ -6656,7 +6685,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last drawing stroke redone.";
+                MorphicLoc.Apply(instructionText, "Last drawing stroke redone.");
             }
             return;
         }
@@ -6667,7 +6696,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (redoHistory.Count == 0)
         {
             if (instructionText != null)
-                instructionText.text = "Nothing to redo.";
+                MorphicLoc.Apply(instructionText, "Nothing to redo.");
             return;
         }
 
@@ -6676,7 +6705,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         history.Add(snapshot);
         ApplySnapshot(snapshot);
         if (instructionText != null)
-            instructionText.text = "Last change redone.";
+            MorphicLoc.Apply(instructionText, "Last change redone.");
     }
 
     private void ShowConfirmReset()
@@ -6712,9 +6741,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         HideReviewAndShelf();
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(true);
-        headerText.text = "RESET";
+        MorphicLoc.Apply(headerText, "RESET");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "This clears sculpt, color, and stamp.";
+        MorphicLoc.Apply(instructionText, "This clears sculpt, color, and stamp.");
         SetPanelHeight(BodyActionsPanelHeight);
         SetHoveredTarget(null);
     }
@@ -6772,7 +6801,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         CaptureBaseline();
         HideConfirmReset();
         if (instructionText != null)
-            instructionText.text = "Lantern reset.";
+            MorphicLoc.Apply(instructionText, "Lantern reset.");
     }
 
     private LanternSnapshot CaptureSnapshot()

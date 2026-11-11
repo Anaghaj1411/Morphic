@@ -56,13 +56,12 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     [Header("Vertex Sculpt Camera")]
     [Tooltip("On = use the pose below during vertex sculpt and band drawing.")]
     [SerializeField] private bool useCustomSculptCamera = true;
-    [SerializeField] private Vector3 sculptCameraPosition = new Vector3(-26.13f, 2.553f, -6.1627f);
-    [SerializeField] private Vector3 sculptCameraRotation = new Vector3(3.238f, -256.979f, 90.748f);
+    [SerializeField] private Vector3 sculptCameraPosition = new Vector3(-26.06807f, 2.537f, -6.085f);
+    [SerializeField] private Vector3 sculptCameraRotation = new Vector3(0f, -257f, 90f);
     [SerializeField] private float sculptCameraFov = 50f;
-    private static readonly Vector3 KerisSculptCamPos = new Vector3(-26.13f, 2.553f, -6.1627f);
-    private static readonly Vector3 KerisSculptCamEuler = new Vector3(3.238f, -256.979f, 90.748f);
+    private static readonly Vector3 KerisSculptCamPos = new Vector3(-26.06807f, 2.537f, -6.085f);
+    private static readonly Vector3 KerisSculptCamEuler = new Vector3(0f, -257f, 90f);
     private const float KerisSculptCamFov = 50f;
-    private const float KerisSculptZoomBlend = 0.22f;
 
     private static readonly Color CardCream = new Color32(255, 239, 214, 255);
     private static readonly Color PillPink = LanguagePageBuilder.Pink;
@@ -388,7 +387,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (instructionText != null && instructionText.gameObject.activeSelf &&
             kerisGestures != null && kerisGestures.IsDeformationLocked &&
             mode != ColorMode.VertexSculpt && mode != ColorMode.SelectColor)
-            instructionText.text = "LOCKED. Point both index fingers to unlock.";
+            MorphicLoc.Apply(instructionText, "LOCKED. Point both index fingers to unlock.");
 
         SetHoveredTarget(nextHovered);
         UpdateDwellSelection(nextHovered);
@@ -512,6 +511,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         BuildReview(panelRect);
         BuildSelfie(uiRoot.transform);
         BuildCursor();
+        MorphicLoc.BindTree(uiRoot.transform);
         partGroup.SetActive(false);
         if (variantGroup != null)
             variantGroup.SetActive(false);
@@ -675,7 +675,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             selfieEntryButton.gameObject.SetActive(true);
         if (historyBar != null)
             historyBar.SetActive(true);
-        headerText.text = "COLOR PALETTE";
+        MorphicLoc.Apply(headerText, "COLOR PALETTE");
         instructionText.gameObject.SetActive(false);
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(false);
@@ -701,21 +701,25 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         colorGroup.SetActive(true);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
-        headerText.text = clayTintActive
-            ? "CLAY COLOR"
-            : designTintActive
-                ? "STAMP COLOR"
-                : bandTintActive
-                    ? "BAND COLOR"
-                    : ColorHeaderLabel();
+        MorphicLoc.Apply(
+            headerText,
+            clayTintActive
+                ? "CLAY COLOR"
+                : designTintActive
+                    ? "STAMP COLOR"
+                    : bandTintActive
+                        ? "BAND COLOR"
+                        : ColorHeaderLabel());
         instructionText.gameObject.SetActive(true);
-        instructionText.text = clayTintActive
-            ? "Pick a clay color."
-            : designTintActive
-                ? "Pick a tint for the stamp."
-                : bandTintActive
-                    ? "Pick a color for the drawn band."
-                    : "Pick a color for the keris.";
+        MorphicLoc.Apply(
+            instructionText,
+            clayTintActive
+                ? "Pick a clay color."
+                : designTintActive
+                    ? "Pick a tint for the stamp."
+                    : bandTintActive
+                        ? "Pick a color for the drawn band."
+                        : "Pick a color for the keris.");
         SetHeaderBackLabel(clayTintActive
             ? "← BACK"
             : designTintActive
@@ -755,7 +759,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         SetSculptGesturesEnabled(false);
-        headerText.text = "VERTEX SCULPT";
+        MorphicLoc.Apply(headerText, "VERTEX SCULPT");
         SetHeaderBackLabel("← BACK");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
@@ -814,7 +818,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (!hasStoredSculptCam)
             CaptureStudioCamera();
 
-        GetMinimizedKerisSculptPose(out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
+        GetKerisZoomPose(out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
 
         vertexSculptCameraZoomed = true;
@@ -846,27 +850,19 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         hasStoredSculptCam = true;
     }
 
-    private void GetMinimizedKerisSculptPose(
+    private void GetKerisZoomPose(
         out Vector3 pos,
         out Quaternion rot,
         out float fov)
     {
-        if (!hasStoredSculptCam)
-        {
-            pos = KerisSculptCamPos;
-            rot = Quaternion.Euler(KerisSculptCamEuler);
-            fov = KerisSculptCamFov;
-            return;
-        }
-
-        pos = Vector3.Lerp(storedSculptCamPos, KerisSculptCamPos, KerisSculptZoomBlend);
-        rot = storedSculptCamRot;
-        fov = storedSculptCamFov;
+        pos = KerisSculptCamPos;
+        rot = Quaternion.Euler(KerisSculptCamEuler);
+        fov = storedSculptCamFov > 1f ? storedSculptCamFov : KerisSculptCamFov;
     }
 
     private void ApplyKerisSculptCameraPose(Camera cam)
     {
-        GetMinimizedKerisSculptPose(out Vector3 pos, out Quaternion rot, out float fov);
+        GetKerisZoomPose(out Vector3 pos, out Quaternion rot, out float fov);
         ApplyCameraPose(cam, pos, rot, fov, 0.05f);
 
         Camera named = FindNamedMainCamera();
@@ -1076,11 +1072,12 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         HideExtraGroups();
         if (partGroup != null)
             partGroup.SetActive(true);
+        MorphicLoc.BindTree(partGroup.transform);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
-        headerText.text = "SELECT PART";
+        MorphicLoc.Apply(headerText, "SELECT PART");
         instructionText.gameObject.SetActive(true);
-        instructionText.text = "Choose the body, a carving, or the handle.";
+        MorphicLoc.Apply(instructionText, "Choose the body, a carving, or the handle.");
         Transform leftoverColors = partGroup != null ? partGroup.transform.Find("NextColors") : null;
         if (leftoverColors != null)
             leftoverColors.gameObject.SetActive(false);
@@ -1111,10 +1108,14 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             return;
         }
 
-        headerText.text = "SELECT PART";
-        instructionText.text = selectedPart == PartBody
-            ? "Point both index fingers for width and height. Right pinch up for sharpness, left pinch up for curve. Open palm to lock."
-            : partNames[selectedPart] + " selected.";
+        MorphicLoc.Apply(headerText, "SELECT PART");
+        if (selectedPart == PartBody)
+            MorphicLoc.Apply(
+                instructionText,
+                "Point both index fingers for width and height. Right pinch up for sharpness, left pinch up for curve. Open palm to lock.");
+        else
+            instructionText.text = MorphicLoc.T(partNames[selectedPart]) + MorphicLoc.T(" selected.");
+            MorphicLoc.ApplyFont(instructionText);
         SetSculptGesturesEnabled(selectedPart == PartBody);
         if (kerisGestures != null)
             kerisGestures.SetPinchDrivesCarving(false);
@@ -1139,7 +1140,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         {
             if (mode == ColorMode.SelectVariant)
             {
-                instructionText.text = "Choose a shape first.";
+                MorphicLoc.Apply(instructionText, "Choose a shape first.");
                 return;
             }
 
@@ -1167,17 +1168,19 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         for (int i = 0; i < variantButtonLabels.Length; i++)
         {
             if (variantButtonLabels[i] != null)
-                variantButtonLabels[i].text = labels[i];
+                MorphicLoc.Apply(variantButtonLabels[i], labels[i]);
         }
 
-        headerText.text = partNames[partIndex];
+        MorphicLoc.Apply(headerText, partNames[partIndex]);
         SetHeaderBackLabel("← PARTS");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
         instructionText.gameObject.SetActive(true);
-        instructionText.text = partIndex == PartHandle
-            ? "Choose Handle 1 or Handle 2."
-            : "Choose Carving 1 or Carving 2.";
+        MorphicLoc.Apply(
+            instructionText,
+            partIndex == PartHandle
+                ? "Choose HANDLE 1 or HANDLE 2."
+                : "Choose Carving 1 or Carving 2.");
         RefreshVariantButtons();
         ResetDwell();
         SetHoveredTarget(null);
@@ -1189,20 +1192,16 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     {
         selectedVariant = Mathf.Clamp(variantIndex, 0, 1);
         selectedVariantLabel = GetVariantLabels(selectedPart)[selectedVariant];
-        headerText.text = partNames[selectedPart];
+        MorphicLoc.Apply(headerText, partNames[selectedPart]);
         ArmSelectedVariant();
         RefreshVariantButtons();
         SetSculptGesturesEnabled(true);
         if (kerisGestures != null)
             kerisGestures.SetPinchDrivesCarving(selectedPart == PartCarving);
         if (selectedPart == PartHandle)
-            instructionText.text =
-                "Make two fists and pull them down to bring " +
-                selectedVariantLabel.ToLowerInvariant() + " out.";
+            MorphicLoc.Apply(instructionText, "Make two fists and pull them down to bring the handle out.");
         else
-            instructionText.text =
-                "Make two V signs and spread them outwards to bring " +
-                selectedVariantLabel.ToLowerInvariant() + " out.";
+            MorphicLoc.Apply(instructionText, "Make two V signs and spread them outwards to bring the carving out.");
         ResetDwell();
         SetHoveredTarget(null);
     }
@@ -1936,7 +1935,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last clay coil undone.";
+                    MorphicLoc.Apply(instructionText, "Last clay coil undone.");
                 }
                 return true;
             case TimedUndo.Sculpt:
@@ -1947,7 +1946,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last sculpt stroke undone.";
+                    MorphicLoc.Apply(instructionText, "Last sculpt stroke undone.");
                 }
                 return true;
             case TimedUndo.Band:
@@ -1958,7 +1957,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last drawing stroke undone.";
+                    MorphicLoc.Apply(instructionText, "Last drawing stroke undone.");
                 }
                 return true;
             case TimedUndo.Selfie:
@@ -1972,7 +1971,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last change undone.";
+                    MorphicLoc.Apply(instructionText, "Last change undone.");
                 }
                 return true;
             default:
@@ -1992,7 +1991,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last clay coil redone.";
+                    MorphicLoc.Apply(instructionText, "Last clay coil redone.");
                 }
                 return true;
             case TimedUndo.Sculpt:
@@ -2003,7 +2002,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last sculpt stroke redone.";
+                    MorphicLoc.Apply(instructionText, "Last sculpt stroke redone.");
                 }
                 return true;
             case TimedUndo.Band:
@@ -2014,7 +2013,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last drawing stroke redone.";
+                    MorphicLoc.Apply(instructionText, "Last drawing stroke redone.");
                 }
                 return true;
             case TimedUndo.Selfie:
@@ -2029,7 +2028,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 if (instructionText != null)
                 {
                     instructionText.gameObject.SetActive(true);
-                    instructionText.text = "Last change redone.";
+                    MorphicLoc.Apply(instructionText, "Last change redone.");
                 }
                 return true;
             default:
@@ -2047,7 +2046,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last clay coil undone.";
+                MorphicLoc.Apply(instructionText, "Last clay coil undone.");
             }
             return;
         }
@@ -2058,7 +2057,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last sculpt stroke undone.";
+                MorphicLoc.Apply(instructionText, "Last sculpt stroke undone.");
             }
             return;
         }
@@ -2069,7 +2068,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last drawing stroke undone.";
+                MorphicLoc.Apply(instructionText, "Last drawing stroke undone.");
             }
             return;
         }
@@ -2085,7 +2084,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last change undone.";
+                MorphicLoc.Apply(instructionText, "Last change undone.");
             }
             return;
         }
@@ -2093,7 +2092,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (instructionText != null)
         {
             instructionText.gameObject.SetActive(true);
-            instructionText.text = "Nothing to undo.";
+            MorphicLoc.Apply(instructionText, "Nothing to undo.");
         }
     }
 
@@ -2107,7 +2106,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last clay coil redone.";
+                MorphicLoc.Apply(instructionText, "Last clay coil redone.");
             }
             return;
         }
@@ -2118,7 +2117,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last sculpt stroke redone.";
+                MorphicLoc.Apply(instructionText, "Last sculpt stroke redone.");
             }
             return;
         }
@@ -2129,7 +2128,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last drawing stroke redone.";
+                MorphicLoc.Apply(instructionText, "Last drawing stroke redone.");
             }
             return;
         }
@@ -2146,7 +2145,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
-                instructionText.text = "Last change redone.";
+                MorphicLoc.Apply(instructionText, "Last change redone.");
             }
         }
     }
@@ -2495,7 +2494,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private void SetHeaderBackLabel(string label)
     {
         if (headerBackText != null)
-            headerBackText.text = label;
+            MorphicLoc.Bind(headerBackText, label);
     }
 
     private void SetTitleBurstsVisible(bool visible)
@@ -2562,7 +2561,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         rect.anchoredPosition = anchoredPosition;
         rect.sizeDelta = size;
         TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
-        text.text = value;
+        MorphicLoc.Bind(text, value);
         text.fontSize = fontSize;
         text.alignment = alignment;
         text.fontStyle = style;

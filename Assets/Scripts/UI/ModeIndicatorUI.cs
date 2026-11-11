@@ -30,8 +30,6 @@ public class ModeIndicatorUI : MonoBehaviour
         if (modeText == null)
             return;
 
-        modeText.text = paintModeActive
-            ? paintModeText
-            : sculptModeText;
+        modeText.text = MorphicLoc.T(paintModeActive ? paintModeText : sculptModeText);
     }
 }

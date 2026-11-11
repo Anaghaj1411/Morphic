@@ -38,6 +38,8 @@ public class MorphicAITriggerEngine : MonoBehaviour
         public int hasStamp;
         public int hasSelfie;
         public int locked;
+        public string replyLanguage;
+        public string replyInstruction;
     }
 
     [Serializable]
@@ -147,7 +149,9 @@ public class MorphicAITriggerEngine : MonoBehaviour
             kerisUseHandle2 = state.kerisUseHandle2,
             hasStamp = state.hasStamp,
             hasSelfie = state.hasSelfie,
-            locked = state.locked
+            locked = state.locked,
+            replyLanguage = MorphicLoc.AiLanguageName(),
+            replyInstruction = MorphicLoc.WithAiLanguage("")
         };
 
         if (behaviorTracker != null)

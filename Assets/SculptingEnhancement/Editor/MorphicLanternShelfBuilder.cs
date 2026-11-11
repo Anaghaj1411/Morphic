@@ -164,6 +164,7 @@ public static class MorphicLanternShelfBuilder
             created = true;
             Transform slot = slotObject.transform;
             slot.SetParent(parent, true);
+            MorphicShelfSlotMarker.EnsureOn(slot);
             if (template != null)
             {
                 slot.position = template.position + extraOffset;
