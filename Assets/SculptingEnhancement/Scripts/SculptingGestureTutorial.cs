@@ -115,6 +115,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
     private TMP_Text stepText;
     private RawImage gestureImage;
     private MorphicGesturePreview gesturePreview;
+    private Button previousButton;
     private Button nextButton;
 
     public bool IsShowing => root != null && root.activeSelf;
@@ -215,7 +216,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         artRect.sizeDelta = new Vector2(248f, 248f);
         artFrame.raycastTarget = false;
         Image artFill = LanguagePageBuilder.CreateRoundedImage(
-            "ArtFill", artFrame.transform, 24, new Color32(253, 242, 250, 255));
+            "ArtFill", artFrame.transform, 24, new Color(0.97f, 0.76f, 0.82f, 1f));
         LanguagePageBuilder.Stretch(artFill.rectTransform, new Vector2(7f, 7f));
         artFill.raycastTarget = false;
         gestureImage = CreateRawImage(artFill.transform, "GestureImage", Vector2.zero, new Vector2(196f, 196f));
@@ -229,11 +230,11 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
 
         CreateMorphicButton(cardRect, "Skip", new Vector2(278f, 258f), new Vector2(160f, 48f),
             "SKIP", LanguagePageBuilder.Pink, Skip);
-        CreateMorphicButton(cardRect, "Replay", new Vector2(-110f, -268f), new Vector2(168f, 56f),
+        CreateMorphicButton(cardRect, "Replay", new Vector2(-226f, -268f), new Vector2(152f, 56f),
             "REPLAY", LanguagePageBuilder.Pink, Replay);
-        CreateIconButton(cardRect, "Back", new Vector2(-278f, 258f), new Vector2(56f, 56f), 
-            "MorphicBackButton", LanguagePageBuilder.Pink, Back);
-        nextButton = CreateMorphicButton(cardRect, "Next", new Vector2(120f, -268f), new Vector2(188f, 56f),
+        previousButton = CreateMorphicButton(cardRect, "Previous", new Vector2(0f, -268f), new Vector2(164f, 56f),
+            "PREVIOUS", LanguagePageBuilder.Pink, Back);
+        nextButton = CreateMorphicButton(cardRect, "Next", new Vector2(226f, -268f), new Vector2(188f, 56f),
             "NEXT", new Color32(236, 64, 168, 255), Next);
     }
 
@@ -263,6 +264,8 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
             stepIndex == Steps.Length - 1
                 ? (preserveSculpt ? "DONE" : "START SCULPTING")
                 : "NEXT");
+        if (previousButton != null)
+            previousButton.interactable = stepIndex > 0;
     }
 
     private void MarkRecognized()

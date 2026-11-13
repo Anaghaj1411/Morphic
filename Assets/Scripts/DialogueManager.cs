@@ -1,5 +1,6 @@
 
 using System.Collections;
+using System.Collections.Generic;
 using Mediapipe.Unity.Sample;
 using Mediapipe.Unity.Sample.HandLandmarkDetection;
 using TMPro;
@@ -99,6 +100,9 @@ public class DialogueManager : MonoBehaviour
     private string currentCraftIntro;
     private DialogueButtonClickSound dialogueButtonSound;
     private MorphicLisaPortrait lisaPortrait;
+    private GameObject mainMenuRoot;
+    private bool studioWelcomeSpoken;
+    private readonly HashSet<string> spokenCraftIntros = new HashSet<string>();
 
     private void Awake()
     {
@@ -480,21 +484,36 @@ public class DialogueManager : MonoBehaviour
                     "LISA",
                     "Welcome to my pottery studio! " +
                     "Here, you can explore different artistic traditions through clay. " +
-                    "Which creation would you like to try?"
+                    "Which creation would you like to try?",
+                    !studioWelcomeSpoken
                 );
+                studioWelcomeSpoken = true;
 
                 ShowCultureChoices();
                 break;
         }
 
-        SetMenuBackVisible(true);
+        if (node == 10)
+        {
+            SetMenuBackVisible(false);
+            SetSculptBackVisible(false);
+            SetMainMenuVisible(true);
+        }
+        else
+        {
+            SetMainMenuVisible(false);
+            SetMenuBackVisible(true);
+        }
     }
 
-    private void SetDialogue(string speaker, string message)
+    private void SetDialogue(string speaker, string message, bool speak = true)
     {
         ApplyDialogueLabel(speakerName, speaker, false);
         ApplyDialogueLabel(dialogueText, message, true);
-        MorphicLisaVoice.SpeakLine(message);
+        if (speak)
+            MorphicLisaVoice.SpeakLine(message);
+        else
+            MorphicLisaVoice.Stop();
     }
 
     private static void ApplyDialogueLabel(TMP_Text label, string message, bool body)
@@ -1013,8 +1032,10 @@ public class DialogueManager : MonoBehaviour
         ConfigureCultureButton(indonesiaButton, "Indonesia");
         if (freestyleButton != null)
             freestyleButton.gameObject.SetActive(false);
-        SetCraftExitVisible(true);
-        SetMenuBackVisible(true);
+        SetCraftExitVisible(false);
+        SetMenuBackVisible(false);
+        SetSculptBackVisible(false);
+        SetMainMenuVisible(true);
     }
 
     private void ConfigureCultureButton(
@@ -1118,7 +1139,8 @@ public class DialogueManager : MonoBehaviour
                     "This piece is inspired by the traditional sky lanterns " +
                     "that have become such a beautiful part of Taiwanese culture. " +
                     "But this isn't a finished lantern. I've given you the basic form. " +
-                    "You decide what it becomes."
+                    "You decide what it becomes.",
+                    !spokenCraftIntros.Contains(culture)
                 );
 
                 SetChoice(
@@ -1134,7 +1156,8 @@ public class DialogueManager : MonoBehaviour
                     "LISA",
                     "India has a long and diverse history of pottery and ceramic art. " +
                     "I wanted to capture some of that inspiration in this piece. " +
-                    "Here's the basic form. Shape it however you like."
+                    "Here's the basic form. Shape it however you like.",
+                    !spokenCraftIntros.Contains(culture)
                 );
 
                 SetChoice(
@@ -1151,7 +1174,8 @@ public class DialogueManager : MonoBehaviour
                     "Indonesia was another important part of my art studies. " +
                     "Its traditional objects and sculptural forms inspired me " +
                     "in a completely different way. " +
-                    "Let's see what you can create from this base."
+                    "Let's see what you can create from this base.",
+                    !spokenCraftIntros.Contains(culture)
                 );
 
                 SetChoice(
@@ -1167,7 +1191,8 @@ public class DialogueManager : MonoBehaviour
                     "LISA",
                     "Don't want to follow a particular tradition? " +
                     "That's completely fine. " +
-                    "This time, the clay is yours."
+                    "This time, the clay is yours.",
+                    !spokenCraftIntros.Contains(culture)
                 );
 
                 SetChoice(
@@ -1179,7 +1204,11 @@ public class DialogueManager : MonoBehaviour
                 break;
         }
 
-        SetMenuBackVisible(true);
+        spokenCraftIntros.Add(culture);
+        SetMenuBackVisible(false);
+        SetSculptBackVisible(true);
+        SetCraftExitVisible(false);
+        SetMainMenuVisible(true);
     }
 
     private void BeginSculpting(string culture)
@@ -1189,6 +1218,7 @@ public class DialogueManager : MonoBehaviour
         HideCultureChoices();
         SetLisaPortraitVisible(false);
         SetMenuBackVisible(false);
+        SetMainMenuVisible(false);
 
         // Hide AI help dialog when switching cultures
         HideStudioHud();
@@ -2108,6 +2138,8 @@ public class DialogueManager : MonoBehaviour
         sculptBackRoot.SetActive(visible);
         if (visible)
             sculptBackRoot.transform.SetAsLastSibling();
+        if (visible)
+            SetSettingsVisible(true);
     }
 
     private void EnsureMenuBackButton()
@@ -2162,6 +2194,73 @@ public class DialogueManager : MonoBehaviour
         menuBackRoot.SetActive(false);
     }
 
+    private void EnsureMainMenuButton()
+    {
+        if (mainMenuRoot != null)
+            return;
+
+        Canvas canvas = null;
+        if (dialoguePanel != null)
+            canvas = dialoguePanel.GetComponentInParent<Canvas>(true);
+        if (canvas == null && cultureChoicesPanel != null)
+            canvas = cultureChoicesPanel.GetComponentInParent<Canvas>(true);
+        if (canvas == null)
+            canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+        if (canvas == null)
+            return;
+
+        Image frame = LanguagePageBuilder.CreateRoundedImage(
+            "MainMenuButton",
+            canvas.transform,
+            28,
+            LanguagePageBuilder.Green);
+        RectTransform rect = frame.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(1f, 1f);
+        rect.anchoredPosition = new Vector2(-24f, -22f);
+        rect.sizeDelta = new Vector2(220f, 54f);
+        frame.raycastTarget = true;
+
+        Image fill = LanguagePageBuilder.CreateRoundedImage(
+            "Fill",
+            frame.transform,
+            24,
+            LanguagePageBuilder.Pink);
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+        fill.raycastTarget = true;
+
+        LanguagePageBuilder.TextLabel label = LanguagePageBuilder.CreateLabel(
+            "Label",
+            fill.transform,
+            "MAIN MENU",
+            18);
+        LanguagePageBuilder.Stretch(label.Rect);
+        if (label.Label != null)
+            MorphicText.FitButton(label.Label);
+
+        Button uiButton = frame.gameObject.AddComponent<Button>();
+        uiButton.targetGraphic = fill;
+        uiButton.colors = LanguagePageBuilder.ButtonColors();
+        uiButton.onClick.AddListener(ReturnToMainMenu);
+        AddHoverEffect(uiButton);
+        if (dialogueButtonSound != null)
+            dialogueButtonSound.RegisterButton(uiButton);
+
+        mainMenuRoot = frame.gameObject;
+        mainMenuRoot.SetActive(false);
+    }
+
+    private void SetMainMenuVisible(bool visible)
+    {
+        EnsureMainMenuButton();
+        if (mainMenuRoot == null)
+            return;
+
+        mainMenuRoot.SetActive(visible);
+        if (visible)
+            mainMenuRoot.transform.SetAsLastSibling();
+    }
+
     private void SetMenuBackVisible(bool visible)
     {
         EnsureMenuBackButton();
@@ -2180,6 +2279,7 @@ public class DialogueManager : MonoBehaviour
         SetMenuBackVisible(false);
         SetSculptBackVisible(false);
         SetCraftExitVisible(false);
+        SetMainMenuVisible(false);
         HideAllChoices();
         HideCultureChoices();
         HideRestaurantChoices();
@@ -2196,6 +2296,8 @@ public class DialogueManager : MonoBehaviour
         }
 
         dialogueStarted = false;
+        studioWelcomeSpoken = false;
+        spokenCraftIntros.Clear();
         restartDialogueOnMenuStart = true;
 
         HideStudioHud();

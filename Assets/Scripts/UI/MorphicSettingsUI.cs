@@ -473,14 +473,19 @@ public sealed class MorphicSettingsUI : MonoBehaviour
 
         button.anchorMin = button.anchorMax = new Vector2(0f, 1f);
         button.pivot = new Vector2(0f, 1f);
-        button.anchoredPosition = new Vector2(StudioBackVisible() ? 118f : 24f, -22f);
+        button.anchoredPosition = new Vector2(StudioBackVisible() ? 124f : 24f, -22f);
         button.sizeDelta = new Vector2(188f, 54f);
     }
 
     private static bool StudioBackVisible()
     {
-        GameObject back = GameObject.Find("MenuBackButton");
-        return back != null && back.activeInHierarchy;
+        return NamedActive("MenuBackButton") || NamedActive("SculptBackButton");
+    }
+
+    private static bool NamedActive(string name)
+    {
+        GameObject found = GameObject.Find(name);
+        return found != null && found.activeInHierarchy;
     }
 
     private static Transform FindNamed(Transform root, string name)

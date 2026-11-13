@@ -458,6 +458,7 @@ public static class MorphicLoc
         Add(Zh, "START", "開始");
         Add(Zh, "LANGUAGE", "語言");
         Add(Zh, "SETTINGS", "設定");
+        Add(Zh, "MAIN MENU", "主選單");
         Add(Zh, "EXIT", "離開");
         Add(Zh, "LISA VOICE: ON", "麗莎語音：開");
         Add(Zh, "LISA VOICE: OFF", "麗莎語音：關");
@@ -545,6 +546,7 @@ public static class MorphicLoc
         Add(Zh, "BACK", "返回");
         Add(Zh, "SKIP", "略過");
         Add(Zh, "REPLAY", "重播");
+        Add(Zh, "PREVIOUS", "上一步");
         Add(Zh, "NEXT", "下一步");
         Add(Zh, "GOOD", "很好");
         Add(Zh, "MORE COLORS", "更多顏色");
@@ -802,6 +804,7 @@ public static class MorphicLoc
         Add(Id, "START", "MULAI");
         Add(Id, "LANGUAGE", "BAHASA");
         Add(Id, "SETTINGS", "PENGATURAN");
+        Add(Id, "MAIN MENU", "MENU UTAMA");
         Add(Id, "LISA VOICE: ON", "SUARA LISA: NYALA");
         Add(Id, "LISA VOICE: OFF", "SUARA LISA: MATI");
         Add(Id, "Point your right index finger at the lantern and move it to push the clay.", "Arahkan jari telunjuk kanan ke lentera dan gerakkan untuk mendorong tanah liat.");
@@ -889,6 +892,7 @@ public static class MorphicLoc
         Add(Id, "BACK", "KEMBALI");
         Add(Id, "SKIP", "LEWATI");
         Add(Id, "REPLAY", "ULANG");
+        Add(Id, "PREVIOUS", "SEBELUM");
         Add(Id, "NEXT", "LANJUT");
         Add(Id, "GOOD", "BAGUS");
         Add(Id, "MORE COLORS", "WARNA LAIN");
