@@ -11,10 +11,10 @@ public static class MorphicStudioLayout
     public const float TitleYBack = -16f;
     public const float TitleHBack = 52f;
     public const float InstructionY = -82f;
-    public const float InstructionYBack = -96f;
-    public const float InstructionH = 60f;
-    public const float ContentY = -152f;
-    public const float ContentYBack = -168f;
+    public const float InstructionYBack = -88f;
+    public const float InstructionH = 76f;
+    public const float ContentY = -168f;
+    public const float ContentYBack = -180f;
     public const float StampW = 228f;
     public const float StampH = 118f;
     public const float StampGapX = 244f;
@@ -23,9 +23,10 @@ public static class MorphicStudioLayout
     public const float BandTileH = 84f;
     public const float BandTileStride = 92f;
     public const float BandContentHeight = 648f;
-    public const float DesignContentHeight = 540f;
+    public const float DesignContentHeight = 560f;
     public const float TargetingContentHeight = 228f;
     public const float DesignActionStride = 76f;
+    public const float ShelfContentHeight = 156f;
 
     public static float CardHeight(float contentHeight, bool backVisible)
     {
@@ -118,6 +119,22 @@ public static class MorphicStudioLayout
     {
         int rows = Mathf.Max(1, (stampCount + 1) / 2);
         return -(rows * StampGapY + 16f);
+    }
+
+    public static float DesignContentHeightFor(int stampCount)
+    {
+        int rows = Mathf.Max(1, (stampCount + 1) / 2);
+        return rows * StampGapY + 16f + DesignActionStride * 2f + 76f;
+    }
+
+    public static void PlaceShelf(RectTransform shelf)
+    {
+        DockContent(shelf, true, ShelfContentHeight);
+        if (shelf == null)
+            return;
+
+        SetButton(shelf, "TakeBack", new Vector2(0f, 0f), new Vector2(490f, 60f));
+        SetButton(shelf, "Done", new Vector2(0f, -76f), new Vector2(490f, 60f));
     }
 
     public static void PlaceTargetingBar(Transform root)

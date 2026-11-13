@@ -270,19 +270,14 @@ public sealed partial class SculptingEnhancementKerisColorController
         shelfGroup = new GameObject("ShelfActions", typeof(RectTransform));
         shelfGroup.transform.SetParent(parent, false);
         RectTransform shelfRect = shelfGroup.GetComponent<RectTransform>();
-        DockTop(shelfRect, -124f, 250f);
+        DockTop(shelfRect, -124f, 180f);
 
         Button takeBack = CreateButton("TakeBack", shelfRect, new Vector2(0f, 0f),
             new Vector2(PillWidth, PillHeight), "TAKE BACK", PillPink);
         takeBack.onClick.AddListener(TakeBackFromShelf);
         RegisterHitTarget(takeBack, false, false, Color.white);
 
-        Button delete = CreateButton("Delete", shelfRect, new Vector2(0f, -72f),
-            new Vector2(PillWidth, PillHeight), "DELETE", DonePink);
-        delete.onClick.AddListener(ShowConfirmDelete);
-        RegisterHitTarget(delete, false, false, Color.white);
-
-        Button done = CreateButton("Done", shelfRect, new Vector2(0f, -144f),
+        Button done = CreateButton("Done", shelfRect, new Vector2(0f, -72f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         done.onClick.AddListener(LeaveShelfDone);
         RegisterHitTarget(done, false, false, Color.white);
@@ -555,7 +550,6 @@ public sealed partial class SculptingEnhancementKerisColorController
         selectedPart = PartBody;
         EnsureDesignGroup();
         mode = ColorMode.SelectDesign;
-        SetPanelHeight(DesignSelectionPanelHeight);
         panel.SetActive(true);
         mainActionGroup.SetActive(false);
         HideExtraGroups();
@@ -575,9 +569,49 @@ public sealed partial class SculptingEnhancementKerisColorController
                 : "Choose a stamp. Then tint it with Change Color.");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
+        RelayoutDesignGroup();
         SetTitleBurstsVisible(false);
         ResetDwell();
         SetHoveredTarget(null);
+    }
+
+    private void RelayoutDesignGroup()
+    {
+        if (designGroup == null)
+            return;
+
+        Button[] stamps = new Button[6];
+        int count = 0;
+        for (int i = 0; i < stamps.Length; i++)
+        {
+            Transform stamp = designGroup.transform.Find("Stamp" + i);
+            if (stamp == null || !stamp.gameObject.activeSelf)
+                continue;
+            stamps[count] = stamp.GetComponent<Button>();
+            count++;
+        }
+
+        int stampCount = Mathf.Max(1, count);
+        float contentHeight = MorphicStudioLayout.DesignContentHeightFor(stampCount);
+        MorphicStudioLayout.DockContent(designGroup.GetComponent<RectTransform>(), true, contentHeight);
+        MorphicStudioLayout.PlaceStampGrid(stamps);
+        float actionsY = MorphicStudioLayout.StampActionsY(stampCount);
+        float stride = MorphicStudioLayout.DesignActionStride;
+        SetKerisDesignButton("StampColor", new Vector2(0f, actionsY));
+        SetKerisDesignButton("ChangeColor", new Vector2(0f, actionsY));
+        SetKerisDesignButton("ClearDesign", new Vector2(0f, actionsY - stride));
+        SetKerisDesignButton("Done", new Vector2(0f, actionsY - stride * 2f));
+        SetPanelHeight(MorphicStudioLayout.CardHeight(contentHeight, true));
+    }
+
+    private void SetKerisDesignButton(string childName, Vector2 position)
+    {
+        if (designGroup == null)
+            return;
+        Transform child = designGroup.transform.Find(childName);
+        RectTransform rect = child as RectTransform;
+        if (rect != null)
+            rect.anchoredPosition = position;
     }
 
     private void EnsureDesignGroup()
@@ -1251,20 +1285,26 @@ public sealed partial class SculptingEnhancementKerisColorController
         DisableVertexSculpt();
         SetSculptGesturesEnabled(false);
         mode = ColorMode.Shelf;
-        SetPanelHeight(ShelfPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.ShelfContentHeight, true), false);
         panel.SetActive(true);
         mainActionGroup.SetActive(false);
         if (historyBar != null) historyBar.SetActive(false);
         HideExtraGroups();
         HideReviewAndShelf();
         if (shelfGroup != null)
+        {
+            Transform leftoverDelete = shelfGroup.transform.Find("Delete");
+            if (leftoverDelete != null)
+                leftoverDelete.gameObject.SetActive(false);
+            MorphicStudioLayout.PlaceShelf(shelfGroup.GetComponent<RectTransform>());
             shelfGroup.SetActive(true);
+        }
         if (selfiePanel != null) selfiePanel.SetActive(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         MorphicLoc.Apply(headerText, "SHELF");
         instructionText.gameObject.SetActive(true);
-        MorphicLoc.Apply(instructionText, "Take it back, delete it, or go back when you are done.");
+            MorphicLoc.Apply(instructionText, "Take it back, or go back when you are done.");
         SetHeaderBackLabel("← REVIEW");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);

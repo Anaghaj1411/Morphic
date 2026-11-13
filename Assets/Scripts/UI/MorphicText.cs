@@ -54,11 +54,11 @@ public static class MorphicText
         Style(label);
         label.enableWordWrapping = true;
         label.textWrappingMode = TextWrappingModes.Normal;
-        label.overflowMode = TextOverflowModes.Truncate;
+        label.overflowMode = TextOverflowModes.Overflow;
         label.lineSpacing = 0f;
         label.enableAutoSizing = true;
-        label.fontSizeMin = 24f;
-        label.fontSizeMax = 32f;
+        label.fontSizeMin = 18f;
+        label.fontSizeMax = 28f;
         ClearGhost(label);
     }
 

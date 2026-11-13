@@ -839,17 +839,11 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             ref storedSculptCamFov,
             ref storedSculptCamNear);
 
-        GetKerisZoomPose(out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
+        GetKerisZoomPose(KerisSculptZoom, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         HoldSculptCameraPose(targetPos, targetRot, targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
 
         vertexSculptCameraZoomed = true;
-
-        bool alreadyThere =
-            (cam.transform.position - targetPos).sqrMagnitude < 0.02f &&
-            Quaternion.Angle(cam.transform.rotation, targetRot) < 2.5f;
-        if (alreadyThere && hasStoredSculptCam)
-            ApplyCameraPose(cam, storedSculptCamPos, storedSculptCamRot, storedSculptCamFov, storedSculptCamNear);
 
         if (isActiveAndEnabled)
             StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.45f);
@@ -872,14 +866,24 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         hasStoredSculptCam = true;
     }
 
+    private const float KerisSculptZoom = 0.50f;
+
     private void GetKerisZoomPose(
+        float closer01,
         out Vector3 pos,
         out Quaternion rot,
         out float fov)
     {
-        pos = KerisSculptCamPos;
-        rot = Quaternion.Euler(KerisSculptCamEuler);
+        rot = hasStoredSculptCam
+            ? storedSculptCamRot
+            : Quaternion.Euler(KerisSculptCamEuler);
         fov = storedSculptCamFov > 1f ? storedSculptCamFov : KerisSculptCamFov;
+        Vector3 from = hasStoredSculptCam ? storedSculptCamPos : KerisSculptCamPos;
+        if (kerisRenderer != null)
+            pos = MorphicSculptZoomUI.FrameTowardCraft(
+                from, rot, kerisRenderer.bounds, closer01);
+        else
+            pos = from;
     }
 
     public void ApplyExtraSculptZoom(float closer01)
@@ -893,12 +897,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (cam == null)
             return;
 
-        GetKerisZoomPose(out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
-        if (kerisRenderer != null)
-            targetPos = MorphicSculptZoomUI.DollyAlongView(
-                cam, targetPos, closer01, kerisRenderer.bounds);
-        else
-            targetPos = MorphicSculptZoomUI.DollyAlongView(cam, targetPos, closer01);
+        float zoom = Mathf.Lerp(KerisSculptZoom, 1f, Mathf.Clamp01(closer01));
+        GetKerisZoomPose(zoom, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
 
         HoldSculptCameraPose(targetPos, targetRot, targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
@@ -929,7 +929,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         }
         else
         {
-            GetKerisZoomPose(out pos, out rot, out fov);
+            GetKerisZoomPose(KerisSculptZoom, out pos, out rot, out fov);
         }
 
         ApplyCameraPose(cam, pos, rot, fov, 0.05f);
@@ -1561,18 +1561,31 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void ResetKerisColor()
     {
+        savedPartColors[PartBody] = KerisBaseBrass;
+        savedPartColors[PartCarving] = Color.white;
+        savedPartColors[PartHandle] = Color.white;
+        selectedPart = PartBody;
+        ApplyKerisColorToSelectedPart(KerisBaseBrass);
+        selectedPart = PartCarving;
+        ApplyKerisColorToSelectedPart(Color.white);
+        selectedPart = PartHandle;
+        ApplyKerisColorToSelectedPart(Color.white);
         selectedPart = -1;
         committedKerisColor = KerisBaseBrass;
-        ApplyKerisColor(committedKerisColor);
+        previewKerisColor = KerisBaseBrass;
         ClearWorkingSelfieAndDesign();
         if (patternPainter != null)
+        {
+            patternPainter.ClearAllStrokes();
             patternPainter.ClearClayCoils();
+        }
         if (vertexSculptController != null)
             vertexSculptController.ResetMesh();
         if (kerisGestures != null)
             kerisGestures.RestoreRestState();
         else
             ResetBlendShapes();
+        MorphicRotationResetUI.ResetActiveCraft();
         selectedVariant = -1;
         selectedVariantLabel = "";
         RefreshPartButtons();

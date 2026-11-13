@@ -45,7 +45,7 @@ public class MorphicRotationResetUI : MonoBehaviour
             resetButton = existing.GetComponentInChildren<Button>(true);
             Transform existingFrame = existing.Find("ResetRotation");
             if (existingFrame != null)
-                PlaceTopLeft(existingFrame.GetComponent<RectTransform>());
+                PlaceBesideHelp(existingFrame.GetComponent<RectTransform>());
             WireButton();
             return;
         }
@@ -57,7 +57,7 @@ public class MorphicRotationResetUI : MonoBehaviour
 
         Image frame = LanguagePageBuilder.CreateRoundedImage(
             "ResetRotation", root.transform, 28, LanguagePageBuilder.Green);
-        PlaceTopLeft(frame.rectTransform);
+        PlaceBesideHelp(frame.rectTransform);
         frame.raycastTarget = true;
 
         Image fill = LanguagePageBuilder.CreateRoundedImage(
@@ -125,16 +125,15 @@ public class MorphicRotationResetUI : MonoBehaviour
             rotator.ResetToRestPose();
     }
 
-    private static void PlaceTopLeft(RectTransform button)
+    private static void PlaceBesideHelp(RectTransform button)
     {
         if (button == null)
             return;
 
-        // Sit to the right of the 88px BACK button (18, -18) so both fit
-        // in the top-left corner.
-        button.anchorMin = button.anchorMax = new Vector2(0f, 1f);
-        button.pivot = new Vector2(0f, 1f);
-        button.anchoredPosition = new Vector2(122f, -24f);
+        // Top-right, immediately left of the HELP pill (-24, -24, 132x54).
+        button.anchorMin = button.anchorMax = new Vector2(1f, 1f);
+        button.pivot = new Vector2(1f, 1f);
+        button.anchoredPosition = new Vector2(-166f, -24f);
         button.sizeDelta = new Vector2(236f, 54f);
     }
 

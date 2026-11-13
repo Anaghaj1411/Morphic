@@ -754,6 +754,7 @@ public static class MorphicLoc
         Add(Zh, "Go back, or put this lantern on the shelf.", "返回，或把這盞天燈放到架子上。");
         Add(Zh, "Go back, or put this keris on the shelf.", "返回，或把這把克里斯劍放到架子上。");
         Add(Zh, "Take it back, delete it, or go back when you are done.", "取回、刪除，或完成後返回。");
+        Add(Zh, "Take it back, or go back when you are done.", "取回，或完成後返回。");
         Add(Zh, "This removes the teapot from the shelf.", "這會把茶壺從架子上取下。");
         Add(Zh, "This removes the lantern from the shelf.", "這會把天燈從架子上取下。");
         Add(Zh, "This removes the keris from the shelf.", "這會把克里斯劍從架子上取下。");
@@ -1169,6 +1170,7 @@ public static class MorphicLoc
         Add(Id, "Go back, or put this lantern on the shelf.", "Kembali, atau taruh lampion ini di rak.");
         Add(Id, "Go back, or put this keris on the shelf.", "Kembali, atau taruh keris ini di rak.");
         Add(Id, "Take it back, delete it, or go back when you are done.", "Ambil kembali, hapus, atau kembali jika selesai.");
+        Add(Id, "Take it back, or go back when you are done.", "Ambil kembali, atau kembali jika selesai.");
         Add(Id, "This removes the teapot from the shelf.", "Ini menurunkan teko dari rak.");
         Add(Id, "This removes the lantern from the shelf.", "Ini menurunkan lampion dari rak.");
         Add(Id, "This removes the keris from the shelf.", "Ini menurunkan keris dari rak.");

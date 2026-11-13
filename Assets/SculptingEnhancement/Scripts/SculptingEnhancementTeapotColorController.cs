@@ -112,6 +112,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private Material[] runtimeMaterials;
     private Color[] committedMaterialColors;
+    private Color[] factoryMaterialColors;
+    private static readonly Color DefaultClayColor = new Color(0.74f, 0.42f, 0.30f, 1f);
     private int[][] partMaterialIndices;
     private Mesh runtimePartMesh;
 
@@ -195,7 +197,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private int selectedVertexSculptSizeIndex = 1;
     private int selectedVertexSculptStrengthIndex = 1;
     private Color committedBandColor = Color.white;
-    private Color committedClayColor = new Color(0.74f, 0.42f, 0.30f, 1f);
+    private Color committedClayColor = DefaultClayColor;
     private bool bandTintActive;
     private bool clayTintActive;
     private bool colorBackToBands;
@@ -752,7 +754,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         shelfGroup = new GameObject("ShelfActions", typeof(RectTransform));
         shelfGroup.transform.SetParent(panelRect, false);
         RectTransform shelfRect = shelfGroup.GetComponent<RectTransform>();
-        DockTop(shelfRect, -124f, 250f);
+        DockTop(shelfRect, -124f, 180f);
 
         Button takeBack = CreateButton(
             "TakeBack", shelfRect, new Vector2(0f, 0f),
@@ -760,14 +762,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         takeBack.onClick.AddListener(TakeBackFromShelf);
         RegisterHitTarget(takeBack, false, false, default);
 
-        Button delete = CreateButton(
-            "Delete", shelfRect, new Vector2(0f, -72f),
-            new Vector2(PillWidth, PillHeight), "DELETE", DonePink);
-        delete.onClick.AddListener(ShowConfirmDelete);
-        RegisterHitTarget(delete, false, false, default);
-
         Button done = CreateButton(
-            "Done", shelfRect, new Vector2(0f, -144f),
+            "Done", shelfRect, new Vector2(0f, -72f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         done.onClick.AddListener(LeaveShelfDone);
         RegisterHitTarget(done, false, false, default);
@@ -1115,7 +1111,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         SetSculptControllersEnabled(false);
         mode = ColorMode.Shelf;
-        SetPanelHeight(ShelfPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.ShelfContentHeight, true), false);
         panel.SetActive(true);
         mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
@@ -1129,10 +1125,16 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             selfieEntryButton.gameObject.SetActive(false);
         HideReviewAndShelf();
         if (shelfGroup != null)
+        {
+            Transform leftoverDelete = shelfGroup.transform.Find("Delete");
+            if (leftoverDelete != null)
+                leftoverDelete.gameObject.SetActive(false);
+            MorphicStudioLayout.PlaceShelf(shelfGroup.GetComponent<RectTransform>());
             shelfGroup.SetActive(true);
+        }
         MorphicLoc.Apply(headerText, "SHELF");
         instructionText.gameObject.SetActive(true);
-        MorphicLoc.Apply(instructionText, "Take it back, delete it, or go back when you are done.");
+            MorphicLoc.Apply(instructionText, "Take it back, or go back when you are done.");
         SetHeaderBackLabel("← REVIEW");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
@@ -1977,12 +1979,19 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void ConfirmReset()
     {
+        RestoreFactoryAppearance();
         if (teapotGestures != null)
             teapotGestures.RestoreRestState();
+        if (teapotIndexGestures != null)
+            teapotIndexGestures.SynchronizeWeightsFromRenderer();
         if (vertexSculptController != null)
             vertexSculptController.ResetMesh();
-        if (history.Count > 0)
-            ApplySnapshot(history[0]);
+        if (patternPainter != null)
+        {
+            patternPainter.ClearAllStrokes();
+            patternPainter.ClearClayCoils();
+        }
+        MorphicRotationResetUI.ResetActiveCraft();
         ClearWorkingSelfieAndDesign();
         CaptureBaseline();
         HideConfirmReset();
@@ -2824,12 +2833,20 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void ResetWorkingTeapot()
     {
-        RestoreSelectedPreview();
+        RestoreFactoryAppearance();
         ClearWorkingSelfieAndDesign();
+        if (vertexSculptController != null)
+            vertexSculptController.ResetMesh();
+        if (patternPainter != null)
+        {
+            patternPainter.ClearAllStrokes();
+            patternPainter.ClearClayCoils();
+        }
         if (teapotGestures != null)
             teapotGestures.RestoreRestState();
-        if (history.Count > 0)
-            ApplySnapshot(history[0]);
+        if (teapotIndexGestures != null)
+            teapotIndexGestures.SynchronizeWeightsFromRenderer();
+        MorphicRotationResetUI.ResetActiveCraft();
         ClearWorkingBand();
         CaptureBaseline();
     }
@@ -3314,8 +3331,48 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         IsolateMovingPart("HANDLE", isolatedHandleMaterials, "_Handle");
         NeutralizeBandGold();
         CaptureCommittedColors();
+        if (factoryMaterialColors == null && committedMaterialColors != null)
+            factoryMaterialColors = (Color[])committedMaterialColors.Clone();
         colorsCaptured = true;
         ResolvePartMaterialIndices();
+    }
+
+    private void RestoreFactoryAppearance()
+    {
+        CaptureInitialColors();
+        selectedPart = -1;
+        selectedVariant = -1;
+        selectedVariantLabel = "";
+        colorBackToDesigns = false;
+        colorBackToBands = false;
+        returnToBandDrawing = false;
+        designTintActive = false;
+
+        if (factoryMaterialColors != null && runtimeMaterials != null)
+        {
+            committedMaterialColors = new Color[runtimeMaterials.Length];
+            for (int i = 0; i < runtimeMaterials.Length; i++)
+            {
+                Color color = i < factoryMaterialColors.Length
+                    ? factoryMaterialColors[i]
+                    : Color.white;
+                committedMaterialColors[i] = color;
+                SetMaterialColor(i, color);
+            }
+        }
+
+        committedBandColor = Color.white;
+        committedClayColor = DefaultClayColor;
+        committedDesignTint = Color.white;
+        if (patternPainter != null)
+        {
+            patternPainter.SetClayColor(committedClayColor, true);
+            patternPainter.SetStrokeColor(committedBandColor, true);
+        }
+        if (clayColorChip != null)
+            clayColorChip.color = committedClayColor;
+        if (bandColorChip != null)
+            bandColorChip.color = committedBandColor;
     }
 
     private void CaptureCommittedColors()
@@ -3734,7 +3791,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         colorBackToDesigns = true;
         selectedPart = 1;
         mode = ColorMode.SelectDesign;
-        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.DesignContentHeight, true));
         mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
         if (variantGroup != null)
@@ -4474,13 +4530,43 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (designGroup == null)
             return;
 
-        MorphicStudioLayout.DockContent(designGroup.GetComponent<RectTransform>(), true, MorphicStudioLayout.DesignContentHeight);
-        MorphicStudioLayout.PlaceStampGrid(designButtons);
-        float actionsY = MorphicStudioLayout.StampActionsY(designButtons.Length);
+        int stampCount = VisibleStampCount(designButtons);
+        float contentHeight = MorphicStudioLayout.DesignContentHeightFor(stampCount);
+        MorphicStudioLayout.DockContent(designGroup.GetComponent<RectTransform>(), true, contentHeight);
+        MorphicStudioLayout.PlaceStampGrid(PackedStamps(designButtons, stampCount));
+        float actionsY = MorphicStudioLayout.StampActionsY(stampCount);
         float stride = MorphicStudioLayout.DesignActionStride;
         SetChildPos(designGroup.transform, "ChangeColor", new Vector2(0f, actionsY));
         SetChildPos(designGroup.transform, "ClearDesign", new Vector2(0f, actionsY - stride));
         SetChildPos(designGroup.transform, "Done", new Vector2(0f, actionsY - stride * 2f));
+        SetPanelHeight(MorphicStudioLayout.CardHeight(contentHeight, true));
+    }
+
+    private static int VisibleStampCount(Button[] stamps)
+    {
+        int count = 0;
+        if (stamps == null)
+            return 4;
+        for (int i = 0; i < stamps.Length; i++)
+        {
+            if (stamps[i] != null && stamps[i].gameObject.activeSelf)
+                count++;
+        }
+        return Mathf.Max(1, count);
+    }
+
+    private static Button[] PackedStamps(Button[] stamps, int stampCount)
+    {
+        Button[] packed = new Button[stampCount];
+        int n = 0;
+        if (stamps == null)
+            return packed;
+        for (int i = 0; i < stamps.Length && n < packed.Length; i++)
+        {
+            if (stamps[i] != null && stamps[i].gameObject.activeSelf)
+                packed[n++] = stamps[i];
+        }
+        return packed;
     }
 
     private static void SetChildPos(Transform root, string childName, Vector2 position)

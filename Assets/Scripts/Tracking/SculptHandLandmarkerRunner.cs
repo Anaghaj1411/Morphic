@@ -256,7 +256,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         private float activeSpeedBeta = 0.32f;
         private float activeDeadzone = 0.0024f;
         private const float LostHandGrace = 0.48f;
-        private const float SecondHandGrace = 0.10f;
+        private const float SecondHandGrace = 0.35f;
         private const float MinPalmWidth = 0.0012f;
         private const float DetectTimeout = 0.16f;
         private const float MinDetectInterval = 0.016f;
@@ -360,8 +360,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             return hasLatestHand &&
                    hasSecondHand &&
-                   Time.unscaledTime - lastResultTime < LostHandGrace &&
-                   PalmsAreDistinct(latestHand, secondHand);
+                   Time.unscaledTime - lastResultTime < LostHandGrace;
         }
 
         public override void Stop()
@@ -932,8 +931,8 @@ Debug.Log("MORPHIC: Camera resolution = " +
             SculptHandFrame otherHand)
         {
             float minSep = Mathf.Max(
-                0.08f,
-                (firstHand.PalmWidth + otherHand.PalmWidth) * 0.55f);
+                0.045f,
+                (firstHand.PalmWidth + otherHand.PalmWidth) * 0.38f);
             return PalmDistance(firstHand, otherHand) >= minSep;
         }
 

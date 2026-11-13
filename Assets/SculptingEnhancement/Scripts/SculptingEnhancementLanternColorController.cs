@@ -127,6 +127,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private readonly List<HitTarget> hitTargets = new List<HitTarget>();
     private Material[] runtimeMaterials;
     private Color[] committedMaterialColors;
+    private Color[] factoryMaterialColors;
+    private static readonly Color DefaultClayColor = new Color(0.74f, 0.42f, 0.30f, 1f);
     private int[][] partMaterialIndices;
     private Mesh runtimePartMesh;
     private readonly List<Material> isolatedLidMaterials = new List<Material>();
@@ -201,7 +203,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private int selectedVertexSculptSizeIndex = 1;
     private int selectedVertexSculptStrengthIndex = 1;
     private Color committedBandColor = Color.white;
-    private Color committedClayColor = new Color(0.74f, 0.42f, 0.30f, 1f);
+    private Color committedClayColor = DefaultClayColor;
     private bool bandTintActive;
     private bool clayTintActive;
     private bool colorBackToBands;
@@ -755,23 +757,25 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         out Quaternion targetRot,
         out float targetFov)
     {
+        Vector3 from;
+        Quaternion rot;
         if (useCustomSculptCamera)
         {
-            targetPos = sculptCameraPosition;
-            targetRot = Quaternion.Euler(sculptCameraRotation);
+            from = sculptCameraPosition;
+            rot = Quaternion.Euler(sculptCameraRotation);
             targetFov = Mathf.Max(10f, sculptCameraFov);
-            return;
+        }
+        else
+        {
+            from = storedSculptCamPos;
+            rot = storedSculptCamRot;
+            targetFov = storedSculptCamFov;
         }
 
-        Bounds bounds = focusRenderer.bounds;
-        Vector3 focus = bounds.center;
-        Vector3 offset = storedSculptCamPos - focus;
-        float dist = offset.magnitude;
+        Bounds bounds = FrameLanternSculptFocus(focusRenderer.bounds, rot);
+        float dist = Vector3.Distance(from, bounds.center);
         if (dist < 0.05f)
-        {
-            offset = -cam.transform.forward;
             dist = 2f;
-        }
 
         float targetDist = dist * 0.80f;
         float minDist = Mathf.Max(0.40f, bounds.extents.magnitude * 0.50f);
@@ -779,17 +783,24 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             minDist = dist * 0.72f;
         targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.90f);
 
-        Vector3 back = offset.normalized;
-        Vector3 camRight = storedSculptCamRot * Vector3.right;
-        if (camRight.sqrMagnitude < 0.0001f)
-            camRight = cam.transform.right;
-        else
-            camRight.Normalize();
+        targetPos = MorphicSculptZoomUI.CenterOnCraft(from, rot, bounds, targetDist);
+        targetRot = rot;
+    }
 
-        focus += Vector3.up * Mathf.Max(0.10f, bounds.extents.y * 0.22f);
-        targetPos = focus + back * targetDist + camRight * (targetDist * 0.08f);
-        targetRot = storedSculptCamRot;
-        targetFov = storedSculptCamFov;
+    private static Bounds FrameLanternSculptFocus(Bounds bounds, Quaternion rotation)
+    {
+        Vector3 up = rotation * Vector3.up;
+        Vector3 visualUp = Mathf.Abs(up.z) >= Mathf.Abs(up.y)
+            ? new Vector3(0f, 0f, 1f)
+            : Vector3.up;
+        float height = Mathf.Abs(Vector3.Dot(bounds.extents, visualUp));
+        if (height < 0.05f)
+            height = bounds.extents.magnitude;
+        bounds.center += visualUp * Mathf.Max(0.12f, height * 0.26f);
+        Vector3 camRight = Vector3.ProjectOnPlane(rotation * Vector3.right, visualUp);
+        if (camRight.sqrMagnitude > 0.0001f)
+            bounds.center += camRight.normalized * Mathf.Max(0.05f, height * 0.12f);
+        return bounds;
     }
 
     public void ApplyExtraSculptZoom(float closer01)
@@ -804,7 +815,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         GetSculptCameraTarget(cam, focusRenderer, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         targetPos = MorphicSculptZoomUI.DollyAlongView(
-            cam, targetPos, closer01, focusRenderer.bounds);
+            cam, targetPos, closer01, FrameLanternSculptFocus(focusRenderer.bounds, targetRot));
         float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
         StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.28f);
     }
@@ -1596,9 +1607,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         if (delete != null)
+            delete.gameObject.SetActive(false);
+
+        if (done != null)
         {
-            delete.onClick.AddListener(ShowConfirmDelete);
-            RegisterHitTarget(delete, false, false, default);
+            RectTransform doneRect = done.GetComponent<RectTransform>();
+            if (doneRect != null)
+                doneRect.anchoredPosition = new Vector2(0f, -72f);
         }
 
         if (done != null)
@@ -1644,7 +1659,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         shelfGroup = new GameObject("ShelfActions", typeof(RectTransform));
         shelfGroup.transform.SetParent(panelRect, false);
         RectTransform shelfRect = shelfGroup.GetComponent<RectTransform>();
-        DockTop(shelfRect, -124f, 250f);
+        DockTop(shelfRect, -124f, 180f);
 
         Button takeBack = CreateButton(
             "TakeBack", shelfRect, new Vector2(0f, 0f),
@@ -1652,14 +1667,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         takeBack.onClick.AddListener(TakeBackFromShelf);
         RegisterHitTarget(takeBack, false, false, default);
 
-        Button delete = CreateButton(
-            "Delete", shelfRect, new Vector2(0f, -72f),
-            new Vector2(PillWidth, PillHeight), "DELETE", DonePink);
-        delete.onClick.AddListener(ShowConfirmDelete);
-        RegisterHitTarget(delete, false, false, default);
-
         Button done = CreateButton(
-            "Done", shelfRect, new Vector2(0f, -144f),
+            "Done", shelfRect, new Vector2(0f, -72f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         done.onClick.AddListener(LeaveShelfDone);
         RegisterHitTarget(done, false, false, default);
@@ -1780,7 +1789,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         SetSculptControllersEnabled(false);
         mode = ColorMode.Shelf;
-        SetPanelHeight(ShelfPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.ShelfContentHeight, true), false);
         panel.SetActive(true);
         if (selfiePanel != null)
             selfiePanel.SetActive(false);
@@ -1812,10 +1821,16 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             historyBar.SetActive(false);
         HideReviewAndShelf();
         if (shelfGroup != null)
+        {
+            Transform leftoverDelete = shelfGroup.transform.Find("Delete");
+            if (leftoverDelete != null)
+                leftoverDelete.gameObject.SetActive(false);
+            MorphicStudioLayout.PlaceShelf(shelfGroup.GetComponent<RectTransform>());
             shelfGroup.SetActive(true);
+        }
         MorphicLoc.Apply(headerText, "SHELF");
         instructionText.gameObject.SetActive(true);
-        MorphicLoc.Apply(instructionText, "Take it back, delete it, or go back when you are done.");
+            MorphicLoc.Apply(instructionText, "Take it back, or go back when you are done.");
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(true);
         ResetDwell();
@@ -1968,13 +1983,21 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void ResetWorkingLantern()
     {
-        RestoreSelectedPreview();
+        RestoreFactoryAppearance();
         ClearAttachedSelfie();
         ClearWorkingDesignAndBand();
+        if (vertexSculptController != null)
+            vertexSculptController.ResetMesh();
+        if (patternPainter != null)
+        {
+            patternPainter.ClearAllStrokes();
+            patternPainter.ClearClayCoils();
+        }
         if (originalGestureController != null)
             originalGestureController.RestoreRestState();
-        if (history.Count > 0)
-            ApplySnapshot(history[0]);
+        if (indexGestureController != null)
+            indexGestureController.SynchronizeWeightsFromRenderer();
+        MorphicRotationResetUI.ResetActiveCraft();
         ClearWorkingDesignAndBand();
         CaptureBaseline();
     }
@@ -4271,8 +4294,49 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         IsolateBottomLidOntoOwnMaterials();
         IsolateTasselOntoOwnMaterials();
         CaptureCommittedColors();
+        if (factoryMaterialColors == null && committedMaterialColors != null)
+            factoryMaterialColors = (Color[])committedMaterialColors.Clone();
         colorsCaptured = true;
         ResolvePartMaterialIndices();
+    }
+
+    private void RestoreFactoryAppearance()
+    {
+        CaptureInitialColors();
+        selectedPart = -1;
+        selectedVariant = -1;
+        selectedVariantLabel = "";
+        popGestureArmed = false;
+        colorBackToDesigns = false;
+        colorBackToBands = false;
+        returnToBandDrawing = false;
+        lastBakedDesignTint = new Color(-1f, -1f, -1f, -1f);
+
+        if (factoryMaterialColors != null && runtimeMaterials != null)
+        {
+            committedMaterialColors = new Color[runtimeMaterials.Length];
+            for (int i = 0; i < runtimeMaterials.Length; i++)
+            {
+                Color color = i < factoryMaterialColors.Length
+                    ? factoryMaterialColors[i]
+                    : Color.white;
+                committedMaterialColors[i] = color;
+                SetMaterialColor(i, color);
+            }
+        }
+
+        committedBandColor = Color.white;
+        committedClayColor = DefaultClayColor;
+        committedDesignTint = Color.white;
+        if (patternPainter != null)
+        {
+            patternPainter.SetClayColor(committedClayColor, true);
+            patternPainter.SetStrokeColor(committedBandColor, true);
+        }
+        if (clayColorChip != null)
+            clayColorChip.color = committedClayColor;
+        if (bandColorChip != null)
+            bandColorChip.color = committedBandColor;
     }
 
     private void CaptureCommittedColors()
@@ -5358,7 +5422,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         colorBackToDesigns = true;
         selectedPart = 1;
         mode = ColorMode.SelectDesign;
-        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.DesignContentHeight, true));
         mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
         if (variantGroup != null)
@@ -6131,15 +6194,45 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (designGroup == null)
             return;
 
+        int stampCount = VisibleStampCount(designButtons);
+        float contentHeight = MorphicStudioLayout.DesignContentHeightFor(stampCount);
         RectTransform designRect = designGroup.GetComponent<RectTransform>();
-        MorphicStudioLayout.DockContent(designRect, true, MorphicStudioLayout.DesignContentHeight);
-        MorphicStudioLayout.PlaceStampGrid(designButtons);
+        MorphicStudioLayout.DockContent(designRect, true, contentHeight);
+        MorphicStudioLayout.PlaceStampGrid(PackedStamps(designButtons, stampCount));
 
-        float actionsY = MorphicStudioLayout.StampActionsY(designButtons.Length);
+        float actionsY = MorphicStudioLayout.StampActionsY(stampCount);
         float stride = MorphicStudioLayout.DesignActionStride;
         SetChildPos(designGroup.transform, "ChangeColor", new Vector2(0f, actionsY));
         SetChildPos(designGroup.transform, "ClearDesign", new Vector2(0f, actionsY - stride));
         SetChildPos(designGroup.transform, "Done", new Vector2(0f, actionsY - stride * 2f));
+        SetPanelHeight(MorphicStudioLayout.CardHeight(contentHeight, true));
+    }
+
+    private static int VisibleStampCount(Button[] stamps)
+    {
+        int count = 0;
+        if (stamps == null)
+            return 4;
+        for (int i = 0; i < stamps.Length; i++)
+        {
+            if (stamps[i] != null && stamps[i].gameObject.activeSelf)
+                count++;
+        }
+        return Mathf.Max(1, count);
+    }
+
+    private static Button[] PackedStamps(Button[] stamps, int stampCount)
+    {
+        Button[] packed = new Button[stampCount];
+        int n = 0;
+        if (stamps == null)
+            return packed;
+        for (int i = 0; i < stamps.Length && n < packed.Length; i++)
+        {
+            if (stamps[i] != null && stamps[i].gameObject.activeSelf)
+                packed[n++] = stamps[i];
+        }
+        return packed;
     }
 
     private static void SetChildPos(Transform root, string childName, Vector2 position)
@@ -6844,14 +6937,20 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void ConfirmReset()
     {
-        RestoreSelectedPreview();
+        RestoreFactoryAppearance();
         ClearAttachedSelfie();
         if (originalGestureController != null)
             originalGestureController.RestoreRestState();
+        if (indexGestureController != null)
+            indexGestureController.SynchronizeWeightsFromRenderer();
         if (vertexSculptController != null)
             vertexSculptController.ResetMesh();
-        if (history.Count > 0)
-            ApplySnapshot(history[0]);
+        if (patternPainter != null)
+        {
+            patternPainter.ClearAllStrokes();
+            patternPainter.ClearClayCoils();
+        }
+        MorphicRotationResetUI.ResetActiveCraft();
         ClearWorkingDesignAndBand();
         CaptureBaseline();
         HideConfirmReset();

@@ -3,8 +3,8 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// One Help pill for the sculpt studio. Gestures, Ask Lisa, and reset
-/// rotation live in a sheet instead of three separate corner buttons.
+/// One Help pill for the sculpt studio. Gestures and Ask Lisa live in a
+/// sheet. Reset Rotation sits beside Help, not inside the sheet.
 public sealed class MorphicStudioHelpUI : MonoBehaviour
 {
     private GameObject root;
@@ -54,6 +54,12 @@ public sealed class MorphicStudioHelpUI : MonoBehaviour
             {
                 sheet = existingSheet.gameObject;
                 SizeSheet(existingSheet.GetComponent<RectTransform>());
+                Transform leftoverReset = existingSheet.Find("Fill/ResetRotation");
+                if (leftoverReset != null)
+                    leftoverReset.gameObject.SetActive(false);
+                Transform close = existingSheet.Find("Fill/Close");
+                if (close is RectTransform closeRect)
+                    closeRect.anchoredPosition = new Vector2(0f, -222f);
             }
             WireHelp();
             if (sheet == null)
@@ -129,8 +135,10 @@ public sealed class MorphicStudioHelpUI : MonoBehaviour
 
         CreateSheetButton(cream.transform, "Gestures", "GESTURES", new Vector2(0f, -78f), OpenGestures);
         CreateSheetButton(cream.transform, "AskLisa", "ASK LISA", new Vector2(0f, -150f), OpenAskLisa);
-        CreateSheetButton(cream.transform, "ResetRotation", "RESET ROTATION", new Vector2(0f, -222f), ResetRotation);
-        CreateSheetButton(cream.transform, "Close", "DONE", new Vector2(0f, -294f), HideSheet);
+        CreateSheetButton(cream.transform, "Close", "DONE", new Vector2(0f, -222f), HideSheet);
+        Transform leftoverReset = cream.transform.Find("ResetRotation");
+        if (leftoverReset != null)
+            leftoverReset.gameObject.SetActive(false);
         sheet.SetActive(false);
     }
 
@@ -138,7 +146,7 @@ public sealed class MorphicStudioHelpUI : MonoBehaviour
     {
         if (box == null)
             return;
-        box.sizeDelta = new Vector2(420f, 420f);
+        box.sizeDelta = new Vector2(420f, 348f);
     }
 
     private void CreateSheetButton(
@@ -225,11 +233,6 @@ public sealed class MorphicStudioHelpUI : MonoBehaviour
         MorphicAIHelpUI ai = FindFirstObjectByType<MorphicAIHelpUI>(FindObjectsInactive.Include);
         if (ai != null)
             ai.OpenAskFromStudio();
-    }
-
-    private static void ResetRotation()
-    {
-        MorphicRotationResetUI.ResetActiveCraft();
     }
 
     private static void StretchFull(RectTransform rect)

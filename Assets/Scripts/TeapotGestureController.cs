@@ -177,6 +177,8 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     public void CaptureRestState()
     {
+        if (restBlendWeights != null)
+            return;
         if (teapotRenderer == null || teapotRenderer.sharedMesh == null)
             return;
 
@@ -189,12 +191,16 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     public void RestoreRestState()
     {
-        if (teapotRenderer == null || restBlendWeights == null)
+        if (teapotRenderer == null)
             return;
 
         teapotRenderer.transform.localRotation = restLocalRotation;
-        for (int i = 0; i < restBlendWeights.Length; i++)
-            teapotRenderer.SetBlendShapeWeight(i, restBlendWeights[i]);
+        if (teapotRenderer.sharedMesh != null)
+        {
+            int count = teapotRenderer.sharedMesh.blendShapeCount;
+            for (int i = 0; i < count; i++)
+                teapotRenderer.SetBlendShapeWeight(i, 0f);
+        }
 
         ReadBodyWeights();
         ResetPinchTracking();
@@ -343,6 +349,7 @@ public sealed class TeapotGestureController : MonoBehaviour
         middle = targetMiddle = Mathf.Clamp(middle, 0f, middleMaximumWeight);
         SetBlendShapeWeight("Middle", middle);
         EnsureTeapotFistRotator();
+        CaptureRestState();
     }
 
     private void OnValidate()

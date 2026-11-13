@@ -1951,8 +1951,6 @@ public class DialogueManager : MonoBehaviour
     {
         if (aiHelpUi != null)
             aiHelpUi.SetVisible(false);
-        if (rotationResetUi != null)
-            rotationResetUi.SetVisible(false);
         if (gestureHelpUi != null)
             gestureHelpUi.SetVisible(false);
 
@@ -1961,6 +1959,12 @@ public class DialogueManager : MonoBehaviour
         if (studioHelpUi == null)
             studioHelpUi = gameObject.AddComponent<MorphicStudioHelpUI>();
         studioHelpUi.SetVisible(true);
+
+        if (rotationResetUi == null)
+            rotationResetUi = FindFirstObjectByType<MorphicRotationResetUI>(FindObjectsInactive.Include);
+        if (rotationResetUi == null)
+            rotationResetUi = gameObject.AddComponent<MorphicRotationResetUI>();
+        rotationResetUi.SetVisible(true);
         SetSettingsVisible(true);
         if (aiHelpUi != null)
             aiHelpUi.WarmBackend();

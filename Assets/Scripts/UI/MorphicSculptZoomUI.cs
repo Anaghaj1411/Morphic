@@ -285,7 +285,7 @@ public class MorphicSculptZoomUI : MonoBehaviour
         zoomed = zoomLevel > 0;
         float t = zoomLevel / (float)MaxZoomLevel;
         Vector3 targetPos = TryGetActiveCraftBounds(out Bounds bounds)
-            ? DollyAlongView(view, restPosition, t, bounds)
+            ? FrameTowardCraft(restPosition, restRotation, bounds, t)
             : DollyAlongView(view, restPosition, t);
         StartMove(view, targetPos, restRotation, view.fieldOfView);
     }
@@ -299,14 +299,58 @@ public class MorphicSculptZoomUI : MonoBehaviour
 
     public static Vector3 DollyAlongView(Camera cam, Vector3 from, float closer01, Bounds bounds)
     {
-        if (cam == null)
-            return from;
+        Quaternion rotation = cam != null ? cam.transform.rotation : Quaternion.identity;
+        return FrameTowardCraft(from, rotation, bounds, closer01);
+    }
+
+    public static Vector3 FrameTowardCraft(Camera cam, Vector3 from, Bounds bounds, float closer01)
+    {
+        Quaternion rotation = cam != null ? cam.transform.rotation : Quaternion.identity;
+        return FrameTowardCraft(from, rotation, bounds, closer01);
+    }
+
+    public static Vector3 FrameTowardCraft(
+        Vector3 from,
+        Quaternion rotation,
+        Bounds bounds,
+        float closer01)
+    {
         closer01 = Mathf.Clamp01(closer01);
-        Vector3 dolly = LevelViewDolly(cam);
-        float depth = Vector3.Dot(bounds.center - from, dolly);
+        Vector3 focus = bounds.center;
+        Vector3 dir = DirectionTowardCraft(rotation, from, focus);
+        float depth = Vector3.Dot(focus - from, dir);
         if (depth < 0.3f)
-            depth = 1.6f;
-        return from + dolly * (depth * 0.70f * closer01);
+            depth = Mathf.Max(0.3f, Vector3.Distance(from, focus));
+        return from + dir * (depth * 0.70f * closer01);
+    }
+
+    public static Vector3 CenterOnCraft(Camera cam, Vector3 from, Bounds bounds, float distance)
+    {
+        Quaternion rotation = cam != null ? cam.transform.rotation : Quaternion.identity;
+        return CenterOnCraft(from, rotation, bounds, distance);
+    }
+
+    public static Vector3 CenterOnCraft(
+        Vector3 from,
+        Quaternion rotation,
+        Bounds bounds,
+        float distance)
+    {
+        Vector3 focus = bounds.center;
+        Vector3 dir = DirectionTowardCraft(rotation, from, focus);
+        return focus - dir * Mathf.Max(0.2f, distance);
+    }
+
+    private static Vector3 DirectionTowardCraft(Quaternion rotation, Vector3 from, Vector3 focus)
+    {
+        Vector3 up = rotation * Vector3.up;
+        Vector3 visualUp = Mathf.Abs(up.z) >= Mathf.Abs(up.y)
+            ? new Vector3(0f, 0f, 1f)
+            : Vector3.up;
+        Vector3 toCraft = Vector3.ProjectOnPlane(focus - from, visualUp);
+        if (toCraft.sqrMagnitude < 0.0001f)
+            return LevelViewDolly(rotation);
+        return toCraft.normalized;
     }
 
     public static Vector3 ApproachCraft(Vector3 from, Bounds bounds, float closer01)
@@ -321,8 +365,15 @@ public class MorphicSculptZoomUI : MonoBehaviour
     /// </summary>
     private static Vector3 LevelViewDolly(Camera cam)
     {
-        Vector3 forward = cam.transform.forward;
-        Vector3 up = cam.transform.up;
+        if (cam == null)
+            return Vector3.forward;
+        return LevelViewDolly(cam.transform.rotation);
+    }
+
+    private static Vector3 LevelViewDolly(Quaternion rotation)
+    {
+        Vector3 forward = rotation * Vector3.forward;
+        Vector3 up = rotation * Vector3.up;
         Vector3 visualUp = Mathf.Abs(up.z) >= Mathf.Abs(up.y)
             ? new Vector3(0f, 0f, 1f)
             : Vector3.up;
