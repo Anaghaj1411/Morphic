@@ -465,8 +465,7 @@ public sealed class KerisGestureController : MonoBehaviour
             return;
 
         gestureStatus.gameObject.SetActive(true);
-        MorphicLoc.ApplyFont(gestureStatus);
-        gestureStatus.text = MorphicLoc.T(message);
+        MorphicLoc.Apply(gestureStatus, message);
     }
 
     private void Update()

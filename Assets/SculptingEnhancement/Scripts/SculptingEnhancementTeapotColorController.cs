@@ -375,6 +375,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         }
         else
             ShowSculptMode();
+
+        MorphicLoc.Changed -= RefreshLanguage;
+        MorphicLoc.Changed += RefreshLanguage;
+    }
+
+    private void RefreshLanguage()
+    {
+        if (uiRoot != null)
+            MorphicLoc.BindTree(uiRoot.transform);
     }
 
     private void OnDisable()
@@ -392,6 +401,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void OnDestroy()
     {
+        MorphicLoc.Changed -= RefreshLanguage;
         if (selfieDecalRoot != null)
             Destroy(selfieDecalRoot.gameObject);
         if (selfieSurfaceRoot != null)

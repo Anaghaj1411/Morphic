@@ -309,8 +309,18 @@ public class DialogueManager : MonoBehaviour
 
     private void RefreshLocalizedUi()
     {
+        // Language only changes text. Never rebuild the studio or conversation
+        // flow, or the culture picker comes back over sculpting.
+        if (IsSculptingStudioOpen())
+            return;
+
         if (currentDialogueNode >= 0 && dialogueStarted)
             ShowNode(currentDialogueNode);
+    }
+
+    private bool IsSculptingStudioOpen()
+    {
+        return dialoguePanel != null && !dialoguePanel.activeInHierarchy;
     }
 
     private IEnumerator StartDialogueAfterDelay()

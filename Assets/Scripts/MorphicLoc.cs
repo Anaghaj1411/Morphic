@@ -524,6 +524,7 @@ public static class MorphicLoc
         Add(Zh, "LEFT V", "左手 V");
         Add(Zh, "RIGHT PINCH", "右手捏");
         Add(Zh, "LEFT PINCH", "左手捏");
+        Add(Zh, "RIGHT PINCH + LEFT PINCH", "右手捏 + 左手捏");
         Add(Zh, "OPEN PALM", "張開手掌");
         Add(Zh, "WIDTH & HEIGHT", "寬度與高度");
         Add(Zh, "AI HELP", "AI 說明");
@@ -944,6 +945,7 @@ public static class MorphicLoc
         Add(Id, "LEFT V", "V KIRI");
         Add(Id, "RIGHT PINCH", "CUBIT KANAN");
         Add(Id, "LEFT PINCH", "CUBIT KIRI");
+        Add(Id, "RIGHT PINCH + LEFT PINCH", "CUBIT KANAN + CUBIT KIRI");
         Add(Id, "OPEN PALM", "TELAKAP TERBUKA");
         Add(Id, "WIDTH & HEIGHT", "LEBAR & TINGGI");
         Add(Id, "AI HELP", "BANTUAN AI");

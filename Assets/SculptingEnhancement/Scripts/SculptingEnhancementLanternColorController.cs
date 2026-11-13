@@ -376,6 +376,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
         else
             ShowSculptMode();
+
+        MorphicLoc.Changed -= RefreshLanguage;
+        MorphicLoc.Changed += RefreshLanguage;
+    }
+
+    private void RefreshLanguage()
+    {
+        if (uiRoot != null)
+            MorphicLoc.BindTree(uiRoot.transform);
     }
 
     private void OnEnable()
@@ -405,6 +414,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void OnDestroy()
     {
+        MorphicLoc.Changed -= RefreshLanguage;
         if (selfieSurfaceRoot != null)
             DestroyRuntimeObject(selfieSurfaceRoot.gameObject);
         DestroyRuntimeObject(capturedSelfieTexture);

@@ -256,11 +256,14 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         private float activeSpeedBeta = 0.32f;
         private float activeDeadzone = 0.0024f;
         private const float LostHandGrace = 0.48f;
-        private const float SecondHandGrace = 0.45f;
+        private const float SecondHandGrace = 0.55f;
         private const float MinPalmWidth = 0.0008f;
-        private const float DetectTimeout = 0.16f;
-        private const float MinDetectInterval = 0.016f;
+        private const float DetectTimeout = 0.12f;
+        private const float MinDetectInterval = 0.012f;
         private const float JitterDeadzone = 0.0024f;
+        private const float DuplicatePalmSep = 0.014f;
+        private const float DuplicateIndexSep = 0.022f;
+        private const float DuplicateSpread = 0.018f;
 
         public readonly HandLandmarkDetectionConfig config =
             new HandLandmarkDetectionConfig();
@@ -318,9 +321,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 Tasks.Vision.Core.RunningMode.LIVE_STREAM;
 
             config.NumHands = 2;
-            config.MinHandDetectionConfidence = 0.02f;
-            config.MinHandPresenceConfidence = 0.025f;
-            config.MinTrackingConfidence = 0.03f;
+            // Low detection still finds far/small palms. Presence/tracking must
+            // stay near MediaPipe defaults so a ghost second slot cannot skip
+            // the palm detector — that is what delayed the other hand.
+            config.MinHandDetectionConfidence = 0.15f;
+            config.MinHandPresenceConfidence = 0.42f;
+            config.MinTrackingConfidence = 0.48f;
 
             landmarkMinCutoff = 3.6f;
             landmarkSpeedBeta = 0.32f;
@@ -893,6 +899,10 @@ Debug.Log("MORPHIC: Camera resolution = " +
             SculptHandFrame rawSecondHand
         )
         {
+            bool secondWasMissing =
+                !hasRawSecondHand ||
+                Time.unscaledTime - lastSecondResultTime > SecondHandGrace;
+
             bool swap =
                 hasSmoothedLatestHand &&
                 PalmDistance(rawSecondHand, latestHand) +
@@ -910,6 +920,14 @@ Debug.Log("MORPHIC: Camera resolution = " +
             {
                 rawLatestHand = rawFirstHand;
                 this.rawSecondHand = rawSecondHand;
+            }
+
+            if (secondWasMissing ||
+                (hasSmoothedSecondHand &&
+                 PalmDistance(this.rawSecondHand, secondHand) > 0.16f))
+            {
+                hasSmoothedSecondHand = false;
+                secondEuro.Reset();
             }
 
             hasRawLatestHand = true;
@@ -935,21 +953,36 @@ Debug.Log("MORPHIC: Camera resolution = " +
             return AreLikelyTwoHands(firstHand, otherHand);
         }
 
+        private static float LandmarkDistance2D(Vector3 first, Vector3 other)
+        {
+            return Vector2.Distance(
+                new Vector2(first.x, first.y),
+                new Vector2(other.x, other.y));
+        }
+
         private static bool AreLikelyTwoHands(
             SculptHandFrame firstHand,
             SculptHandFrame otherHand)
         {
-            float dist = PalmDistance(firstHand, otherHand);
+            float palm = PalmDistance(firstHand, otherHand);
+            float wrist = LandmarkDistance2D(firstHand.Wrist, otherHand.Wrist);
+            float index = LandmarkDistance2D(firstHand.IndexTip, otherHand.IndexTip);
+            float pinky = LandmarkDistance2D(firstHand.PinkyTip, otherHand.PinkyTip);
+            float spread = (palm + wrist + index + pinky) * 0.25f;
+
+            // Only drop a cloned MediaPipe track of the same palm. Two real
+            // hands — even close together — should count as soon as they appear.
+            if (spread < DuplicateSpread &&
+                palm < DuplicatePalmSep &&
+                index < DuplicateIndexSep)
+                return false;
+
             if (firstHand.HasHandedness &&
                 otherHand.HasHandedness &&
-                firstHand.IsRightHand != otherHand.IsRightHand &&
-                dist >= 0.008f)
+                firstHand.IsRightHand != otherHand.IsRightHand)
                 return true;
 
-            float minSep = Mathf.Max(
-                0.012f,
-                (firstHand.PalmWidth + otherHand.PalmWidth) * 0.14f);
-            return dist >= minSep;
+            return spread >= DuplicateSpread;
         }
 
         private void ClearHandTracking()

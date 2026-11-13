@@ -281,6 +281,14 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (vertexSculptController == null)
             vertexSculptController = GetComponentInChildren<VertexSculptController>(true);
         CaptureKerisColor();
+        MorphicLoc.Changed -= RefreshLanguage;
+        MorphicLoc.Changed += RefreshLanguage;
+    }
+
+    private void RefreshLanguage()
+    {
+        if (uiRoot != null)
+            MorphicLoc.BindTree(uiRoot.transform);
     }
 
     private void OnDisable()
@@ -322,6 +330,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void OnDestroy()
     {
+        MorphicLoc.Changed -= RefreshLanguage;
         DestroyRuntime(capturedSelfieTexture);
         DestroyRuntime(appliedSelfieTexture);
         DestroyRuntime(selfieSurfaceMaterial);

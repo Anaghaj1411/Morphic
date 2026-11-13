@@ -1719,10 +1719,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
     private void SetStatus(string message)
     {
         if (gestureIndicator != null)
-        {
-            MorphicLoc.ApplyFont(gestureIndicator);
-            gestureIndicator.text = MorphicLoc.T(message);
-        }
+            MorphicLoc.Apply(gestureIndicator, message);
         UpdateProgressCard(message);
     }
 
