@@ -200,7 +200,7 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         RectTransform artRect = artFrame.rectTransform;
         artRect.anchorMin = artRect.anchorMax = new Vector2(0.5f, 0.5f);
         artRect.pivot = new Vector2(0.5f, 0.5f);
-        artRect.anchoredPosition = new Vector2(0f, 48f);
+        artRect.anchoredPosition = new Vector2(0f, 36f);
         artRect.sizeDelta = new Vector2(248f, 248f);
         artFrame.raycastTarget = false;
         Image artFill = LanguagePageBuilder.CreateRoundedImage(
@@ -210,7 +210,7 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         gestureImage = CreateRawImage(artFill.transform, "GestureImage", Vector2.zero, new Vector2(196f, 196f));
         gesturePreview = MorphicGesturePreview.Create(gestureImage);
 
-        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -152f), 640f, 90f, 20);
+        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -168f), 640f, 90f, 20);
         MorphicText.FitBody(instructionText);
         statusText = CreateLabel(cardRect, "Status", new Vector2(0f, -248f), 400f, 36f, 22);
         MorphicText.Style(statusText);
@@ -238,6 +238,7 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         MorphicLoc.Bind(instructionText, step.Instruction);
         MorphicText.FitBody(instructionText);
         MorphicText.FitButton(stepText);
+        PlaceGestureArt();
         if (gesturePreview != null)
             gesturePreview.Play(
                 string.IsNullOrEmpty(step.Preview) ? step.Gesture.ToString() : step.Preview,
@@ -254,6 +255,18 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
                 : "NEXT");
         if (previousButton != null)
             previousButton.interactable = stepIndex > 0;
+    }
+
+    private void PlaceGestureArt()
+    {
+        if (root == null)
+            return;
+        Transform card = root.transform.Find("Card");
+        RectTransform art = card != null ? card.Find("ArtFrame") as RectTransform : null;
+        if (art != null)
+            art.anchoredPosition = new Vector2(0f, 36f);
+        if (instructionText != null)
+            instructionText.rectTransform.anchoredPosition = new Vector2(0f, -168f);
     }
 
     private void MarkRecognized()

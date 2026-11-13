@@ -8,13 +8,13 @@ public static class MorphicStudioLayout
 {
     public const float TitleY = -16f;
     public const float TitleH = 52f;
-    public const float TitleYBack = -62f;
-    public const float TitleHBack = 44f;
+    public const float TitleYBack = -16f;
+    public const float TitleHBack = 52f;
     public const float InstructionY = -82f;
-    public const float InstructionYBack = -118f;
+    public const float InstructionYBack = -96f;
     public const float InstructionH = 60f;
     public const float ContentY = -152f;
-    public const float ContentYBack = -190f;
+    public const float ContentYBack = -168f;
     public const float StampW = 228f;
     public const float StampH = 118f;
     public const float StampGapX = 244f;

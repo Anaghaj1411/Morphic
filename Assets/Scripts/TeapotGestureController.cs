@@ -744,8 +744,9 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     private void DriveWidthHeight(SculptHandFrame first, SculptHandFrame second)
     {
-        float spanX = Mathf.Abs(first.IndexTip.x - second.IndexTip.x);
-        float spanY = Mathf.Abs(first.IndexTip.y - second.IndexTip.y);
+        float gain = SculptHandFrame.CombinedDistanceGain(first, second);
+        float spanX = Mathf.Abs(first.IndexTip.x - second.IndexTip.x) * gain;
+        float spanY = Mathf.Abs(first.IndexTip.y - second.IndexTip.y) * gain;
         targetWidth = Mathf.Clamp01(Mathf.InverseLerp(0.06f, 0.52f, spanX)) * 100f;
         targetHeight = Mathf.Clamp01(Mathf.InverseLerp(0.04f, 0.42f, spanY)) * 100f;
         float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
@@ -763,7 +764,8 @@ public sealed class TeapotGestureController : MonoBehaviour
 
     private void DriveMiddle(SculptHandFrame first, SculptHandFrame second)
     {
-        float spread = VSignSpread(first, second);
+        float spread = VSignSpread(first, second) *
+                       SculptHandFrame.CombinedDistanceGain(first, second);
         targetMiddle = Mathf.Clamp(
             Mathf.InverseLerp(0.06f, 0.50f, spread) * middleMaximumWeight,
             0f,
@@ -810,7 +812,10 @@ public sealed class TeapotGestureController : MonoBehaviour
         }
 
         float verticalMotion = PinchHeight(hand) - startY;
-        float target = Mathf.Clamp(startWeight + verticalMotion * pinchLiftSensitivity, 0f, 100f);
+        float target = Mathf.Clamp(
+            startWeight + verticalMotion * pinchLiftSensitivity * hand.DistanceGain,
+            0f,
+            100f);
         float currentWeight = teapotRenderer.GetBlendShapeWeight(index);
         float ease = physicalRight ? pinchEase : shaftEase;
         float blend = 1f - Mathf.Exp(-ease * Time.deltaTime);

@@ -99,6 +99,27 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     public float StrokeWidth => strokeWidth;
     public Color StrokeColor => strokeColor;
 
+    public float ResolveBandWidth(float fractionOfGirth)
+    {
+        float girth = MeasureObjectGirth();
+        return Mathf.Clamp(girth * Mathf.Max(0.01f, fractionOfGirth), 0.00015f, 0.85f);
+    }
+
+    public float MeasureObjectGirth()
+    {
+        if (teapotRenderer == null)
+            return 0.4f;
+
+        Vector3 size = teapotRenderer.bounds.size;
+        float x = Mathf.Abs(size.x);
+        float y = Mathf.Abs(size.y);
+        float z = Mathf.Abs(size.z);
+        float max = Mathf.Max(x, Mathf.Max(y, z));
+        float min = Mathf.Min(x, Mathf.Min(y, z));
+        float mid = x + y + z - max - min;
+        return Mathf.Max(0.001f, (min + mid) * 0.5f);
+    }
+
     public event Action<bool> OnLockStateChanged;
 
     private sealed class StrokeRecord
@@ -271,12 +292,6 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public void SetPatternTexture(Texture2D pattern)
     {
-        if (pattern != null)
-        {
-            pattern.wrapModeU = TextureWrapMode.Repeat;
-            pattern.wrapModeV = TextureWrapMode.Clamp;
-        }
-
         activePatternTexture = pattern;
         EnsureMaterial();
         RefreshTintedPattern();
@@ -287,16 +302,19 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         color.a = 1f;
         strokeColor = color;
         RefreshTintedPattern();
-        ApplyTintToMaterial(strokeMaterial, Color.white);
+        ApplyTintToMaterial(strokeMaterial, strokeColor);
 
         if (!updateExisting)
+        {
+            BindBrushPattern();
             return;
+        }
 
         for (int i = 0; i < completedStrokes.Count; i++)
             ApplyTintToStroke(completedStrokes[i], color);
 
-        ApplyTintToStroke(currentStroke, Color.white);
-        BindPatternToAll();
+        ApplyTintToStroke(currentStroke, strokeColor);
+        BindBrushPattern();
     }
 
     private static void ApplyTintToStroke(StrokeRecord record, Color color)
@@ -338,36 +356,28 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     private void RefreshTintedPattern()
     {
         if (activePatternTexture == null)
-            return;
-
-        if (tintedPatternTexture == null ||
-            lastBakedPatternSource != activePatternTexture ||
-            Mathf.Abs(lastBakedPatternTint.r - strokeColor.r) >= 0.002f ||
-            Mathf.Abs(lastBakedPatternTint.g - strokeColor.g) >= 0.002f ||
-            Mathf.Abs(lastBakedPatternTint.b - strokeColor.b) >= 0.002f)
         {
-            tintedPatternTexture = MorphicOverlayShaders.BakeInkTint(
+            BindBrushPattern();
+            return;
+        }
+
+        if (tintedPatternTexture == null || lastBakedPatternSource != activePatternTexture)
+        {
+            tintedPatternTexture = MorphicOverlayShaders.BakeRibbonPattern(
                 activePatternTexture,
-                strokeColor,
-                tintedPatternTexture,
+                null,
                 TextureWrapMode.Repeat,
                 TextureWrapMode.Clamp);
             lastBakedPatternSource = activePatternTexture;
-            lastBakedPatternTint = strokeColor;
+            lastBakedPatternTint = Color.white;
         }
 
-        BindPatternToAll();
+        BindBrushPattern();
     }
 
-    private void BindPatternToAll()
+    private void BindBrushPattern()
     {
         BindPattern(strokeMaterial);
-        for (int i = 0; i < completedStrokes.Count; i++)
-        {
-            if (completedStrokes[i] != null)
-                BindPattern(completedStrokes[i].material);
-        }
-
         if (currentStroke != null)
             BindPattern(currentStroke.material);
     }
@@ -375,15 +385,19 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     private void BindPattern(Material material)
     {
         Texture pattern = tintedPatternTexture != null ? tintedPatternTexture : (Texture)activePatternTexture;
-        if (material == null || pattern == null)
+        if (material == null)
             return;
 
-        material.mainTexture = pattern;
-        if (material.HasProperty("_MainTex"))
-            material.SetTexture("_MainTex", pattern);
-        if (material.HasProperty("_BaseMap"))
-            material.SetTexture("_BaseMap", pattern);
-        ApplyTintToMaterial(material, Color.white);
+        if (pattern != null)
+        {
+            material.mainTexture = pattern;
+            if (material.HasProperty("_MainTex"))
+                material.SetTexture("_MainTex", pattern);
+            if (material.HasProperty("_BaseMap"))
+                material.SetTexture("_BaseMap", pattern);
+        }
+
+        ApplyTintToMaterial(material, strokeColor);
     }
 
     public void UndoLastStroke()
@@ -491,19 +505,14 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     private float GetLossyScaleFactor()
     {
-        if (strokeContainer != null)
-        {
-            float s = strokeContainer.transform.lossyScale.x;
-            if (s > 0.0001f)
-                return s;
-        }
-        if (teapotRenderer != null)
-        {
-            float s = teapotRenderer.transform.lossyScale.x;
-            if (s > 0.0001f)
-                return s;
-        }
-        return 0.05f;
+        Transform t = strokeContainer != null ? strokeContainer.transform
+            : teapotRenderer != null ? teapotRenderer.transform : transform;
+        if (t == null)
+            return 0.05f;
+
+        Vector3 s = t.lossyScale;
+        float avg = (Mathf.Abs(s.x) + Mathf.Abs(s.y) + Mathf.Abs(s.z)) / 3f;
+        return avg > 0.0001f ? avg : 0.05f;
     }
 
     /// <summary>
@@ -879,6 +888,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
         Color color = clay ? clayColor : strokeColor;
         ApplyTintToMaterial(mat, color);
+        if (!clay)
+            BindPattern(mat);
         mr.SetPropertyBlock(null);
         mr.sharedMaterial = mat;
 
@@ -1025,20 +1036,23 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         }
 
         float currentDist = 0f;
-        float scaleFactor = GetLossyScaleFactor();
-        // Scale stroke width to world units
-        float localStrokeWidth = record.strokeWidth / scaleFactor;
-        float halfWidth = localStrokeWidth * 0.5f;
-        // Textures have 4:1 aspect ratio, so repeat length is 4x the width
-        float patternLength = localStrokeWidth * 4f;
+        Transform space = strokeContainer != null ? strokeContainer.transform : transform;
+        Texture pattern = tintedPatternTexture != null ? tintedPatternTexture : (Texture)activePatternTexture;
+        float aspect = 4f;
+        if (pattern != null && pattern.height > 0)
+            aspect = Mathf.Clamp(pattern.width / (float)pattern.height, 2.5f, 8f);
+        float worldHalf = record.strokeWidth * 0.5f;
+        float patternLength = Mathf.Max(record.strokeWidth * aspect, 0.0001f);
+        Vector3 prevWorld = space != null ? space.TransformPoint(pts[0]) : pts[0];
 
         for (int i = 0; i < count; i++)
         {
             Vector3 pt = pts[i];
             Vector3 norm = norms[i];
-
+            Vector3 worldPt = space != null ? space.TransformPoint(pt) : pt;
             if (i > 0)
-                currentDist += Vector3.Distance(pt, pts[i - 1]);
+                currentDist += Vector3.Distance(worldPt, prevWorld);
+            prevWorld = worldPt;
 
             Vector3 tangent;
             if (i == 0)
@@ -1052,8 +1066,16 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             if (binormal.sqrMagnitude < 0.001f)
                 binormal = Vector3.right;
 
-            Vector3 leftPos = pt - binormal * halfWidth;
-            Vector3 rightPos = pt + binormal * halfWidth;
+            Vector3 worldBinormal = space != null ? space.TransformDirection(binormal) : binormal;
+            if (worldBinormal.sqrMagnitude < 0.0001f)
+                worldBinormal = space != null ? space.right : Vector3.right;
+            worldBinormal.Normalize();
+            Vector3 localHalf = space != null
+                ? space.InverseTransformVector(worldBinormal * worldHalf)
+                : worldBinormal * worldHalf;
+
+            Vector3 leftPos = pt - localHalf;
+            Vector3 rightPos = pt + localHalf;
 
             float u = currentDist / patternLength;
 
@@ -1523,12 +1545,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             name = "Morphic Pattern Ribbon Material"
         };
         ApplyTintToMaterial(strokeMaterial, strokeColor);
-        if (activePatternTexture != null)
-        {
-            strokeMaterial.mainTexture = activePatternTexture;
-            if (strokeMaterial.HasProperty("_MainTex"))
-                strokeMaterial.SetTexture("_MainTex", activePatternTexture);
-        }
+        BindPattern(strokeMaterial);
     }
 
     private Camera ResolveCamera()

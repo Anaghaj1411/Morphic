@@ -52,7 +52,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     [SerializeField] private VertexSculptController vertexSculptController;
     [SerializeField, Min(0)] private int bodyMaterialIndex = 1;
     [SerializeField, Range(0.25f, 2.5f)] private float selectionDwellTime = 1.5f;
-    [SerializeField, Min(1f)] private float cursorSmoothing = 24f;
+    [SerializeField, Min(1f)] private float cursorSmoothing = 11f;
     [SerializeField, Range(1f, 2.5f)] private float cameraToScreenRangeMultiplier = 1.8f;
     [Header("Body Designs")]
     [SerializeField] private Texture2D[] stampPatterns;
@@ -433,7 +433,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 new Vector2(hand.IndexTip.x, hand.IndexTip.y),
                 cameraToScreenRangeMultiplier);
             screenPosition = new Vector2(expanded.x * Screen.width, expanded.y * Screen.height);
-            MoveCursor(screenPosition);
+            screenPosition = MoveCursor(screenPosition);
         }
         else
         {
@@ -470,7 +470,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (mode == ColorMode.DrawBandTargeting && patternPainter != null)
         {
             bool cursorOverUi = IsCursorOverColorUi(screenPosition);
-            if (vertexSculptEnabled || cursorOverUi)
+            if (cursorOverUi)
             {
                 patternPainter.SetPaintingEnabled(false);
             }
@@ -716,7 +716,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         confirmResetGroup = new GameObject("ConfirmReset", typeof(RectTransform));
         confirmResetGroup.transform.SetParent(panelRect, false);
         RectTransform rect = confirmResetGroup.GetComponent<RectTransform>();
-        DockTop(rect, -124f, 180f);
+        MorphicStudioLayout.DockContent(rect, true, 180f);
 
         Button cancel = CreateButton("Cancel", rect, Vector2.zero,
             new Vector2(PillWidth, PillHeight), "CANCEL", PillPink);
@@ -1938,15 +1938,20 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         confirmResetGroup.SetActive(true);
         historyBar.SetActive(false);
         mainActionGroup.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
         partGroup.SetActive(false);
         HideExtraCustomizeGroups();
         colorGroup.SetActive(false);
         if (reviewGroup != null)
             reviewGroup.SetActive(false);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(180f, true), false);
+        SetHeaderBackVisible(true);
         MorphicLoc.Apply(headerText, "RESET");
+        MorphicText.FitTitle(headerText);
         instructionText.gameObject.SetActive(true);
         MorphicLoc.Apply(instructionText, "This clears sculpt, color, design, and selfie.");
-        SetHeaderBackVisible(true);
+        MorphicText.FitBody(instructionText);
         SetHoveredTarget(null);
     }
 
@@ -2157,13 +2162,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (cam == null || focusRenderer == null)
             return;
 
-        MorphicSculptZoomUI.HandOffToVertexSculpt(
-            ref hasStoredSculptCam,
-            ref storedSculptCamPos,
-            ref storedSculptCamRot,
-            ref storedSculptCamFov,
-            ref storedSculptCamNear);
-
         if (!hasStoredSculptCam)
         {
             storedSculptCamPos = cam.transform.position;
@@ -2172,6 +2170,13 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             storedSculptCamNear = cam.nearClipPlane;
             hasStoredSculptCam = true;
         }
+
+        MorphicSculptZoomUI.HandOffToVertexSculpt(
+            ref hasStoredSculptCam,
+            ref storedSculptCamPos,
+            ref storedSculptCamRot,
+            ref storedSculptCamFov,
+            ref storedSculptCamNear);
         vertexSculptCameraZoomed = true;
         GetSculptCameraTarget(cam, focusRenderer, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear, 0.05f);
@@ -2243,7 +2248,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void RestoreVertexSculptCamera()
     {
-        MorphicSculptZoomUI.ReleaseIfPresent();
+        MorphicSculptZoomUI.ResumeAfterVertexSculpt();
         if (!hasStoredSculptCam)
             return;
 
@@ -2273,7 +2278,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void SnapRestoreVertexSculptCamera()
     {
-        MorphicSculptZoomUI.ReleaseIfPresent();
+        MorphicSculptZoomUI.ResumeAfterVertexSculpt();
         if (!hasStoredSculptCam)
             return;
 
@@ -3536,6 +3541,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         MorphicLoc.Apply(headerText, partNames[partIndex]);
         SetHeaderBackLabel("← PARTS");
         SetHeaderBackVisible(true);
+        MorphicStudioLayout.DockContent(
+            variantGroup.GetComponent<RectTransform>(), true, 280f);
         SetTitleBurstsVisible(false);
         instructionText.gameObject.SetActive(true);
         if (TryAdoptVisibleVariant(partIndex))
@@ -4016,7 +4023,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         selectedBandSizeIndex = Mathf.Clamp(sizeIdx, 0, bandSizes.Length - 1);
         float width = bandSizes[selectedBandSizeIndex];
         if (patternPainter != null)
+        {
             patternPainter.SetStrokeWidth(width, true);
+            patternPainter.SetMinPointSpacing(width * 0.22f);
+        }
 
         RefreshBandSizeButtons();
         instructionText.text = MorphicLoc.F("SIZE: {0}", MorphicLoc.T(bandSizeLabels[selectedBandSizeIndex]));
@@ -4241,8 +4251,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (bandTargetingBar != null)
             bandTargetingBar.SetActive(true);
         EnsurePatternPainter();
+        vertexSculptEnabled = false;
         if (patternPainter != null)
         {
+            patternPainter.SetClayCoilMode(false);
+            if (appliedBandTexture != null)
+                patternPainter.SetPatternTexture(appliedBandTexture);
             patternPainter.SetStrokeColor(committedBandColor, false);
             patternPainter.SetPaintingEnabled(true);
         }
@@ -4344,10 +4358,14 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             return;
 
         EnsurePatternPainter();
+        vertexSculptEnabled = false;
         if (patternPainter != null)
         {
+            float width = bandSizes[selectedBandSizeIndex];
+            patternPainter.SetClayCoilMode(false);
             patternPainter.SetPatternTexture(motif);
-            patternPainter.SetStrokeWidth(bandSizes[selectedBandSizeIndex], false);
+            patternPainter.SetStrokeWidth(width, false);
+            patternPainter.SetMinPointSpacing(width * 0.22f);
             patternPainter.SetStrokeColor(committedBandColor, false);
             patternPainter.SetDrawingLocked(false);
             patternPainter.SetPaintingEnabled(true);
@@ -4397,9 +4415,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void LoadBandPatterns()
     {
-        if (bandPatterns != null && bandPatterns.Length > 0)
-            return;
-
         bandPatterns = MorphicPatternCatalog.Bands();
     }
 
@@ -5245,14 +5260,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                RectTransformUtility.RectangleContainsScreenPoint(rect, screenPosition, canvasCamera);
     }
 
-    private void MoveCursor(Vector2 screenPosition)
+    private Vector2 MoveCursor(Vector2 screenPosition)
     {
         if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
                 canvasRect, screenPosition, canvasCamera, out Vector2 localPoint))
-            return;
+            return screenPosition;
         float factor = 1f - Mathf.Exp(-cursorSmoothing * Time.unscaledDeltaTime);
         cursorRect.anchoredPosition = Vector2.Lerp(cursorRect.anchoredPosition, localPoint, factor);
         cursorRect.SetAsLastSibling();
+        return RectTransformUtility.WorldToScreenPoint(canvasCamera, cursorRect.position);
     }
 
     private void SetCursorVisible(bool visible)
@@ -5641,20 +5657,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private Button CreateHeaderBackButton(RectTransform parent)
     {
-        Button button = CreateButton("HeaderBack", parent, new Vector2(16f, -14f),
-            new Vector2(130f, 42f), "← BACK", PillPink);
-        RectTransform rect = button.GetComponent<RectTransform>();
-        rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
-        rect.pivot = new Vector2(0f, 1f);
-        rect.anchoredPosition = new Vector2(16f, -14f);
-        rect.sizeDelta = new Vector2(130f, 42f);
-        TMP_Text text = button.GetComponentInChildren<TMP_Text>();
-        if (text != null)
-        {
-            text.fontSize = 17.5f;
-            text.color = DarkTextGreen;
-        }
-        button.onClick.AddListener(NavigateBack);
+        Button button = MorphicBackButton.CreateHeader(parent, NavigateBack);
         RegisterHitTarget(button, false, false, default);
         return button;
     }
@@ -5662,7 +5665,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private void SetHeaderBackVisible(bool visible)
     {
         if (headerBackButton != null)
+        {
+            MorphicBackButton.RestyleExisting(headerBackButton);
             headerBackButton.gameObject.SetActive(visible);
+        }
 
         MorphicStudioLayout.PlaceHeader(headerText, instructionText, visible);
     }
@@ -5701,12 +5707,29 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         selfieEntryButton.gameObject.SetActive(mode == ColorMode.MainMenu);
     }
 
-    private void SetPanelHeight(float height)
+    private void SetPanelHeight(float height, bool includeHistoryBar = true)
     {
         if (panel == null)
             return;
+        float extra = includeHistoryBar ? HistoryBarHeight : 16f;
         panel.GetComponent<RectTransform>().sizeDelta =
-            new Vector2(CustomizePanelWidth, height + HistoryBarHeight);
+            new Vector2(CustomizePanelWidth, height + extra);
+        FitCreamToHistory(includeHistoryBar);
+    }
+
+    private void FitCreamToHistory(bool historyVisible)
+    {
+        if (panel == null)
+            return;
+        Transform fill = panel.transform.Find("Fill");
+        if (fill == null)
+            return;
+        LanguagePageBuilder.Stretch(
+            fill as RectTransform,
+            12f,
+            historyVisible ? HistoryBarHeight : 16f,
+            12f,
+            12f);
     }
 
     private static void ApplyBottomRightDocking(RectTransform rect)

@@ -233,7 +233,31 @@ namespace Mediapipe.Unity
     private ResolutionStruct GetDefaultResolution()
     {
       var resolutions = availableResolutions;
-      return resolutions == null || resolutions.Length == 0 ? new ResolutionStruct() : resolutions.OrderBy(resolution => resolution, new ResolutionStructComparer(_preferableDefaultWidth)).First();
+      if (resolutions == null || resolutions.Length == 0)
+        return new ResolutionStruct();
+
+      ResolutionStruct best = resolutions[0];
+      long bestScore = long.MinValue;
+      for (int i = 0; i < resolutions.Length; i++)
+      {
+        ResolutionStruct candidate = resolutions[i];
+        long score = (long)candidate.width * candidate.height;
+        if (candidate.width >= 1280 && candidate.height >= 720)
+          score += 8_000_000L;
+        if (candidate.width >= 1920)
+          score += 4_000_000L;
+        if (candidate.frameRate >= 24f && candidate.frameRate <= 33f)
+          score += 200_000L;
+        int widthHint = Mathf.Abs(candidate.width - Mathf.Max(_preferableDefaultWidth, 1920));
+        score -= widthHint * 20L;
+        if (score > bestScore)
+        {
+          bestScore = score;
+          best = candidate;
+        }
+      }
+
+      return best;
     }
 
     private void InitializeWebCamTexture()

@@ -76,6 +76,7 @@ public sealed partial class SculptingEnhancementKerisColorController
     private readonly Button[] bandSizeButtons = new Button[4];
     private readonly string[] bandSizeLabels = { "SLIM", "MEDIUM", "BOLD", "WIDE" };
     private readonly float[] bandSizes = { 0.0006f, 0.0012f, 0.0022f, 0.0035f };
+    private readonly float[] bandSizeFractions = { 0.08f, 0.13f, 0.18f, 0.24f };
     private const int StampTileRows = 3;
     private const float StampTileSpanFraction = 0.78f;
     private const float StampTileFillFraction = 0.92f;
@@ -102,16 +103,13 @@ public sealed partial class SculptingEnhancementKerisColorController
         confirmResetGroup = new GameObject("ConfirmReset", typeof(RectTransform));
         confirmResetGroup.transform.SetParent(parent, false);
         RectTransform rect = confirmResetGroup.GetComponent<RectTransform>();
-        DockTop(rect, -145f, 210f);
-        CreateText("ResetPrompt", rect, new Vector2(0f, 0f), new Vector2(PillWidth, 55f),
-            "Reset the Keris and clear your current decorations?", 20f,
-            TextAlignmentOptions.Center, FontStyles.Bold);
-        Button cancel = CreateButton("CancelReset", rect, new Vector2(-125f, -90f),
-            new Vector2(220f, 56f), "CANCEL", PillPink);
+        MorphicStudioLayout.DockContent(rect, true, 180f);
+        Button cancel = CreateButton("CancelReset", rect, Vector2.zero,
+            new Vector2(PillWidth, PillHeight), "CANCEL", PillPink);
         cancel.onClick.AddListener(HideConfirmReset);
         RegisterHitTarget(cancel, false, false, Color.white);
-        Button confirm = CreateButton("ConfirmReset", rect, new Vector2(125f, -90f),
-            new Vector2(220f, 56f), "RESET", DonePink);
+        Button confirm = CreateButton("Reset", rect, new Vector2(0f, -72f),
+            new Vector2(PillWidth, PillHeight), "RESET", DonePink);
         confirm.onClick.AddListener(() => { ResetKerisColor(); HideConfirmReset(); ShowMainMenu(); });
         RegisterHitTarget(confirm, false, false, Color.white);
         confirmResetGroup.SetActive(false);
@@ -903,12 +901,12 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (patternPainter == null)
             return;
 
-        float width = bandSizes[Mathf.Clamp(selectedBandSizeIndex, 0, bandSizes.Length - 1)];
+        float width = ResolveKerisBandWidth();
         patternPainter.SetClayCoilMode(false);
         patternPainter.SetPatternTexture(motif);
-        patternPainter.SetStrokeColor(committedBandColor, true);
+        patternPainter.SetStrokeColor(committedBandColor, false);
         patternPainter.SetStrokeWidth(width, false);
-        patternPainter.SetMinPointSpacing(width * 0.25f);
+        patternPainter.SetMinPointSpacing(width * 0.22f);
         patternPainter.SetDrawingLocked(false);
         patternPainter.SetPaintingEnabled(true);
     }
@@ -940,14 +938,23 @@ public sealed partial class SculptingEnhancementKerisColorController
         BeginVertexSculptCameraZoom();
     }
 
+    private float ResolveKerisBandWidth()
+    {
+        EnsurePainter();
+        int index = Mathf.Clamp(selectedBandSizeIndex, 0, bandSizeFractions.Length - 1);
+        if (patternPainter != null)
+            return patternPainter.ResolveBandWidth(bandSizeFractions[index]);
+        return bandSizes[index];
+    }
+
     private void SelectBandSize(int sizeIdx)
     {
         selectedBandSizeIndex = Mathf.Clamp(sizeIdx, 0, bandSizes.Length - 1);
-        float width = bandSizes[selectedBandSizeIndex];
+        float width = ResolveKerisBandWidth();
         if (patternPainter != null)
         {
             patternPainter.SetStrokeWidth(width, true);
-            patternPainter.SetMinPointSpacing(width * 0.25f);
+            patternPainter.SetMinPointSpacing(width * 0.22f);
         }
 
         RefreshBandSizeButtons();
@@ -1867,9 +1874,18 @@ public sealed partial class SculptingEnhancementKerisColorController
         mode = ColorMode.ConfirmReset;
         HideExtraGroups();
         mainActionGroup.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
+        if (historyBar != null)
+            historyBar.SetActive(false);
         confirmResetGroup.SetActive(true);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(180f, true), false);
         SetHeaderBackVisible(true);
-        instructionText.gameObject.SetActive(false);
+        MorphicLoc.Apply(headerText, "RESET");
+        MorphicText.FitTitle(headerText);
+        instructionText.gameObject.SetActive(true);
+        MorphicLoc.Apply(instructionText, "This clears sculpt, color, design, and selfie.");
+        MorphicText.FitBody(instructionText);
     }
 
     private void HideConfirmReset() => ShowMainMenu();

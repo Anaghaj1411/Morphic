@@ -48,7 +48,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     [SerializeField] private SkinnedMeshRenderer kerisSkin;
     [SerializeField] private TeapotSurfacePatternPainter patternPainter;
     [SerializeField, Range(0.25f, 2.5f)] private float selectionDwellTime = 1.5f;
-    [SerializeField, Min(1f)] private float cursorSmoothing = 24f;
+    [SerializeField, Min(1f)] private float cursorSmoothing = 11f;
     [SerializeField, Range(1f, 2.5f)] private float cameraToScreenRangeMultiplier = 1.8f;
     [SerializeField] private int selfieWidth = 640;
     [SerializeField] private int selfieHeight = 480;
@@ -357,7 +357,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 new Vector2(hand.IndexTip.x, hand.IndexTip.y),
                 cameraToScreenRangeMultiplier);
             screenPosition = new Vector2(expanded.x * Screen.width, expanded.y * Screen.height);
-            MoveCursor(screenPosition);
+            screenPosition = MoveCursor(screenPosition);
         }
         else
         {
@@ -823,15 +823,21 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (cam == null)
             return;
 
+        if (!hasStoredSculptCam)
+        {
+            storedSculptCamPos = cam.transform.position;
+            storedSculptCamRot = cam.transform.rotation;
+            storedSculptCamFov = cam.fieldOfView;
+            storedSculptCamNear = cam.nearClipPlane;
+            hasStoredSculptCam = true;
+        }
+
         MorphicSculptZoomUI.HandOffToVertexSculpt(
             ref hasStoredSculptCam,
             ref storedSculptCamPos,
             ref storedSculptCamRot,
             ref storedSculptCamFov,
             ref storedSculptCamNear);
-
-        if (!hasStoredSculptCam)
-            CaptureStudioCamera();
 
         GetKerisZoomPose(out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         HoldSculptCameraPose(targetPos, targetRot, targetFov);
@@ -981,7 +987,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void RestoreVertexSculptCamera()
     {
-        MorphicSculptZoomUI.ReleaseIfPresent();
+        MorphicSculptZoomUI.ResumeAfterVertexSculpt();
         if (!hasStoredSculptCam)
             return;
 
@@ -1012,7 +1018,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void SnapRestoreVertexSculptCamera()
     {
-        MorphicSculptZoomUI.ReleaseIfPresent();
+        MorphicSculptZoomUI.ResumeAfterVertexSculpt();
         if (!hasStoredSculptCam)
             return;
 
@@ -1242,6 +1248,9 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         MorphicLoc.Apply(headerText, partNames[partIndex]);
         SetHeaderBackLabel("← PARTS");
         SetHeaderBackVisible(true);
+        if (variantGroup != null)
+            MorphicStudioLayout.DockContent(
+                variantGroup.GetComponent<RectTransform>(), true, 310f);
         SetTitleBurstsVisible(true);
         instructionText.gameObject.SetActive(true);
         MorphicLoc.Apply(
@@ -2382,14 +2391,15 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                RectTransformUtility.RectangleContainsScreenPoint(rect, screenPosition, canvasCamera);
     }
 
-    private void MoveCursor(Vector2 screenPosition)
+    private Vector2 MoveCursor(Vector2 screenPosition)
     {
         if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
                 canvasRect, screenPosition, canvasCamera, out Vector2 localPoint))
-            return;
+            return screenPosition;
         float factor = 1f - Mathf.Exp(-cursorSmoothing * Time.unscaledDeltaTime);
         cursorRect.anchoredPosition = Vector2.Lerp(cursorRect.anchoredPosition, localPoint, factor);
         cursorRect.SetAsLastSibling();
+        return RectTransformUtility.WorldToScreenPoint(canvasCamera, cursorRect.position);
     }
 
     private void SetCursorVisible(bool visible)
@@ -2529,13 +2539,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private Button CreateHeaderBackButton(RectTransform parent)
     {
-        Button button = CreateButton("HeaderBack", parent, new Vector2(16f, -14f),
-            new Vector2(130f, 42f), "← BACK", PillPink);
-        RectTransform rect = button.GetComponent<RectTransform>();
-        rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
-        rect.pivot = new Vector2(0f, 1f);
-        rect.anchoredPosition = new Vector2(16f, -14f);
-        button.onClick.AddListener(NavigateBack);
+        Button button = MorphicBackButton.CreateHeader(parent, NavigateBack);
         RegisterHitTarget(button, false, false, Color.white);
         return button;
     }
@@ -2543,7 +2547,10 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private void SetHeaderBackVisible(bool visible)
     {
         if (headerBackButton != null)
+        {
+            MorphicBackButton.RestyleExisting(headerBackButton);
             headerBackButton.gameObject.SetActive(visible);
+        }
 
         MorphicStudioLayout.PlaceHeader(headerText, instructionText, visible);
     }
@@ -2560,12 +2567,29 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             titleBurstRoot.SetActive(visible);
     }
 
-    private void SetPanelHeight(float height)
+    private void SetPanelHeight(float height, bool includeHistoryBar = true)
     {
         if (panel == null)
             return;
+        float extra = includeHistoryBar ? HistoryBarHeight : 16f;
         panel.GetComponent<RectTransform>().sizeDelta =
-            new Vector2(CustomizePanelWidth, height + HistoryBarHeight);
+            new Vector2(CustomizePanelWidth, height + extra);
+        FitCreamToHistory(includeHistoryBar);
+    }
+
+    private void FitCreamToHistory(bool historyVisible)
+    {
+        if (panel == null)
+            return;
+        Transform fill = panel.transform.Find("Fill");
+        if (fill == null)
+            return;
+        LanguagePageBuilder.Stretch(
+            fill as RectTransform,
+            12f,
+            historyVisible ? HistoryBarHeight : 16f,
+            12f,
+            12f);
     }
 
     private Button CreateButton(

@@ -9,12 +9,15 @@ public class WebcamDisplayController : MonoBehaviour
     [SerializeField] private RectTransform borderPanel;
 
     [Header("Positioning")]
-    [SerializeField] private Vector2 displaySize = new Vector2(380, 286);
-    [SerializeField] private Vector2 anchoredPosition = new Vector2(24, 36);
+    [SerializeField] private Vector2 displaySize = new Vector2(500, 406);
+    [SerializeField] private Vector2 anchoredPosition = new Vector2(8, 8);
 
     private const float FramePad = 16f;
-    private static readonly Vector2 DefaultSize = new Vector2(380f, 286f);
-    private static readonly Vector2 DefaultBottomLeft = new Vector2(24f, 36f);
+    private const float GrowEachSide = 60f;
+    private static readonly Vector2 DefaultSize = new Vector2(380f + GrowEachSide * 2f, 286f + GrowEachSide * 2f);
+    private static readonly Vector2 DefaultBottomLeft = new Vector2(
+        Mathf.Max(8f, 24f - GrowEachSide),
+        Mathf.Max(8f, 36f - GrowEachSide));
     private RectTransform videoWell;
     private bool frameBuilt;
 
@@ -78,10 +81,10 @@ public class WebcamDisplayController : MonoBehaviour
         if (borderPanel == null)
             return;
 
-        // Scene copies still store the old top-left coords (y negative),
-        // which would push this off the bottom of the canvas.
-        Vector2 size = displaySize.x >= 320f ? displaySize : DefaultSize;
-        Vector2 position = anchoredPosition.y >= 0f ? anchoredPosition : DefaultBottomLeft;
+        // Grow the preview evenly on all four sides. Ignore older scene
+        // sizes so a serialized 380x286 copy cannot keep the small box.
+        Vector2 size = DefaultSize;
+        Vector2 position = DefaultBottomLeft;
 
         borderPanel.anchorMin = Vector2.zero;
         borderPanel.anchorMax = Vector2.zero;

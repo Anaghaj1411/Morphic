@@ -42,8 +42,8 @@ public class MorphicSculptZoomUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Vertex sculpt owns the camera now. Use the studio rest pose (not the
-    /// ZOOM dolly) so the two zooms never stack, then drop the ZOOM button.
+    /// Vertex sculpt owns the camera. Keep the user's current zoom pose so
+    /// leaving vertex sculpt can return to it.
     /// </summary>
     public static void HandOffToVertexSculpt(
         ref bool hasStored,
@@ -54,22 +54,32 @@ public class MorphicSculptZoomUI : MonoBehaviour
     {
         vertexSculptOwnsCamera = true;
         MorphicSculptZoomUI zoomUi = FindInstance();
-        if (zoomUi == null)
-            return;
-
-        if (zoomUi.hasRestPose)
+        Camera view = zoomUi != null ? ResolveViewCamera() : Camera.main;
+        if (!hasStored && view != null)
         {
-            storedPosition = zoomUi.restPosition;
-            storedRotation = zoomUi.restRotation;
-            storedFieldOfView = zoomUi.restFieldOfView;
-            storedNearClip = zoomUi.restNearClip;
+            storedPosition = view.transform.position;
+            storedRotation = view.transform.rotation;
+            storedFieldOfView = view.fieldOfView;
+            storedNearClip = view.nearClipPlane;
             hasStored = true;
         }
 
-        zoomUi.StopMove();
-        zoomUi.zoomed = false;
-        zoomUi.zoomLevel = 0;
+        if (zoomUi != null)
+        {
+            zoomUi.StopMove();
+            zoomUi.extraZoomLevel = 0;
+        }
+    }
+
+    public static void ResumeAfterVertexSculpt()
+    {
+        vertexSculptOwnsCamera = false;
+        MorphicSculptZoomUI zoomUi = FindInstance();
+        if (zoomUi == null)
+            return;
+
         zoomUi.extraZoomLevel = 0;
+        zoomUi.zoomed = zoomUi.zoomLevel > 0;
     }
 
     public static void ReleaseIfPresent()

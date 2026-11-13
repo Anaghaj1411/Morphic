@@ -69,7 +69,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     [Header("Hand UI")]
     [SerializeField, Range(0.25f, 2.5f)] private float selectionDwellTime = 1.5f;
-    [SerializeField, Min(1f)] private float cursorSmoothing = 24f;
+    [SerializeField, Min(1f)] private float cursorSmoothing = 11f;
     [Tooltip("Expands hand motion around the camera center so the full screen can be reached without moving the whole hand out of frame.")]
     [SerializeField, Range(1f, 2.5f)] private float cameraToScreenRangeMultiplier = 1.8f;
 
@@ -189,6 +189,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private readonly RawImage[] bandPreviews = new RawImage[8];
     private readonly Button[] bandSizeButtons = new Button[4];
     private readonly float[] bandSizes = new float[] { 0.028f, 0.048f, 0.068f, 0.092f };
+    private readonly float[] bandSizeFractions = new float[] { 0.08f, 0.13f, 0.18f, 0.24f };
     private readonly string[] bandSizeLabels = new string[] { "SLIM", "MEDIUM", "BOLD", "WIDE" };
     private int selectedBandSizeIndex = 1;
     private readonly Button[] vertexSculptSizeButtons = new Button[4];
@@ -446,7 +447,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 new Vector2(hand.IndexTip.x, hand.IndexTip.y),
                 cameraToScreenRangeMultiplier);
             screenPosition = new Vector2(expanded.x * Screen.width, expanded.y * Screen.height);
-            MoveCursor(screenPosition);
+            screenPosition = MoveCursor(screenPosition);
         }
         else
         {
@@ -482,7 +483,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (mode == ColorMode.DrawBandTargeting && patternPainter != null)
         {
             bool cursorOverUi = IsCursorOverColorUi(screenPosition);
-            if (vertexSculptEnabled || cursorOverUi)
+            if (cursorOverUi)
             {
                 patternPainter.SetPaintingEnabled(false);
             }
@@ -726,13 +727,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (cam == null || focusRenderer == null)
             return;
 
-        MorphicSculptZoomUI.HandOffToVertexSculpt(
-            ref hasStoredSculptCam,
-            ref storedSculptCamPos,
-            ref storedSculptCamRot,
-            ref storedSculptCamFov,
-            ref storedSculptCamNear);
-
         if (!hasStoredSculptCam)
         {
             storedSculptCamPos = cam.transform.position;
@@ -741,6 +735,13 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             storedSculptCamNear = cam.nearClipPlane;
             hasStoredSculptCam = true;
         }
+
+        MorphicSculptZoomUI.HandOffToVertexSculpt(
+            ref hasStoredSculptCam,
+            ref storedSculptCamPos,
+            ref storedSculptCamRot,
+            ref storedSculptCamFov,
+            ref storedSculptCamNear);
         vertexSculptCameraZoomed = true;
         GetSculptCameraTarget(cam, focusRenderer, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear, 0.05f);
@@ -841,7 +842,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void RestoreVertexSculptCamera()
     {
-        MorphicSculptZoomUI.ReleaseIfPresent();
+        MorphicSculptZoomUI.ResumeAfterVertexSculpt();
         if (!hasStoredSculptCam)
             return;
 
@@ -871,7 +872,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void SnapRestoreVertexSculptCamera()
     {
-        MorphicSculptZoomUI.ReleaseIfPresent();
+        MorphicSculptZoomUI.ResumeAfterVertexSculpt();
         if (!hasStoredSculptCam)
             return;
 
@@ -1533,7 +1534,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         confirmResetGroup = new GameObject("ConfirmReset", typeof(RectTransform));
         confirmResetGroup.transform.SetParent(panelRect, false);
         RectTransform confirmRect = confirmResetGroup.GetComponent<RectTransform>();
-        DockTop(confirmRect, -124f, 220f);
+        MorphicStudioLayout.DockContent(confirmRect, true, 180f);
 
         Button cancel = CreateButton(
             "Cancel", confirmRect, new Vector2(0f, 0f),
@@ -2651,6 +2652,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         MorphicLoc.Apply(headerText, partNames[partIndex]);
         SetHeaderBackLabel("← PARTS");
+        SetHeaderBackVisible(true);
+        MorphicStudioLayout.DockContent(
+            variantGroup.GetComponent<RectTransform>(), true, 280f);
         instructionText.gameObject.SetActive(true);
         if (TryAdoptVisibleVariant(partIndex))
         {
@@ -2910,8 +2914,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (partIndex == 4)
         {
             bool isTassel = compact.Contains("TASSEL") ||
-                            compact.Contains("TASSLE") ||
-                            compact.Contains("BAMBOO");
+                            compact.Contains("TASSLE");
             if (!isTassel)
                 return false;
             bool isSingle = compact.Contains("SINGLE");
@@ -3953,20 +3956,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private Button CreateHeaderBackButton(RectTransform parent)
     {
-        Button button = CreateButton("HeaderBack", parent, new Vector2(16f, -14f),
-            new Vector2(130f, 42f), "← BACK", PillPink);
-        RectTransform rect = button.GetComponent<RectTransform>();
-        rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
-        rect.pivot = new Vector2(0f, 1f);
-        rect.anchoredPosition = new Vector2(16f, -14f);
-        rect.sizeDelta = new Vector2(130f, 42f);
-        TMP_Text text = button.GetComponentInChildren<TMP_Text>();
-        if (text != null)
-        {
-            text.fontSize = 17.5f;
-            text.color = DarkTextGreen;
-        }
-        button.onClick.AddListener(NavigateBack);
+        Button button = MorphicBackButton.CreateHeader(parent, NavigateBack);
         RegisterHitTarget(button, false, false, default);
         return button;
     }
@@ -3986,7 +3976,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
         else
         {
-            headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>();
+            MorphicBackButton.RestyleExisting(headerBackButton);
+            headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>(true);
             headerBackButton.onClick.RemoveListener(NavigateBack);
             headerBackButton.onClick.AddListener(NavigateBack);
             RegisterHitTarget(headerBackButton, false, false, default);
@@ -4000,7 +3991,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private void SetHeaderBackVisible(bool visible)
     {
         if (headerBackButton != null)
+        {
+            MorphicBackButton.RestyleExisting(headerBackButton);
             headerBackButton.gameObject.SetActive(visible);
+        }
 
         MorphicStudioLayout.PlaceHeader(headerText, instructionText, visible);
     }
@@ -4070,14 +4064,34 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         MorphicLoc.BindTree(uiRoot.transform);
     }
 
-    private void SetPanelHeight(float height)
+    private void SetPanelHeight(float height, bool includeHistoryBar = true)
     {
         if (panel == null)
             return;
 
         RectTransform rect = panel.GetComponent<RectTransform>();
         if (rect != null)
-            rect.sizeDelta = new Vector2(CustomizePanelWidth, height + HistoryBarHeight);
+        {
+            float extra = includeHistoryBar ? HistoryBarHeight : 16f;
+            rect.sizeDelta = new Vector2(CustomizePanelWidth, height + extra);
+        }
+
+        FitCreamToHistory(includeHistoryBar);
+    }
+
+    private void FitCreamToHistory(bool historyVisible)
+    {
+        if (panel == null)
+            return;
+        Transform fill = panel.transform.Find("Fill");
+        if (fill == null)
+            return;
+        LanguagePageBuilder.Stretch(
+            fill as RectTransform,
+            12f,
+            historyVisible ? HistoryBarHeight : 16f,
+            12f,
+            12f);
     }
 
     private void ApplyBottomRightDocking()
@@ -4387,16 +4401,17 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
     }
 
-    private void MoveCursor(Vector2 screenPosition)
+    private Vector2 MoveCursor(Vector2 screenPosition)
     {
         if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
                 canvasRect, screenPosition, canvasCamera, out Vector2 localPoint))
-            return;
+            return screenPosition;
 
         float factor = 1f - Mathf.Exp(-cursorSmoothing * Time.unscaledDeltaTime);
         cursorRect.anchoredPosition = Vector2.Lerp(
             cursorRect.anchoredPosition, localPoint, factor);
         cursorRect.SetAsLastSibling();
+        return RectTransformUtility.WorldToScreenPoint(canvasCamera, cursorRect.position);
     }
 
     private static Vector2 ExpandCameraPoint(
@@ -5634,12 +5649,24 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         bandGroup.SetActive(false);
     }
 
+    private float ResolveLanternBandWidth()
+    {
+        EnsurePatternPainter();
+        int index = Mathf.Clamp(selectedBandSizeIndex, 0, bandSizeFractions.Length - 1);
+        if (patternPainter != null)
+            return patternPainter.ResolveBandWidth(bandSizeFractions[index]);
+        return bandSizes[index];
+    }
+
     private void SelectBandSize(int sizeIdx)
     {
         selectedBandSizeIndex = Mathf.Clamp(sizeIdx, 0, bandSizes.Length - 1);
-        float width = bandSizes[selectedBandSizeIndex];
+        float width = ResolveLanternBandWidth();
         if (patternPainter != null)
+        {
             patternPainter.SetStrokeWidth(width, true);
+            patternPainter.SetMinPointSpacing(width * 0.22f);
+        }
 
         RefreshBandSizeButtons();
         instructionText.text = MorphicLoc.F("SIZE: {0}", MorphicLoc.T(bandSizeLabels[selectedBandSizeIndex]));
@@ -5866,8 +5893,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (bandTargetingBar != null)
             bandTargetingBar.SetActive(true);
         EnsurePatternPainter();
+        vertexSculptEnabled = false;
         if (patternPainter != null)
         {
+            patternPainter.SetClayCoilMode(false);
+            if (appliedBandTexture != null)
+                patternPainter.SetPatternTexture(appliedBandTexture);
+            float width = ResolveLanternBandWidth();
+            patternPainter.SetStrokeWidth(width, false);
+            patternPainter.SetMinPointSpacing(width * 0.22f);
             patternPainter.SetStrokeColor(committedBandColor, false);
             patternPainter.SetPaintingEnabled(true);
         }
@@ -5969,10 +6003,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             return;
 
         EnsurePatternPainter();
+        vertexSculptEnabled = false;
         if (patternPainter != null)
         {
+            float width = ResolveLanternBandWidth();
+            patternPainter.SetClayCoilMode(false);
             patternPainter.SetPatternTexture(motif);
-            patternPainter.SetStrokeWidth(bandSizes[selectedBandSizeIndex], false);
+            patternPainter.SetStrokeWidth(width, false);
+            patternPainter.SetMinPointSpacing(width * 0.22f);
             patternPainter.SetStrokeColor(committedBandColor, false);
             patternPainter.SetDrawingLocked(false);
             patternPainter.SetPaintingEnabled(true);
@@ -6024,9 +6062,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void LoadBandPatterns()
     {
-        if (bandPatterns != null && bandPatterns.Length > 0)
-            return;
-
         bandPatterns = MorphicPatternCatalog.Bands();
     }
 
@@ -6736,6 +6771,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             historyBar.SetActive(false);
         if (mainActionGroup != null)
             mainActionGroup.SetActive(false);
+        if (selfieEntryButton != null)
+            selfieEntryButton.gameObject.SetActive(false);
         if (partGroup != null)
             partGroup.SetActive(false);
         if (variantGroup != null)
@@ -6758,9 +6795,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(true);
         MorphicLoc.Apply(headerText, "RESET");
+        MorphicText.FitTitle(headerText);
         instructionText.gameObject.SetActive(true);
         MorphicLoc.Apply(instructionText, "This clears sculpt, color, and stamp.");
-        SetPanelHeight(BodyActionsPanelHeight);
+        MorphicText.FitBody(instructionText);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(180f, true), false);
         SetHoveredTarget(null);
     }
 
