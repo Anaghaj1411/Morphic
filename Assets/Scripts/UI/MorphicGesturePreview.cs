@@ -19,7 +19,9 @@ public sealed class MorphicGesturePreview : MonoBehaviour
         LeftV,
         SingleFist,
         TwoV,
-        OpenPalm
+        OpenPalm,
+        PointIndex,
+        DrawBand
     }
 
     private const float CircleSize = 196f;
@@ -43,6 +45,11 @@ public sealed class MorphicGesturePreview : MonoBehaviour
         if (target == null)
             return null;
 
+        Transform art = target.rectTransform.parent;
+        MakeCircleHost(art as RectTransform, CirclePink, CircleSize + 28f);
+        if (art != null)
+            MakeCircleHost(art.parent as RectTransform, LanguagePageBuilder.Green, CircleSize + 52f);
+
         MorphicGesturePreview existing = target.GetComponentInParent<MorphicGesturePreview>();
         if (existing != null)
         {
@@ -51,7 +58,6 @@ public sealed class MorphicGesturePreview : MonoBehaviour
             return existing;
         }
 
-        Transform art = target.rectTransform.parent;
         GameObject circle = new GameObject(
             "GestureCircle",
             typeof(RectTransform),
@@ -66,9 +72,12 @@ public sealed class MorphicGesturePreview : MonoBehaviour
 
         Image maskImage = circle.GetComponent<Image>();
         maskImage.sprite = LanguagePageBuilder.Circle(256);
+        maskImage.type = Image.Type.Simple;
+        maskImage.preserveAspect = true;
         maskImage.color = CirclePink;
         maskImage.raycastTarget = false;
-        circle.GetComponent<Mask>().showMaskGraphic = true;
+        Mask mask = circle.GetComponent<Mask>();
+        mask.showMaskGraphic = true;
 
         RectTransform imageRect = target.rectTransform;
         imageRect.SetParent(circleRect, false);
@@ -96,6 +105,11 @@ public sealed class MorphicGesturePreview : MonoBehaviour
             texture = Resources.Load<Texture2D>(imagePath.Replace(".jpg", string.Empty));
 
         bool splitHands = motion == Motion.TwoV;
+        bool rightHandOnly = motion == Motion.PointIndex || motion == Motion.DrawBand;
+        if (image != null)
+            image.uvRect = rightHandOnly
+                ? new Rect(0.5f, 0f, 0.5f, 1f)
+                : new Rect(0f, 0f, 1f, 1f);
         if (splitHands)
         {
             ApplyTexture(image, CircleFill(texture));
@@ -162,6 +176,12 @@ public sealed class MorphicGesturePreview : MonoBehaviour
             case Motion.OpenPalm:
                 scale = Mathf.Lerp(0.94f, 1.06f, wave);
                 break;
+            case Motion.PointIndex:
+                pos = new Vector2(Mathf.Sin(t * 1.6f) * 16f, Mathf.Cos(t * 2.1f) * 12f);
+                break;
+            case Motion.DrawBand:
+                pos = new Vector2(Mathf.Sin(t * 1.5f) * 22f, bob * 4f);
+                break;
         }
 
         if (motion != Motion.TwoV)
@@ -185,6 +205,18 @@ public sealed class MorphicGesturePreview : MonoBehaviour
     {
         if (circleRect == null && image != null)
             circleRect = image.rectTransform.parent as RectTransform;
+        if (circleRect != null)
+        {
+            circleRect.sizeDelta = new Vector2(CircleSize, CircleSize);
+            Image maskImage = circleRect.GetComponent<Image>();
+            if (maskImage != null)
+            {
+                maskImage.sprite = LanguagePageBuilder.Circle(256);
+                maskImage.type = Image.Type.Simple;
+                maskImage.preserveAspect = true;
+                maskImage.color = CirclePink;
+            }
+        }
         if (circleRect == null)
             return;
         if (leftHalf != null && rightHalf != null)
@@ -282,6 +314,27 @@ public sealed class MorphicGesturePreview : MonoBehaviour
             return;
         raw.texture = texture;
         raw.color = Color.white;
+    }
+
+    private static void MakeCircleHost(RectTransform rect, Color color, float size)
+    {
+        if (rect == null)
+            return;
+
+        Image image = rect.GetComponent<Image>();
+        if (image == null)
+            return;
+
+        image.sprite = LanguagePageBuilder.Circle(256);
+        image.type = Image.Type.Simple;
+        image.preserveAspect = true;
+        image.color = color;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        rect.sizeDelta = new Vector2(size, size);
     }
 
     private static void Stretch(RectTransform rect)

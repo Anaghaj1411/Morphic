@@ -787,6 +787,7 @@ private IEnumerator MoveToRestaurant()
         fadeGroups = FindFadeGroups();
         yield return FadeIn();
         SetMenuInteractable(true);
+        MorphicMenuLocalizer.ShowHomeSettingsButton();
 
         isReturningToMenu = false;
         returnMenuRoutine = null;
@@ -811,6 +812,8 @@ private IEnumerator MoveToRestaurant()
             fadeGroups[i].blocksRaycasts = true;
             fadeGroups[i].interactable = true;
         }
+
+        MorphicMenuLocalizer.ShowHomeSettingsButton();
     }
 
     private CanvasGroup[] FindFadeGroups()

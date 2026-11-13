@@ -38,6 +38,15 @@ public sealed class TeapotFistRotationController : MonoBehaviour
     private void Awake()
     {
         Bind();
+        ApplySmoothTurn();
+    }
+
+    private void ApplySmoothTurn()
+    {
+        yawPerScreen = 275f;
+        pitchPerScreen = 220f;
+        moveDeadZone = 0.0038f;
+        smoothing = 8f;
     }
 
     private void OnDisable()
@@ -112,6 +121,15 @@ public sealed class TeapotFistRotationController : MonoBehaviour
             return;
         }
 
+        VertexSculptController sculpt = teapotRenderer != null
+            ? teapotRenderer.GetComponent<VertexSculptController>()
+            : null;
+        if (sculpt != null && sculpt.isActiveAndEnabled && sculpt.IsPinching)
+        {
+            PauseRotation();
+            return;
+        }
+
         if (!TryGetClosedHand(hasOne, hasTwo, first, second, out SculptHandFrame fist))
         {
             PauseRotation();
@@ -138,10 +156,8 @@ public sealed class TeapotFistRotationController : MonoBehaviour
         float blend = 1f - Mathf.Exp(-smoothing * dt);
         moveSmoothed.x = Mathf.Lerp(moveSmoothed.x, moveRight, blend);
         moveSmoothed.y = Mathf.Lerp(moveSmoothed.y, moveUp, blend);
-        float yawGain = Mathf.Max(yawPerScreen, 400f);
-        float pitchGain = Mathf.Max(pitchPerScreen, 400f);
-        yaw += (moveSmoothed.x * 0.25f + moveRight * 0.75f) * yawGain;
-        pitch += (moveSmoothed.y * 0.25f + moveUp * 0.75f) * pitchGain;
+        yaw += moveSmoothed.x * yawPerScreen;
+        pitch += moveSmoothed.y * pitchPerScreen;
         ApplyRotation();
     }
 
@@ -172,9 +188,10 @@ public sealed class TeapotFistRotationController : MonoBehaviour
 
     private static bool LooksClosed(SculptHandFrame hand)
     {
-        return hand.FingerCurlRatio <= 1.28f &&
-               hand.OtherFingersCurlRatio <= 1.20f &&
-               hand.IndexExtensionAngle < 125f;
+        return hand.FingerCurlRatio <= 1.14f &&
+               hand.OtherFingersCurlRatio <= 1.10f &&
+               hand.IndexTipPalmRatio <= 1.08f &&
+               hand.IndexExtensionAngle < 110f;
     }
 
     private void ResolveMove(SculptHandFrame fist, out float moveRight, out float moveUp)
@@ -263,21 +280,29 @@ public sealed class TeapotFistRotationController : MonoBehaviour
 
     private void ResolveViewAxes(out Vector3 yawAxis, out Vector3 pitchAxis)
     {
-        Camera cam = ResolveViewCamera();
-        if (cam != null)
-        {
-            yawAxis = cam.transform.up;
-            pitchAxis = cam.transform.right;
-            if (yawAxis.sqrMagnitude > 0.01f && pitchAxis.sqrMagnitude > 0.01f)
-            {
-                yawAxis.Normalize();
-                pitchAxis.Normalize();
-                return;
-            }
-        }
+        if (TryScreenAxes(ResolveViewCamera(), out yawAxis, out pitchAxis))
+            return;
 
         yawAxis = Vector3.up;
-        pitchAxis = Vector3.right;
+        pitchAxis = Vector3.left;
+    }
+
+    private static bool TryScreenAxes(Camera cam, out Vector3 yawAxis, out Vector3 pitchAxis)
+    {
+        yawAxis = Vector3.up;
+        pitchAxis = Vector3.left;
+        if (cam == null)
+            return false;
+
+        Vector3 origin = cam.ViewportToWorldPoint(new Vector3(0.5f, 0.5f, 1f));
+        Vector3 screenRight = cam.ViewportToWorldPoint(new Vector3(1f, 0.5f, 1f)) - origin;
+        Vector3 screenUp = cam.ViewportToWorldPoint(new Vector3(0.5f, 1f, 1f)) - origin;
+        if (screenRight.sqrMagnitude < 0.0001f || screenUp.sqrMagnitude < 0.0001f)
+            return false;
+
+        yawAxis = screenUp.normalized;
+        pitchAxis = -screenRight.normalized;
+        return true;
     }
 
     private void EnsurePivot()

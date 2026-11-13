@@ -66,9 +66,27 @@ public sealed class SculptingEnhancementIndexGestureController : MonoBehaviour
         }
 
         BindLantern();
+        ApplySensitiveMotion();
         EnsureLanternFistRotator();
         FindBlendShapes();
         ReadCurrentWeights();
+    }
+
+    private void ApplySensitiveMotion()
+    {
+        widthSensitivity = 680f;
+        heightSensitivity = 820f;
+        movementDeadZone = 0.0018f;
+        exclusiveAxisRatio = 1.06f;
+        minimumIndexAngle = 108f;
+        maximumOtherFingerExtension = 1.62f;
+        activeMinimumIndexAngle = 98f;
+        activeMaximumOtherFingerExtension = 1.78f;
+        activationTime = 0.04f;
+        trackingGracePeriod = 0.28f;
+        minimumThumbIndexSeparation = 0.34f;
+        maximumMiddleFingerExtension = 1.08f;
+        minimumIndexTipExtension = 1.0f;
     }
 
     private void OnEnable()

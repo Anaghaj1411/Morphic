@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using Mediapipe.Tasks.Vision.HandLandmarker;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -166,37 +165,83 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         [SerializeField] public Screen webcamScreen;
 
         [Header("Landmark Smoothing")]
-        [Range(1f, 100f)]
-        [SerializeField] private float landmarkSmoothingSpeed = 72f;
+        [Tooltip("Resting follow rate in Hz. Higher is snappier.")]
+        [Range(0.5f, 20f)]
+        [SerializeField] private float landmarkMinCutoff = 7.5f;
 
-        [Range(0f, 0.02f)]
-        [SerializeField] private float landmarkDeadZone = 0.0004f;
-
-        [SerializeField] private float landmarkJumpLimit = 0.2f;
+        [Tooltip("How quickly follow speeds up when the hand moves.")]
+        [Range(0.05f, 2f)]
+        [SerializeField] private float landmarkSpeedBeta = 0.9f;
 
         private Experimental.TextureFramePool textureFramePool;
 
         private readonly object resultLock = new object();
+        private readonly Vector3[][] landmarkScratchA =
+        {
+            new Vector3[21],
+            new Vector3[21]
+        };
+        private readonly Vector3[][] landmarkScratchB =
+        {
+            new Vector3[21],
+            new Vector3[21]
+        };
+        private readonly bool[] handednessScratchA = new bool[2];
+        private readonly bool[] handednessScratchB = new bool[2];
+        private readonly bool[] hasHandednessScratchA = new bool[2];
+        private readonly bool[] hasHandednessScratchB = new bool[2];
+        private readonly Vector2[][] overlayHands =
+        {
+            new Vector2[21],
+            new Vector2[21]
+        };
+        private readonly Vector3[][] overlayRaw =
+        {
+            new Vector3[21],
+            new Vector3[21]
+        };
+        private readonly Vector3[][] overlayDx =
+        {
+            new Vector3[21],
+            new Vector3[21]
+        };
+        private int overlayCount;
+        private bool overlayHasPose;
         private Vector3[][] pendingLandmarks;
         private bool[] pendingIsRightHand;
         private bool[] pendingHasHandedness;
+        private int pendingHandCount;
+        private bool writeUseA = true;
         private bool hasPendingResult;
         private volatile bool inferenceInFlight;
         private bool isStopping;
         private bool hasStartedRun;
         private Coroutine ensureTeapotRunCoroutine;
+        private long lastSentTimestamp = -1;
+        private float lastDetectRealtime;
+        private readonly HandEuro latestEuro = new HandEuro();
+        private readonly HandEuro secondEuro = new HandEuro();
 
         private SculptHandFrame latestHand;
         private SculptHandFrame secondHand;
+        private SculptHandFrame rawLatestHand;
+        private SculptHandFrame rawSecondHand;
 
         private bool hasLatestHand;
         private bool hasSecondHand;
+        private bool hasRawLatestHand;
+        private bool hasRawSecondHand;
 
         private bool hasSmoothedLatestHand;
         private bool hasSmoothedSecondHand;
 
         private float lastResultTime;
-        private float handSampleDeltaTime = 1f / 30f;
+        private float handSampleDeltaTime = 1f / 60f;
+        private const float LostHandGrace = 0.7f;
+        private const float MinPalmWidth = 0.003f;
+        private const float DetectTimeout = 0.12f;
+        private const float MinDetectInterval = 0.016f;
+        private const float JitterDeadzone = 0.001f;
 
         public readonly HandLandmarkDetectionConfig config =
             new HandLandmarkDetectionConfig();
@@ -254,13 +299,12 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 Tasks.Vision.Core.RunningMode.LIVE_STREAM;
 
             config.NumHands = 2;
+            config.MinHandDetectionConfidence = 0.08f;
+            config.MinHandPresenceConfidence = 0.1f;
+            config.MinTrackingConfidence = 0.1f;
 
-            config.MinHandDetectionConfidence = 0.25f;
-            config.MinHandPresenceConfidence = 0.30f;
-            config.MinTrackingConfidence = 0.30f;
-            landmarkSmoothingSpeed = 72f;
-            landmarkDeadZone = 0.0004f;
-            landmarkJumpLimit = 0.2f;
+            landmarkMinCutoff = 4f;
+            landmarkSpeedBeta = 0.8f;
 
             // Try to use assigned webcam screen first, otherwise search
             if (webcamScreen == null)
@@ -284,7 +328,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             hand = latestHand;
 
             return hasLatestHand &&
-                   Time.unscaledTime - lastResultTime < 0.5f;
+                   Time.unscaledTime - lastResultTime < LostHandGrace;
         }
 
         public bool TryGetLatestTwoHands(
@@ -297,7 +341,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             return hasLatestHand &&
                    hasSecondHand &&
-                   Time.unscaledTime - lastResultTime < 0.5f;
+                   Time.unscaledTime - lastResultTime < LostHandGrace;
         }
 
         public override void Stop()
@@ -305,11 +349,16 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             hasStartedRun = false;
             isStopping = true;
             inferenceInFlight = false;
+            lastSentTimestamp = -1;
+            lastDetectRealtime = 0f;
+            latestEuro.Reset();
+            secondEuro.Reset();
             lock (resultLock)
             {
                 pendingLandmarks = null;
                 pendingIsRightHand = null;
                 pendingHasHandedness = null;
+                pendingHandCount = 0;
                 hasPendingResult = false;
             }
 
@@ -320,10 +369,13 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
             hasLatestHand = false;
             hasSecondHand = false;
-
+            hasRawLatestHand = false;
+            hasRawSecondHand = false;
             hasSmoothedLatestHand = false;
             hasSmoothedSecondHand = false;
-            skeletonOverlay?.SetHands(null);
+            overlayHasPose = false;
+            overlayCount = 0;
+            skeletonOverlay?.SetHands(null, 0);
         }
 
         protected override IEnumerator Run()
@@ -369,7 +421,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     imageSource.textureWidth,
                     imageSource.textureHeight,
                     TextureFormat.RGBA32,
-                    4
+                    8
                 );
 
             if (annotationController == null)
@@ -434,6 +486,10 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     );
                 }
 
+                if (inferenceInFlight &&
+                    Time.realtimeSinceStartup - lastDetectRealtime > DetectTimeout)
+                    inferenceInFlight = false;
+
                 if (!textureFramePool.TryGetTextureFrame(
                     out var textureFrame
                 ))
@@ -442,10 +498,26 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     continue;
                 }
 
-                // Never queue old camera frames behind a slow inference. Drop
-                // this frame while the previous request finishes, then use the
-                // newest available webcam image.
-                if (inferenceInFlight)
+                // Live-stream may drop a callback. Never wait forever — send
+                // the newest webcam frame after a short timeout so tracking
+                // cannot freeze for the rest of the session.
+                if (inferenceInFlight &&
+                    Time.realtimeSinceStartup - lastDetectRealtime < DetectTimeout)
+                {
+                    textureFrame.Release();
+                    yield return null;
+                    continue;
+                }
+
+                if (Time.realtimeSinceStartup - lastDetectRealtime < MinDetectInterval)
+                {
+                    textureFrame.Release();
+                    yield return null;
+                    continue;
+                }
+
+                Texture webcamTexture = imageSource.GetCurrentTexture();
+                if (webcamTexture == null)
                 {
                     textureFrame.Release();
                     yield return null;
@@ -453,7 +525,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
                 }
 
                 readbackRequest = textureFrame.ReadTextureAsync(
-                    imageSource.GetCurrentTexture(),
+                    webcamTexture,
                     transformOptions.flipHorizontally,
                     transformOptions.flipVertically
                 );
@@ -475,12 +547,18 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     continue;
                 }
 
+                long timestamp = GetCurrentTimestampMillisec();
+                if (timestamp <= lastSentTimestamp)
+                    timestamp = lastSentTimestamp + 1;
+                lastSentTimestamp = timestamp;
+
                 inferenceInFlight = true;
+                lastDetectRealtime = Time.realtimeSinceStartup;
                 try
                 {
                     taskApi.DetectAsync(
                         image,
-                        GetCurrentTimestampMillisec(),
+                        timestamp,
                         imageOptions
                     );
                 }
@@ -498,44 +576,42 @@ Debug.Log("MORPHIC: Camera resolution = " +
             Image image,
             long timestamp)
         {
-            Vector3[][] copiedHands = null;
-            bool[] copiedIsRightHand = null;
-            bool[] copiedHasHandedness = null;
+            Vector3[][] destHands = writeUseA ? landmarkScratchA : landmarkScratchB;
+            bool[] destRight = writeUseA ? handednessScratchA : handednessScratchB;
+            bool[] destHas = writeUseA ? hasHandednessScratchA : hasHandednessScratchB;
+            int copiedCount = 0;
 
             if (result.handLandmarks != null && result.handLandmarks.Count > 0)
             {
-                copiedHands = new Vector3[result.handLandmarks.Count][];
-                copiedIsRightHand = new bool[result.handLandmarks.Count];
-                copiedHasHandedness = new bool[result.handLandmarks.Count];
-                for (int handIndex = 0; handIndex < result.handLandmarks.Count; handIndex++)
+                int handCount = Mathf.Min(2, result.handLandmarks.Count);
+                for (int handIndex = 0; handIndex < handCount; handIndex++)
                 {
+                    destRight[handIndex] = false;
+                    destHas[handIndex] = false;
                     if (result.handedness != null && handIndex < result.handedness.Count)
                     {
                         var categories = result.handedness[handIndex].categories;
                         if (categories != null && categories.Count > 0)
                         {
                             string label = categories[0].categoryName;
-                            copiedHasHandedness[handIndex] =
-                                label == "Left" || label == "Right";
-                            copiedIsRightHand[handIndex] = label == "Right";
+                            destHas[handIndex] = label == "Left" || label == "Right";
+                            destRight[handIndex] = label == "Right";
                         }
                     }
 
                     var source = result.handLandmarks[handIndex].landmarks;
-                    if (source == null)
-                    {
-                        copiedHands[handIndex] = System.Array.Empty<Vector3>();
+                    Vector3[] dest = destHands[handIndex];
+                    if (source == null || dest == null)
                         continue;
-                    }
 
-                    Vector3[] points = new Vector3[source.Count];
-                    for (int pointIndex = 0; pointIndex < source.Count; pointIndex++)
+                    int pointCount = Mathf.Min(dest.Length, source.Count);
+                    for (int pointIndex = 0; pointIndex < pointCount; pointIndex++)
                     {
                         var point = source[pointIndex];
-                        points[pointIndex] = new Vector3(point.x, point.y, point.z);
+                        dest[pointIndex] = new Vector3(point.x, point.y, point.z);
                     }
 
-                    copiedHands[handIndex] = points;
+                    copiedCount++;
                 }
             }
 
@@ -543,10 +619,12 @@ Debug.Log("MORPHIC: Camera resolution = " +
             {
                 if (!isStopping)
                 {
-                    pendingLandmarks = copiedHands;
-                    pendingIsRightHand = copiedIsRightHand;
-                    pendingHasHandedness = copiedHasHandedness;
+                    pendingLandmarks = copiedCount > 0 ? destHands : null;
+                    pendingIsRightHand = destRight;
+                    pendingHasHandedness = destHas;
+                    pendingHandCount = copiedCount;
                     hasPendingResult = true;
+                    writeUseA = !writeUseA;
                 }
 
                 inferenceInFlight = false;
@@ -555,9 +633,14 @@ Debug.Log("MORPHIC: Camera resolution = " +
 
         private void Update()
         {
+            if (inferenceInFlight &&
+                Time.realtimeSinceStartup - lastDetectRealtime > DetectTimeout)
+                inferenceInFlight = false;
+
             Vector3[][] latestLandmarks = null;
             bool[] latestIsRightHand = null;
             bool[] latestHasHandedness = null;
+            int latestCount = 0;
             bool hasResult = false;
 
             lock (resultLock)
@@ -567,35 +650,62 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     latestLandmarks = pendingLandmarks;
                     latestIsRightHand = pendingIsRightHand;
                     latestHasHandedness = pendingHasHandedness;
+                    latestCount = pendingHandCount;
                     pendingLandmarks = null;
                     pendingIsRightHand = null;
                     pendingHasHandedness = null;
+                    pendingHandCount = 0;
                     hasPendingResult = false;
                     hasResult = true;
                 }
             }
 
-            if (!hasResult)
+            if (hasResult && latestLandmarks != null && latestCount > 0)
             {
-                return;
+                SaveLatestHands(
+                    latestLandmarks,
+                    latestIsRightHand,
+                    latestHasHandedness,
+                    latestCount);
+                CaptureOverlayTargets(latestLandmarks, latestCount);
             }
 
-            if (latestLandmarks == null || latestLandmarks.Length == 0)
+            FollowRawHands();
+            TickOverlay();
+        }
+
+        private void FollowRawHands()
+        {
+            if (!hasRawLatestHand ||
+                Time.unscaledTime - lastResultTime > LostHandGrace)
             {
                 ClearHandTracking();
                 return;
             }
 
-            float now = Time.unscaledTime;
-            handSampleDeltaTime = lastResultTime > 0f
-                ? Mathf.Clamp(now - lastResultTime, 1f / 120f, 0.25f)
-                : 1f / 30f;
+            handSampleDeltaTime = Mathf.Clamp(Time.unscaledDeltaTime, 1f / 240f, 0.05f);
+            latestHand = SmoothHandFrame(
+                latestHand,
+                rawLatestHand,
+                latestEuro,
+                ref hasSmoothedLatestHand);
+            hasLatestHand = true;
 
-            SaveLatestHands(
-                latestLandmarks,
-                latestIsRightHand,
-                latestHasHandedness);
-            UpdateSkeletonOverlay(latestLandmarks);
+            if (hasRawSecondHand)
+            {
+                secondHand = SmoothHandFrame(
+                    secondHand,
+                    rawSecondHand,
+                    secondEuro,
+                    ref hasSmoothedSecondHand);
+                hasSecondHand = true;
+            }
+            else
+            {
+                hasSecondHand = false;
+                hasSmoothedSecondHand = false;
+                secondEuro.Reset();
+            }
         }
 
         private void EnsureSkeletonOverlay()
@@ -627,66 +737,73 @@ Debug.Log("MORPHIC: Camera resolution = " +
             skeletonOverlay.raycastTarget = false;
         }
 
-        private void UpdateSkeletonOverlay(Vector3[][] normalizedHands)
+        private void CaptureOverlayTargets(Vector3[][] normalizedHands, int handCount)
         {
-            if (skeletonOverlay == null ||
-                normalizedHands == null ||
-                normalizedHands.Length == 0)
-            {
-                skeletonOverlay?.SetHands(null);
+            if (normalizedHands == null || handCount <= 0)
                 return;
-            }
 
-            var hands = new List<Vector2[]>(normalizedHands.Length);
-            foreach (Vector3[] handLandmarks in normalizedHands)
+            int visible = 0;
+            int limit = Mathf.Min(2, Mathf.Min(handCount, normalizedHands.Length));
+            for (int handIndex = 0; handIndex < limit; handIndex++)
             {
+                Vector3[] handLandmarks = normalizedHands[handIndex];
                 if (handLandmarks == null ||
                     handLandmarks.Length < PinkyTipIndex + 1)
-                {
                     continue;
-                }
 
-                var points = new Vector2[handLandmarks.Length];
-                for (int i = 0; i < handLandmarks.Length; i++)
+                Vector3[] dest = overlayRaw[visible];
+                int count = Mathf.Min(dest.Length, handLandmarks.Length);
+                for (int i = 0; i < count; i++)
+                    dest[i] = handLandmarks[i];
+
+                if (!overlayHasPose)
                 {
-                    points[i] = new Vector2(
-                        handLandmarks[i].x,
-                        handLandmarks[i].y
-                    );
+                    Vector2[] drawn = overlayHands[visible];
+                    Vector3[] dx = overlayDx[visible];
+                    for (int i = 0; i < count; i++)
+                    {
+                        drawn[i] = new Vector2(dest[i].x, dest[i].y);
+                        dx[i] = Vector3.zero;
+                    }
                 }
 
-                hands.Add(points);
+                visible++;
             }
 
-            // Keep the overlay's filter attached to the same hand when the
-            // MediaPipe result order swaps between frames.
-            hands.Sort((a, b) => GetHandCenterX(a).CompareTo(GetHandCenterX(b)));
-
-            skeletonOverlay.SetHands(hands);
+            overlayCount = visible;
+            overlayHasPose = visible > 0;
+            if (overlayHasPose)
+                skeletonOverlay?.SetHands(overlayHands, overlayCount);
         }
 
-        private static float GetHandCenterX(Vector2[] points)
+        private void TickOverlay()
         {
-            if (points == null || points.Length == 0)
+            if (skeletonOverlay == null || !overlayHasPose || overlayCount <= 0)
+                return;
+
+            for (int handIndex = 0; handIndex < overlayCount; handIndex++)
             {
-                return 0f;
+                Vector2[] drawn = overlayHands[handIndex];
+                Vector3[] raw = overlayRaw[handIndex];
+                Vector3[] dx = overlayDx[handIndex];
+                for (int i = 0; i < 21; i++)
+                {
+                    Vector3 current = new Vector3(drawn[i].x, drawn[i].y, 0f);
+                    Vector3 smoothed = SmoothPoint(current, raw[i], ref dx[i]);
+                    drawn[i] = new Vector2(smoothed.x, smoothed.y);
+                }
             }
 
-            float total = 0f;
-            for (int i = 0; i < points.Length; i++)
-            {
-                total += points[i].x;
-            }
-
-            return total / points.Length;
+            skeletonOverlay.SetHands(overlayHands, overlayCount);
         }
 
         private void SaveLatestHands(
             Vector3[][] normalizedHands,
             bool[] isRightHand,
-            bool[] hasHandedness)
+            bool[] hasHandedness,
+            int handCount)
         {
-            if (normalizedHands == null || normalizedHands.Length == 0)
+            if (normalizedHands == null || handCount <= 0)
             {
                 ClearHandTracking();
                 return;
@@ -707,7 +824,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
 
             SculptHandFrame rawSecondHand = default;
             bool hasRawSecond =
-                normalizedHands.Length > 1 &&
+                handCount > 1 &&
                 TryCreateHandFrame(
                     normalizedHands[1],
                     isRightHand != null && isRightHand.Length > 1 && isRightHand[1],
@@ -737,24 +854,13 @@ Debug.Log("MORPHIC: Camera resolution = " +
 
             if (preferSecond)
             {
-                latestHand = SmoothHandFrame(
-                    secondHand,
-                    rawHand,
-                    ref hasSmoothedLatestHand
-                );
-                hasSmoothedSecondHand = false;
-            }
-            else
-            {
-                latestHand = SmoothHandFrame(
-                    latestHand,
-                    rawHand,
-                    ref hasSmoothedLatestHand
-                );
+                latestHand = secondHand;
+                SwapEuro(latestEuro, secondEuro);
             }
 
-            hasLatestHand = true;
-            hasSecondHand = false;
+            rawLatestHand = rawHand;
+            hasRawLatestHand = true;
+            hasRawSecondHand = false;
         }
 
         private void AssignTwoHands(
@@ -762,92 +868,27 @@ Debug.Log("MORPHIC: Camera resolution = " +
             SculptHandFrame rawSecondHand
         )
         {
-            if (!hasSmoothedLatestHand)
-            {
-                latestHand = rawFirstHand;
-                secondHand = rawSecondHand;
-                hasSmoothedLatestHand = true;
-                hasSmoothedSecondHand = true;
-                hasLatestHand = true;
-                hasSecondHand = true;
-                return;
-            }
-
-            if (!hasSmoothedSecondHand)
-            {
-                bool firstCloser =
-                    PalmDistance(rawFirstHand, latestHand) <=
-                    PalmDistance(rawSecondHand, latestHand);
-
-                if (firstCloser)
-                {
-                    latestHand = SmoothHandFrame(
-                        latestHand,
-                        rawFirstHand,
-                        ref hasSmoothedLatestHand
-                    );
-                    secondHand = SmoothHandFrame(
-                        secondHand,
-                        rawSecondHand,
-                        ref hasSmoothedSecondHand
-                    );
-                }
-                else
-                {
-                    latestHand = SmoothHandFrame(
-                        latestHand,
-                        rawSecondHand,
-                        ref hasSmoothedLatestHand
-                    );
-                    secondHand = SmoothHandFrame(
-                        secondHand,
-                        rawFirstHand,
-                        ref hasSmoothedSecondHand
-                    );
-                }
-
-                hasLatestHand = true;
-                hasSecondHand = true;
-                return;
-            }
-
-            float keepOrder =
+            bool swap =
+                hasSmoothedLatestHand &&
+                PalmDistance(rawSecondHand, latestHand) +
+                PalmDistance(rawFirstHand, secondHand) <
                 PalmDistance(rawFirstHand, latestHand) +
                 PalmDistance(rawSecondHand, secondHand);
 
-            float swapOrder =
-                PalmDistance(rawSecondHand, latestHand) +
-                PalmDistance(rawFirstHand, secondHand);
-
-            if (swapOrder < keepOrder)
+            if (swap)
             {
-                latestHand = SmoothHandFrame(
-                    latestHand,
-                    rawSecondHand,
-                    ref hasSmoothedLatestHand
-                );
-                secondHand = SmoothHandFrame(
-                    secondHand,
-                    rawFirstHand,
-                    ref hasSmoothedSecondHand
-                );
+                rawLatestHand = rawSecondHand;
+                this.rawSecondHand = rawFirstHand;
+                SwapEuro(latestEuro, secondEuro);
             }
             else
             {
-                latestHand = SmoothHandFrame(
-                    latestHand,
-                    rawFirstHand,
-                    ref hasSmoothedLatestHand
-                );
-                secondHand = SmoothHandFrame(
-                    secondHand,
-                    rawSecondHand,
-                    ref hasSmoothedSecondHand
-                );
+                rawLatestHand = rawFirstHand;
+                this.rawSecondHand = rawSecondHand;
             }
 
-            hasLatestHand = true;
-            hasSecondHand = true;
+            hasRawLatestHand = true;
+            hasRawSecondHand = true;
         }
 
         private static float PalmDistance(
@@ -863,133 +904,94 @@ Debug.Log("MORPHIC: Camera resolution = " +
 
         private void ClearHandTracking()
         {
-            // Keep the last pose through brief MediaPipe misses so the
-            // sculpt cursor and draw band do not blink off.
-            if (Time.unscaledTime - lastResultTime <= 0.4f)
+            if (hasRawLatestHand &&
+                Time.unscaledTime - lastResultTime <= LostHandGrace)
                 return;
 
             hasLatestHand = false;
             hasSecondHand = false;
+            hasRawLatestHand = false;
+            hasRawSecondHand = false;
             hasSmoothedLatestHand = false;
             hasSmoothedSecondHand = false;
-            skeletonOverlay?.SetHands(null);
+            overlayHasPose = false;
+            overlayCount = 0;
+            latestEuro.Reset();
+            secondEuro.Reset();
+            skeletonOverlay?.SetHands(null, 0);
         }
 
         private SculptHandFrame SmoothHandFrame(
             SculptHandFrame previousHand,
             SculptHandFrame rawHand,
+            HandEuro euro,
             ref bool hasPreviousHand
         )
         {
-            if (!hasPreviousHand)
+            if (!hasPreviousHand || euro == null || !euro.ready)
             {
                 hasPreviousHand = true;
+                if (euro != null)
+                    euro.ready = true;
                 return rawHand;
             }
 
             float palmWidth = SmoothScalar(
                 previousHand.PalmWidth,
-                rawHand.PalmWidth
+                rawHand.PalmWidth,
+                ref euro.palmWidthDx
             );
 
             return new SculptHandFrame(
-                SmoothPoint(
-                    previousHand.Wrist,
-                    rawHand.Wrist
-                ),
-                SmoothPoint(
-                    previousHand.PalmCenter,
-                    rawHand.PalmCenter
-                ),
-                SmoothPoint(
-                    previousHand.ThumbMcp,
-                    rawHand.ThumbMcp
-                ),
-                SmoothPoint(
-                    previousHand.ThumbTip,
-                    rawHand.ThumbTip
-                ),
+                SmoothPoint(previousHand.Wrist, rawHand.Wrist, ref euro.wristDx),
+                SmoothPoint(previousHand.PalmCenter, rawHand.PalmCenter, ref euro.palmDx),
+                SmoothPoint(previousHand.ThumbMcp, rawHand.ThumbMcp, ref euro.thumbMcpDx),
+                SmoothPoint(previousHand.ThumbTip, rawHand.ThumbTip, ref euro.thumbTipDx),
                 rawHand.IsRightHand,
                 rawHand.HasHandedness,
-                SmoothPoint(
-                    previousHand.IndexMcp,
-                    rawHand.IndexMcp
-                ),
-                SmoothPoint(
-                    previousHand.IndexPip,
-                    rawHand.IndexPip
-                ),
-                SmoothPoint(
-                    previousHand.IndexTip,
-                    rawHand.IndexTip
-                ),
-                SmoothPoint(
-                    previousHand.MiddleTip,
-                    rawHand.MiddleTip
-                ),
-                SmoothPoint(
-                    previousHand.RingTip,
-                    rawHand.RingTip
-                ),
-                SmoothPoint(
-                    previousHand.PinkyTip,
-                    rawHand.PinkyTip
-                ),
+                SmoothPoint(previousHand.IndexMcp, rawHand.IndexMcp, ref euro.indexMcpDx),
+                SmoothPoint(previousHand.IndexPip, rawHand.IndexPip, ref euro.indexPipDx),
+                SmoothPoint(previousHand.IndexTip, rawHand.IndexTip, ref euro.indexTipDx),
+                SmoothPoint(previousHand.MiddleTip, rawHand.MiddleTip, ref euro.middleTipDx),
+                SmoothPoint(previousHand.RingTip, rawHand.RingTip, ref euro.ringTipDx),
+                SmoothPoint(previousHand.PinkyTip, rawHand.PinkyTip, ref euro.pinkyTipDx),
                 palmWidth
             );
         }
 
         private Vector3 SmoothPoint(
             Vector3 currentPoint,
-            Vector3 targetPoint
+            Vector3 targetPoint,
+            ref Vector3 dx
         )
         {
-            // Normalized screen-space XY drives the gesture. MediaPipe Z is
-            // noisier, so it must not make the whole hand freeze or jump.
-            float distance = Vector2.Distance(
-                new Vector2(currentPoint.x, currentPoint.y),
-                new Vector2(targetPoint.x, targetPoint.y)
-            );
-
-            if (distance <= landmarkDeadZone)
-            {
+            if ((targetPoint - currentPoint).sqrMagnitude < JitterDeadzone * JitterDeadzone)
                 return currentPoint;
-            }
 
-            float dt = handSampleDeltaTime;
-            float movementSpeed = distance / dt;
-            float adaptiveSpeed = landmarkSmoothingSpeed +
-                Mathf.Clamp(movementSpeed, 0f, 3f) * 2f;
-            float t = 1f - Mathf.Exp(-adaptiveSpeed * dt);
-
-            if (distance > landmarkJumpLimit)
-            {
-                // Reject most of a one-frame landmark spike while still
-                // allowing a genuine quick movement to catch up over frames.
-                t *= 0.75f;
-            }
-
-            return Vector3.Lerp(
-                currentPoint,
-                targetPoint,
-                t
-            );
+            float dt = Mathf.Max(handSampleDeltaTime, 0.0001f);
+            Vector3 rawDx = (targetPoint - currentPoint) / dt;
+            float derivAlpha = 1f - Mathf.Exp(-2f * Mathf.PI * 1.2f * dt);
+            dx = Vector3.Lerp(dx, rawDx, Mathf.Clamp01(derivAlpha));
+            float speed = new Vector2(dx.x, dx.y).magnitude;
+            float cutoff = landmarkMinCutoff + landmarkSpeedBeta * speed;
+            float t = 1f - Mathf.Exp(-2f * Mathf.PI * cutoff * dt);
+            return Vector3.Lerp(currentPoint, targetPoint, Mathf.Clamp01(t));
         }
 
-        private float SmoothScalar(float currentValue, float targetValue)
+        private float SmoothScalar(float currentValue, float targetValue, ref float dx)
         {
-            if (Mathf.Abs(targetValue - currentValue) <= landmarkDeadZone)
-            {
-                return currentValue;
-            }
+            float dt = Mathf.Max(handSampleDeltaTime, 0.0001f);
+            float rawDx = (targetValue - currentValue) / dt;
+            float derivAlpha = 1f - Mathf.Exp(-2f * Mathf.PI * 1.2f * dt);
+            dx = Mathf.Lerp(dx, rawDx, Mathf.Clamp01(derivAlpha));
+            float cutoff = landmarkMinCutoff + landmarkSpeedBeta * Mathf.Abs(dx);
+            float t = 1f - Mathf.Exp(-2f * Mathf.PI * cutoff * dt);
+            return Mathf.Lerp(currentValue, targetValue, Mathf.Clamp01(t));
+        }
 
-            float t =
-                1f - Mathf.Exp(
-                    -landmarkSmoothingSpeed *
-                    handSampleDeltaTime
-                );
-
-            return Mathf.Lerp(currentValue, targetValue, t);
+        private static void SwapEuro(HandEuro first, HandEuro second)
+        {
+            first.SwapWith(second);
         }
 
         private bool TryCreateHandFrame(
@@ -1026,6 +1028,9 @@ Debug.Log("MORPHIC: Camera resolution = " +
                 new Vector2(indexMcp.x, indexMcp.y),
                 new Vector2(pinkyMcp.x, pinkyMcp.y)
             );
+
+            if (palmWidth < MinPalmWidth)
+                return false;
 
             hand = new SculptHandFrame(
                 wrist,
@@ -1065,6 +1070,63 @@ Debug.Log("MORPHIC: Camera resolution = " +
                 1f - landmark.y,
                 landmark.z
             );
+        }
+
+        private sealed class HandEuro
+        {
+            public bool ready;
+            public Vector3 wristDx;
+            public Vector3 palmDx;
+            public Vector3 thumbMcpDx;
+            public Vector3 thumbTipDx;
+            public Vector3 indexMcpDx;
+            public Vector3 indexPipDx;
+            public Vector3 indexTipDx;
+            public Vector3 middleTipDx;
+            public Vector3 ringTipDx;
+            public Vector3 pinkyTipDx;
+            public float palmWidthDx;
+
+            public void Reset()
+            {
+                ready = false;
+                wristDx = palmDx = thumbMcpDx = thumbTipDx = Vector3.zero;
+                indexMcpDx = indexPipDx = indexTipDx = Vector3.zero;
+                middleTipDx = ringTipDx = pinkyTipDx = Vector3.zero;
+                palmWidthDx = 0f;
+            }
+
+            public void SwapWith(HandEuro other)
+            {
+                if (other == null)
+                    return;
+
+                bool readySwap = ready;
+                ready = other.ready;
+                other.ready = readySwap;
+
+                Swap(ref wristDx, ref other.wristDx);
+                Swap(ref palmDx, ref other.palmDx);
+                Swap(ref thumbMcpDx, ref other.thumbMcpDx);
+                Swap(ref thumbTipDx, ref other.thumbTipDx);
+                Swap(ref indexMcpDx, ref other.indexMcpDx);
+                Swap(ref indexPipDx, ref other.indexPipDx);
+                Swap(ref indexTipDx, ref other.indexTipDx);
+                Swap(ref middleTipDx, ref other.middleTipDx);
+                Swap(ref ringTipDx, ref other.ringTipDx);
+                Swap(ref pinkyTipDx, ref other.pinkyTipDx);
+
+                float palm = palmWidthDx;
+                palmWidthDx = other.palmWidthDx;
+                other.palmWidthDx = palm;
+            }
+
+            private static void Swap(ref Vector3 a, ref Vector3 b)
+            {
+                Vector3 t = a;
+                a = b;
+                b = t;
+            }
         }
     }
 }

@@ -198,7 +198,7 @@ public static class MorphicLoc
         "ADD DESIGN", "DRAW BAND", "CLEAR DRAWINGS", "CLEAR DESIGN",
         "TAKE SELFIE", "ATTACH TO LANTERN", "ATTACH TO TEAPOT", "ATTACH TO KERIS",
         "REMOVE SELFIE", "START SCULPTING", "BAND COLOR", "BAND WIDTH",
-        "CLAY COLOR", "STAMP COLOR", "BRUSH SIZE", "ASK LISA"
+        "CLAY COLOR", "STAMP COLOR", "BRUSH SIZE", "ASK LISA", "HELP"
     };
 
     public static void Apply(TMP_Text label, string english)
@@ -227,6 +227,8 @@ public static class MorphicLoc
             return;
         ApplyFont(label);
         label.text = T(english);
+        if (label.gameObject.name == "Instruction")
+            MorphicText.FitBody(label);
         if (label.isActiveAndEnabled)
             label.ForceMeshUpdate(true);
     }
@@ -273,6 +275,8 @@ public static class MorphicLoc
         if (label == null)
             return;
 
+        MorphicText.Style(label);
+
         TMP_FontAsset cjk = Code == "zh-TW" ? GetCjkFont() : cjkFont;
         if (Code == "zh-TW" && cjk != null)
         {
@@ -287,6 +291,20 @@ public static class MorphicLoc
             if (def != null)
                 label.font = def;
         }
+
+        MorphicText.ApplyBoldFace(label);
+    }
+
+    public static void ApplyCjkGlyphs(TMP_Text label)
+    {
+        if (label == null)
+            return;
+
+        TMP_FontAsset cjk = GetCjkFont();
+        if (cjk == null)
+            return;
+        if (label.font != cjk)
+            label.font = cjk;
     }
 
     private static void EnsureCjkFallback(TMP_FontAsset cjk)
@@ -418,6 +436,7 @@ public static class MorphicLoc
             if (!string.IsNullOrEmpty(pair.Value))
                 sb.Append(pair.Value);
         }
+        sb.Append("繁中");
         font.TryAddCharacters(sb.ToString());
     }
 
@@ -440,10 +459,19 @@ public static class MorphicLoc
         Add(Zh, "LANGUAGE", "語言");
         Add(Zh, "SETTINGS", "設定");
         Add(Zh, "EXIT", "離開");
+        Add(Zh, "LISA VOICE: ON", "麗莎語音：開");
+        Add(Zh, "LISA VOICE: OFF", "麗莎語音：關");
+        Add(Zh, "Point your right index finger at the lantern and move it to push the clay.", "用右手食指指向燈籠並移動來按壓陶土。");
+        Add(Zh, "Point your right index finger at the teapot and move it to push the clay.", "用右手食指指向茶壺並移動來按壓陶土。");
+        Add(Zh, "Point your right index finger at the keris and move it to push the clay.", "用右手食指指向克里斯劍並移動來按壓陶土。");
+        Add(Zh, "Point your right index finger and trace a band. Open your palm to lock.", "用右手食指描繪飾帶，張開手掌鎖定。");
         Add(Zh, "ENGLISH", "英語");
         Add(Zh, "TAIWANESE", "繁體中文");
+        Add(Zh, "TW", "繁中");
         Add(Zh, "INDONESIAN", "印尼語");
         Add(Zh, "Music", "音樂");
+        Add(Zh, "MUSIC", "音樂");
+        Add(Zh, "SFX", "音效");
         Add(Zh, "Sound Effects", "音效");
         Add(Zh, "CHOOSE A CRAFT", "選擇工藝");
         Add(Zh, "Taiwan", "台灣");
@@ -488,10 +516,12 @@ public static class MorphicLoc
         Add(Zh, "ZOOM", "放大");
         Add(Zh, "ZOOM OUT", "縮小");
         Add(Zh, "AI HELP", "AI 說明");
+        Add(Zh, "HELP", "說明");
         Add(Zh, "Ask Lisa anything...", "問麗莎任何問題...");
         Add(Zh, "LISA: Type a question first.", "麗莎：請先輸入問題。");
         Add(Zh, "LISA: Asking...", "麗莎：正在詢問...");
         Add(Zh, "LISA: Could not reach help. Try again.", "麗莎：暫時無法連線。請再試一次。");
+        Add(Zh, "LISA: Help is waking up. Send again.", "麗莎：幫忙正在啟動。請再送一次。");
         Add(Zh, "SEND", "送出");
         Add(Zh, "ASK LISA", "問麗莎");
         Add(Zh, "COLOR PALETTE", "調色盤");
@@ -587,6 +617,8 @@ public static class MorphicLoc
         Add(Zh, "Point both index fingers. Move them apart or together, and up or down.", "伸出兩手食指。分開或靠攏，也可上下移動。");
         Add(Zh, "Pinch with your right hand, then lift.", "用右手捏合，然後上提。");
         Add(Zh, "Pinch with your left hand, then lift.", "用左手捏合，然後上提。");
+        Add(Zh, "Pinch with your right hand. Lift to open, lower to close.", "用右手捏合。上提打開，放下收回。");
+        Add(Zh, "Pinch with your left hand. Lift to open, lower to close.", "用左手捏合。上提打開，放下收回。");
         Add(Zh, "Make two fists and pull them down.", "握兩個拳頭，再往下拉。");
         Add(Zh, "Make a V with both hands and spread them to the sides.", "兩手比出 V 字，再向兩側張開。");
         Add(Zh, "Make one fist and move it left, right, up, or down.", "握一個拳頭，向左、右、上或下移動。");
@@ -770,11 +802,20 @@ public static class MorphicLoc
         Add(Id, "START", "MULAI");
         Add(Id, "LANGUAGE", "BAHASA");
         Add(Id, "SETTINGS", "PENGATURAN");
+        Add(Id, "LISA VOICE: ON", "SUARA LISA: NYALA");
+        Add(Id, "LISA VOICE: OFF", "SUARA LISA: MATI");
+        Add(Id, "Point your right index finger at the lantern and move it to push the clay.", "Arahkan jari telunjuk kanan ke lentera dan gerakkan untuk mendorong tanah liat.");
+        Add(Id, "Point your right index finger at the teapot and move it to push the clay.", "Arahkan jari telunjuk kanan ke teko dan gerakkan untuk mendorong tanah liat.");
+        Add(Id, "Point your right index finger at the keris and move it to push the clay.", "Arahkan jari telunjuk kanan ke keris dan gerakkan untuk mendorong tanah liat.");
+        Add(Id, "Point your right index finger and trace a band. Open your palm to lock.", "Arahkan jari telunjuk kanan dan gambar pita. Buka telapak untuk mengunci.");
         Add(Id, "EXIT", "KELUAR");
         Add(Id, "ENGLISH", "INGGRIS");
         Add(Id, "TAIWANESE", "MANDARIN");
+        Add(Id, "TW", "TW");
         Add(Id, "INDONESIAN", "INDONESIA");
         Add(Id, "Music", "Musik");
+        Add(Id, "MUSIC", "MUSIK");
+        Add(Id, "SFX", "SFX");
         Add(Id, "Sound Effects", "Efek Suara");
         Add(Id, "CHOOSE A CRAFT", "PILIH KERAJINAN");
         Add(Id, "Taiwan", "Taiwan");
@@ -819,10 +860,12 @@ public static class MorphicLoc
         Add(Id, "ZOOM", "PERBESAR");
         Add(Id, "ZOOM OUT", "KECILKAN");
         Add(Id, "AI HELP", "BANTUAN AI");
+        Add(Id, "HELP", "BANTUAN");
         Add(Id, "Ask Lisa anything...", "Tanya Lisa apa saja...");
         Add(Id, "LISA: Type a question first.", "LISA: Ketik pertanyaan dulu.");
         Add(Id, "LISA: Asking...", "LISA: Sedang bertanya...");
         Add(Id, "LISA: Could not reach help. Try again.", "LISA: Bantuan tidak terjangkau. Coba lagi.");
+        Add(Id, "LISA: Help is waking up. Send again.", "LISA: Bantuan sedang bangun. Kirim lagi.");
         Add(Id, "SEND", "KIRIM");
         Add(Id, "ASK LISA", "TANYA LISA");
         Add(Id, "COLOR PALETTE", "PALET WARNA");
@@ -918,6 +961,8 @@ public static class MorphicLoc
         Add(Id, "Point both index fingers. Move them apart or together, and up or down.", "Tunjuk kedua jari telunjuk. Geser menjauh atau mendekat, dan naik atau turun.");
         Add(Id, "Pinch with your right hand, then lift.", "Cubit dengan tangan kanan, lalu angkat.");
         Add(Id, "Pinch with your left hand, then lift.", "Cubit dengan tangan kiri, lalu angkat.");
+        Add(Id, "Pinch with your right hand. Lift to open, lower to close.", "Cubit dengan tangan kanan. Angkat untuk membuka, turunkan untuk menutup.");
+        Add(Id, "Pinch with your left hand. Lift to open, lower to close.", "Cubit dengan tangan kiri. Angkat untuk membuka, turunkan untuk menutup.");
         Add(Id, "Make two fists and pull them down.", "Kepalkan dua tangan lalu tarik ke bawah.");
         Add(Id, "Make a V with both hands and spread them to the sides.", "Buat huruf V dengan kedua tangan dan buka ke samping.");
         Add(Id, "Make one fist and move it left, right, up, or down.", "Kepalkan satu tangan dan gerakkan kiri, kanan, atas, atau bawah.");

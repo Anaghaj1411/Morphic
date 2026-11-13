@@ -24,8 +24,8 @@ public class DialogueButtonClickSound : MonoBehaviour
     [Range(0f, 1f)]
     public float hoverVolume = 0.4f;
 
-    private int lastPlayedFrame = -1;
-    private int lastHoverFrame = -1;
+    private static int lastPlayedFrame = -1;
+    private static int lastHoverFrame = -1;
     private Button lastHoveredButton;
     private readonly List<RaycastResult> raycastResults = new List<RaycastResult>();
 
@@ -59,11 +59,6 @@ public class DialogueButtonClickSound : MonoBehaviour
         Button buttonUnderPointer = FindButtonUnderPointer();
         UpdateHover(buttonUnderPointer);
 
-        if (!WasClickedThisFrame() || buttonUnderPointer == null)
-            return;
-
-        if (buttonUnderPointer.interactable && buttonUnderPointer.isActiveAndEnabled)
-            PlayClick();
     }
 
     private void UpdateHover(Button buttonUnderPointer)
@@ -78,15 +73,6 @@ public class DialogueButtonClickSound : MonoBehaviour
         {
             PlayHover();
         }
-    }
-
-    private bool WasClickedThisFrame()
-    {
-#if ENABLE_INPUT_SYSTEM
-        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-            return true;
-#endif
-        return Input.GetMouseButtonDown(0);
     }
 
     private Button FindButtonUnderPointer()

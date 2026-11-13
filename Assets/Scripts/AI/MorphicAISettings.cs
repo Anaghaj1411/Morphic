@@ -17,6 +17,11 @@ public class MorphicAISettings : MonoBehaviour
         return backendBaseUrl + "/api/feedback";
     }
 
+    public string GetWarmupEndpoint()
+    {
+        return backendBaseUrl.TrimEnd('/');
+    }
+
     public string GetFeedbackEndpoint()
     {
         if (liveAIEnabled)

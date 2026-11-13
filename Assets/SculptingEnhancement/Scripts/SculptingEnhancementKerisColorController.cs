@@ -63,19 +63,20 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private static readonly Vector3 KerisSculptCamEuler = new Vector3(0f, -257f, 90f);
     private const float KerisSculptCamFov = 50f;
 
-    private static readonly Color CardCream = new Color32(255, 239, 214, 255);
+    private static readonly Color CardCream = LanguagePageBuilder.Cream;
     private static readonly Color PillPink = LanguagePageBuilder.Pink;
-    private static readonly Color ActionPink = new Color32(242, 154, 214, 255);
+    private static readonly Color ActionPink = new Color32(255, 122, 210, 255);
     private static readonly Color DonePink = new Color32(236, 64, 168, 255);
-    private static readonly Color DarkTextGreen = Color.black;
+    private static readonly Color DarkTextGreen = MorphicText.Ink;
     private const float CustomizePanelWidth = 540f;
     private const float PillWidth = 490f;
     private const float PillHeight = 60f;
+    private const float PillStride = 82f;
     private const float MainMenuPanelHeight = 428f;
     private const float ColorSelectionPanelHeight = 680f;
     private const float VertexSculptPanelHeight = 600f;
-    private const float HistoryBarHeight = 78f;
-    private const float PartSelectionPanelHeight = 488f;
+    private const float HistoryBarHeight = 118f;
+    private const float PartSelectionPanelHeight = 600f;
     private const float VariantSelectionPanelHeight = 460f;
     private const float ReviewPanelHeight = 360f;
     private const float ShelfPanelHeight = 450f;
@@ -379,10 +380,11 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         bool overUi = nextHovered != null ||
                       ContainsScreenPoint(panel, screenPosition) ||
                       ContainsScreenPoint(selfiePanel, screenPosition);
-        bool allowGestures = !sculptLockedByTutorial && !overUi && mode != ColorMode.Hidden;
+        bool exclusiveDraw = mode == ColorMode.VertexSculpt || mode == ColorMode.DrawBandTargeting;
+        bool allowGestures = !sculptLockedByTutorial && !overUi && mode != ColorMode.Hidden && !exclusiveDraw;
         SetSculptGesturesEnabled(allowGestures);
         if (fistRotation != null)
-            fistRotation.suppressDriving = !allowGestures ||
+            fistRotation.suppressDriving = overUi || sculptLockedByTutorial ||
                 (kerisGestures != null && kerisGestures.IsDrivingSculpt);
         if (instructionText != null && instructionText.gameObject.activeSelf &&
             kerisGestures != null && kerisGestures.IsDeformationLocked &&
@@ -419,10 +421,10 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         BuildTitleBursts(panelRect);
         headerBackButton = CreateHeaderBackButton(panelRect);
         headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>();
-        instructionText = CreateText("Instruction", panelRect, new Vector2(10f, -78f),
-            new Vector2(520f, 38f), "Choose a color or sculpt clay.", 19.5f,
+        instructionText = CreateText("Instruction", panelRect, new Vector2(10f, -90f),
+            new Vector2(520f, 52f), "Choose a color or sculpt clay.", 22f,
             TextAlignmentOptions.Center, FontStyles.Bold);
-        instructionText.color = DarkTextGreen;
+        MorphicText.FitBody(instructionText);
 
         mainActionGroup = new GameObject("MainActions", typeof(RectTransform));
         mainActionGroup.transform.SetParent(panelRect, false);
@@ -445,7 +447,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (vText != null)
         {
             vText.fontSize = 22f;
-            vText.fontStyle = FontStyles.Bold;
             vText.color = DarkTextGreen;
         }
         vertexSculpt.onClick.AddListener(ShowVertexSculpt);
@@ -459,19 +460,20 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         partGroup = new GameObject("PartSelection", typeof(RectTransform));
         partGroup.transform.SetParent(panelRect, false);
         RectTransform partRect = partGroup.GetComponent<RectTransform>();
-        DockTop(partRect, -124f, 358f);
+        MorphicStudioLayout.DockContent(
+            partRect, true, MorphicStudioLayout.PartListHeight(partNames.Length, PillStride));
 
         for (int i = 0; i < partNames.Length; i++)
         {
             int partIndex = i;
             partButtons[i] = CreateButton(
-                "Part" + i, partRect, new Vector2(0f, -i * 70f),
+                "Part" + i, partRect, new Vector2(0f, -i * PillStride),
                 new Vector2(PillWidth, PillHeight), partNames[i], PillPink);
             partButtons[i].onClick.AddListener(() => SelectPart(partIndex));
             RegisterHitTarget(partButtons[i], false, true, Color.white);
         }
 
-        Button partDone = CreateButton("Done", partRect, new Vector2(0f, -222f),
+        Button partDone = CreateButton("Done", partRect, new Vector2(0f, -partNames.Length * PillStride),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         partDone.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(partDone, false, false, Color.white);
@@ -540,7 +542,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (sizeText != null)
             {
                 sizeText.fontSize = 18f;
-                sizeText.fontStyle = FontStyles.Bold;
                 sizeText.color = DarkTextGreen;
             }
             coilSizeButtons[s].onClick.AddListener(() => SelectCoilSize(sizeIdx));
@@ -561,7 +562,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             if (strengthText != null)
             {
                 strengthText.fontSize = 16f;
-                strengthText.fontStyle = FontStyles.Bold;
                 strengthText.color = DarkTextGreen;
             }
             coilHeightButtons[s].onClick.AddListener(() => SelectCoilHeight(strengthIdx));
@@ -575,7 +575,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (clayColText != null)
         {
             clayColText.fontSize = 24f;
-            clayColText.fontStyle = FontStyles.Bold;
             clayColText.color = DarkTextGreen;
         }
         RegisterHitTarget(clayColorBtn, false, false, Color.white);
@@ -600,7 +599,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (doneText != null)
         {
             doneText.fontSize = 26f;
-            doneText.fontStyle = FontStyles.Bold;
             doneText.color = DarkTextGreen;
         }
         done.onClick.AddListener(ShowMainMenu);
@@ -699,6 +697,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         mainActionGroup.SetActive(false);
         HideExtraGroups();
         colorGroup.SetActive(true);
+        MorphicStudioLayout.DockContent(colorGroup.GetComponent<RectTransform>(), true, 490f);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
         MorphicLoc.Apply(
@@ -1067,7 +1066,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     {
         DisableVertexSculpt();
         mode = ColorMode.SelectPart;
-        SetPanelHeight(PartSelectionPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(
+            MorphicStudioLayout.PartListHeight(partNames.Length, PillStride), true));
         mainActionGroup.SetActive(false);
         HideExtraGroups();
         if (partGroup != null)
@@ -1078,6 +1078,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         MorphicLoc.Apply(headerText, "SELECT PART");
         instructionText.gameObject.SetActive(true);
         MorphicLoc.Apply(instructionText, "Choose the body, a carving, or the handle.");
+        MorphicText.FitBody(instructionText);
+        MorphicStudioLayout.PlacePartList(partGroup.transform, partNames.Length, PillStride);
         Transform leftoverColors = partGroup != null ? partGroup.transform.Find("NextColors") : null;
         if (leftoverColors != null)
             leftoverColors.gameObject.SetActive(false);
@@ -2476,19 +2478,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     {
         if (headerBackButton != null)
             headerBackButton.gameObject.SetActive(visible);
-        if (headerText == null)
-            return;
-        RectTransform hRect = headerText.rectTransform;
-        if (visible)
-        {
-            hRect.anchoredPosition = new Vector2(10f, -44f);
-            headerText.fontSize = 35f;
-        }
-        else
-        {
-            hRect.anchoredPosition = new Vector2(10f, -18f);
-            headerText.fontSize = 40f;
-        }
+
+        MorphicStudioLayout.PlaceHeader(headerText, instructionText, visible);
     }
 
     private void SetHeaderBackLabel(string label)
@@ -2534,6 +2525,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
         Button button = frame.gameObject.AddComponent<Button>();
         button.targetGraphic = fill;
+        button.colors = LanguagePageBuilder.ButtonColors();
         if (!string.IsNullOrEmpty(label))
         {
             TMP_Text text = CreateText(
@@ -2541,7 +2533,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 label, isDone || isChangeColor ? 26f : 24f,
                 TextAlignmentOptions.Center, FontStyles.Bold);
             Stretch(text.rectTransform);
-            text.color = DarkTextGreen;
+            MorphicText.Style(text);
             text.raycastTarget = false;
         }
 
@@ -2562,9 +2554,16 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         rect.sizeDelta = size;
         TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
         MorphicLoc.Bind(text, value);
-        text.fontSize = fontSize;
+        text.fontSize = MorphicText.Size(fontSize);
         text.alignment = alignment;
-        text.fontStyle = style;
+        text.raycastTarget = false;
+        if (objectName == "Label")
+            MorphicText.FitButton(text);
+        else if (objectName == "Instruction")
+            MorphicText.FitBody(text);
+        else
+            MorphicText.FitTitle(text);
+        text.transform.SetAsLastSibling();
         return text;
     }
 
@@ -2573,8 +2572,9 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         Image frame = LanguagePageBuilder.CreateRoundedImage("Frame", panelRect, 32, LanguagePageBuilder.Green);
         LanguagePageBuilder.Stretch(frame.rectTransform);
         frame.raycastTarget = false;
-        Image fill = LanguagePageBuilder.CreateRoundedImage("Fill", panelRect, 28, CardCream);
-        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(8f, 8f));
+        Image fill = LanguagePageBuilder.CreateRoundedImage("Fill", panelRect, 24, CardCream, false);
+        LanguagePageBuilder.Stretch(fill.rectTransform, 12f, HistoryBarHeight, 12f, 12f);
+        LanguagePageBuilder.RaiseCream(fill, 24);
         fill.raycastTarget = false;
     }
 
@@ -2582,8 +2582,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     {
         if (text == null)
             return;
-        text.color = DarkTextGreen;
-        text.fontStyle = FontStyles.Bold;
+        MorphicText.Style(text);
     }
 
     private void BuildTitleBursts(RectTransform parent)

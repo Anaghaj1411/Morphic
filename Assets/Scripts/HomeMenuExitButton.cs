@@ -89,13 +89,17 @@ public sealed class HomeMenuExitButton : MonoBehaviour
         selfRect.localRotation = Quaternion.identity;
         selfRect.localScale = Vector3.one;
 
-        float gap = Spacing(language, settings);
+        RectTransform settingsLive = settings != null && settings.gameObject.activeInHierarchy
+            ? settings
+            : null;
+
+        float gap = Spacing(language, settingsLive);
         if (gap < 8f)
             gap = Spacing(start, language);
         if (gap < 8f)
             gap = 96f;
 
-        RectTransform lowest = Lowest(language, settings);
+        RectTransform lowest = Lowest(language, settingsLive);
         selfRect.anchoredPosition = new Vector2(
             language.anchoredPosition.x,
             lowest.anchoredPosition.y - gap);

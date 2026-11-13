@@ -12,15 +12,18 @@ using UnityEngine.UI;
 /// </summary>
 public static class LanguagePageBuilder
 {
-    // Palette taken from the reference design.
+    // Candy clay palette: warm cream, glossy pink, jewel green.
     public static readonly Color PanelFill =
-        new Color32(0xFD, 0xF2, 0xFA, 0xFF);
+        new Color32(0xFF, 0xE9, 0xC8, 0xFF);
+
+    public static readonly Color Cream =
+        new Color32(0xFF, 0xE4, 0xBC, 0xFF);
 
     public static readonly Color Pink =
-        new Color32(0xFC, 0xB8, 0xF1, 0xFF);
+        new Color32(0xFF, 0x9E, 0xE8, 0xFF);
 
     public static readonly Color Green =
-        new Color32(0x34, 0x65, 0x1D, 0xFF);
+        new Color32(0x32, 0x74, 0x20, 0xFF);
 
     // Generated sprites are kept alive here and released on quit.
     private static readonly List<Object> Cache =
@@ -146,7 +149,7 @@ public static class LanguagePageBuilder
                 54);
 
         Stretch(text.Rect);
-        text.SetColor(Green);
+        MorphicText.Style(text.Label);
     }
 
     private static void BuildOptionButtons(
@@ -252,7 +255,7 @@ public static class LanguagePageBuilder
         // Sit the text to the right of the flag.
         rt.anchoredPosition = new Vector2(48f, 0f);
 
-        text.SetColor(Green);
+        MorphicText.Style(text.Label);
     }
 
     private static void WireButton(
@@ -334,12 +337,12 @@ public static class LanguagePageBuilder
         return new ColorBlock
         {
             normalColor = Color.white,
-            highlightedColor = Color.white,
-            pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f),
+            highlightedColor = new Color(1.18f, 1.18f, 1.18f, 1f),
+            pressedColor = new Color(0.78f, 0.78f, 0.82f, 1f),
             selectedColor = Color.white,
             disabledColor = new Color(1f, 1f, 1f, 0.4f),
             colorMultiplier = 1f,
-            fadeDuration = 0.06f
+            fadeDuration = 0.08f
         };
     }
 
@@ -405,17 +408,13 @@ public static class LanguagePageBuilder
             go.AddComponent<TMPro.TextMeshProUGUI>();
 
         MorphicLoc.Bind(label, text);
-        label.fontSize = fontSize;
+        label.fontSize = MorphicText.Size(fontSize);
         label.alignment = TMPro.TextAlignmentOptions.Center;
-        label.color = Green;
-
-        // Text must never intercept clicks meant for the button.
         label.raycastTarget = false;
-
-        // TMP builds its mesh on the next layout pass, which can
-        // reset the vertex colour to the font material default.
-        // Re-applying after a frame keeps the green readable.
-        ApplyTextColor(label);
+        if (fontSize >= 30)
+            MorphicText.FitTitle(label);
+        else
+            MorphicText.FitButton(label);
 
         return new TextLabel(label);
     }
@@ -428,7 +427,7 @@ public static class LanguagePageBuilder
             return;
         }
 
-        label.color = Green;
+        MorphicText.Style(label);
 
         TextMeshProUGUIRunner.Run(
             label,
@@ -436,7 +435,7 @@ public static class LanguagePageBuilder
             {
                 if (label != null)
                 {
-                    label.color = Green;
+                    MorphicText.Style(label);
                     label.ForceMeshUpdate();
                 }
             });
@@ -489,6 +488,47 @@ public static class LanguagePageBuilder
 
         rt.offsetMin = new Vector2(padding.x, padding.y);
         rt.offsetMax = new Vector2(-padding.x, -padding.y);
+    }
+
+    public static void Stretch(
+        RectTransform rt,
+        float left,
+        float bottom,
+        float right,
+        float top)
+    {
+        if (rt == null)
+            return;
+
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.offsetMin = new Vector2(left, bottom);
+        rt.offsetMax = new Vector2(-right, -top);
+    }
+
+    public static void RaiseCream(Image fill, int radius)
+    {
+        if (fill == null || fill.transform.Find("RaiseLite") != null)
+            return;
+
+        Image lite = CreateRoundedImage("RaiseLite", fill.transform, Mathf.Max(8, radius - 4), Color.white, false);
+        lite.raycastTarget = false;
+        RectTransform liteRect = lite.rectTransform;
+        liteRect.anchorMin = new Vector2(0.08f, 0.84f);
+        liteRect.anchorMax = new Vector2(0.92f, 0.97f);
+        liteRect.offsetMin = Vector2.zero;
+        liteRect.offsetMax = Vector2.zero;
+        lite.color = new Color(1f, 1f, 1f, 0.16f);
+
+        Image shade = CreateRoundedImage("RaiseShade", fill.transform, Mathf.Max(8, radius - 4), Color.black, false);
+        shade.raycastTarget = false;
+        RectTransform shadeRect = shade.rectTransform;
+        shadeRect.anchorMin = new Vector2(0.06f, 0.03f);
+        shadeRect.anchorMax = new Vector2(0.94f, 0.22f);
+        shadeRect.offsetMin = Vector2.zero;
+        shadeRect.offsetMax = Vector2.zero;
+        shade.color = new Color(0.35f, 0.18f, 0.08f, 0.10f);
     }
 
     public static void SetField(
@@ -570,6 +610,16 @@ public static class LanguagePageBuilder
         int radius,
         Color color)
     {
+        return CreateRoundedImage(name, parent, radius, color, true);
+    }
+
+    public static Image CreateRoundedImage(
+        string name,
+        Transform parent,
+        int radius,
+        Color color,
+        bool polish)
+    {
         Image img = CreateImage(
             name,
             parent,
@@ -577,8 +627,94 @@ public static class LanguagePageBuilder
 
         img.type = Image.Type.Sliced;
         img.color = color;
+        if (polish)
+            Polish(img, radius, color);
 
         return img;
+    }
+
+    /// Glossy ceramic highlight + depth so pills and cards read as
+    /// shiny clay instead of flat color blocks.
+    public static void Polish(Image img, int radius, Color color)
+    {
+        if (img == null)
+            return;
+
+        if (IsOutlineGreen(color))
+        {
+            AddFrameDepth(img);
+            return;
+        }
+
+        AddCandyGloss(img, radius, color);
+    }
+
+    private static bool IsOutlineGreen(Color color)
+    {
+        return color.g > color.r + 0.08f &&
+               color.g > color.b &&
+               color.r < 0.48f &&
+               color.a > 0.8f;
+    }
+
+    private static void AddFrameDepth(Image img)
+    {
+        Shadow shadow = img.GetComponent<Shadow>();
+        if (shadow == null)
+            shadow = img.gameObject.AddComponent<Shadow>();
+        shadow.effectColor = new Color(0.04f, 0.08f, 0.02f, 0.55f);
+        shadow.effectDistance = new Vector2(0f, -10f);
+        shadow.useGraphicAlpha = true;
+
+        Outline rim = img.GetComponent<Outline>();
+        if (rim == null)
+            rim = img.gameObject.AddComponent<Outline>();
+        rim.effectColor = new Color(0.55f, 0.85f, 0.32f, 0.28f);
+        rim.effectDistance = new Vector2(1.2f, -1.2f);
+        rim.useGraphicAlpha = true;
+    }
+
+    private static void AddCandyGloss(Image fill, int radius, Color color)
+    {
+        if (fill.transform.Find("Shine") != null)
+            return;
+
+        Color.RGBToHSV(color, out _, out float sat, out float value);
+        bool candy = sat > 0.16f && value > 0.45f;
+        int innerRadius = Mathf.Max(6, radius - 6);
+
+        Image shine = CreateRoundedImage(
+            "Shine", fill.transform, innerRadius, Color.white, false);
+        shine.raycastTarget = false;
+        RectTransform shineRect = shine.rectTransform;
+        shineRect.anchorMin = new Vector2(0.08f, candy ? 0.54f : 0.70f);
+        shineRect.anchorMax = new Vector2(0.92f, 0.94f);
+        shineRect.offsetMin = Vector2.zero;
+        shineRect.offsetMax = Vector2.zero;
+        shine.color = new Color(1f, 1f, 1f, candy ? 0.38f : 0.10f);
+
+        if (candy)
+        {
+            Image specular = CreateRoundedImage(
+                "Specular", fill.transform, Mathf.Max(4, innerRadius / 2), Color.white, false);
+            specular.raycastTarget = false;
+            RectTransform specRect = specular.rectTransform;
+            specRect.anchorMin = new Vector2(0.22f, 0.78f);
+            specRect.anchorMax = new Vector2(0.78f, 0.90f);
+            specRect.offsetMin = Vector2.zero;
+            specRect.offsetMax = Vector2.zero;
+            specular.color = new Color(1f, 1f, 1f, 0.42f);
+        }
+
+        Image shade = CreateRoundedImage(
+            "Shade", fill.transform, innerRadius, Color.black, false);
+        shade.raycastTarget = false;
+        RectTransform shadeRect = shade.rectTransform;
+        shadeRect.anchorMin = new Vector2(0.07f, 0.04f);
+        shadeRect.anchorMax = new Vector2(0.93f, candy ? 0.34f : 0.22f);
+        shadeRect.offsetMin = Vector2.zero;
+        shadeRect.offsetMax = Vector2.zero;
+        shade.color = new Color(0.16f, 0.06f, 0.04f, candy ? 0.14f : 0.05f);
     }
 
     public static void ApplyRoundedSprite(Image image, int radius)
@@ -650,7 +786,16 @@ public static class LanguagePageBuilder
         tex.SetPixels(px);
         tex.Apply();
 
-        return NewSprite(tex, "Circle");
+        Sprite sprite = Sprite.Create(
+            tex,
+            new Rect(0f, 0f, tex.width, tex.height),
+            new Vector2(0.5f, 0.5f),
+            100f,
+            0,
+            SpriteMeshType.Tight);
+        sprite.name = "Circle";
+        Cache.Add(sprite);
+        return sprite;
     }
 
     /// <summary>

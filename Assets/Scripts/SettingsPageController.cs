@@ -66,16 +66,7 @@ public class SettingsPageController : MonoBehaviour
         Button button = FindSettingsButton();
 
         if (button == null)
-        {
-            Debug.LogWarning(
-                "SettingsPageController could not find a button " +
-                "named \"Settings Button\"; the Settings page will " +
-                "not open.",
-                this
-            );
-
             return;
-        }
 
         // The Settings Button in the scene is a 1700x450 invisible hit
         // area that overlaps the Language Button. Rather than resizing
@@ -285,26 +276,16 @@ public class SettingsPageController : MonoBehaviour
     /// </summary>
     public void OpenSettingsPage()
     {
-        EnsurePage();
-
-        if (pageRoot == null)
+        MorphicSettingsUI ui = Object.FindFirstObjectByType<MorphicSettingsUI>(
+            FindObjectsInactive.Include);
+        if (ui == null)
         {
-            return;
+            Canvas canvas = FindFirstObjectByType<Canvas>();
+            if (canvas != null)
+                ui = canvas.gameObject.AddComponent<MorphicSettingsUI>();
         }
-
-        pageRoot.gameObject.SetActive(true);
-
-        // Rebuild every time so the panel reflects saved values.
-        SettingsPageBuilder.Build(pageRoot, this);
-
-        if (openRoutine != null)
-        {
-            StopCoroutine(openRoutine);
-        }
-
-        openRoutine = StartCoroutine(OpenRoutine(pageRoot));
-
-        Debug.Log("Settings page opened.", this);
+        if (ui != null)
+            ui.OpenSheet();
     }
 
     private IEnumerator OpenRoutine(RectTransform root)
@@ -370,10 +351,13 @@ public class SettingsPageController : MonoBehaviour
     /// </summary>
     public void CloseSettingsPage()
     {
+        MorphicSettingsUI ui = Object.FindFirstObjectByType<MorphicSettingsUI>(
+            FindObjectsInactive.Include);
+        if (ui != null)
+            ui.HideSheet();
+
         if (pageRoot == null)
-        {
             return;
-        }
 
         if (openRoutine != null)
         {
@@ -381,11 +365,9 @@ public class SettingsPageController : MonoBehaviour
             openRoutine = null;
         }
 
-        // Reset so the next open always plays the pop from the start.
         pageRoot.localScale = Vector3.one;
 
         CanvasGroup group = pageRoot.GetComponent<CanvasGroup>();
-
         if (group != null)
         {
             group.alpha = 1f;

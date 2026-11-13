@@ -260,28 +260,29 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private Vector3 selfieFrontLocal = Vector3.forward;
     private Vector3 selfieUpLocal = Vector3.up;
 
-    private static readonly Color CardCream = new Color32(255, 239, 214, 255);
+    private static readonly Color CardCream = LanguagePageBuilder.Cream;
     private static readonly Color PillPink = LanguagePageBuilder.Pink;
-    private static readonly Color ActionPink = new Color32(242, 154, 214, 255);
+    private static readonly Color ActionPink = new Color32(255, 122, 210, 255);
     private static readonly Color DonePink = new Color32(236, 64, 168, 255);
-    private static readonly Color SelectedPill = new Color32(236, 118, 196, 255);
-    private static readonly Color DarkTextGreen = Color.black;
+    private static readonly Color SelectedPill = new Color32(255, 138, 214, 255);
+    private static readonly Color DarkTextGreen = MorphicText.Ink;
 
     private const float CustomizePanelWidth = 540f;
     private const float PillWidth = 490f;
     private const float PillHeight = 60f;
+    private const float PillStride = 82f;
     private const float MainMenuPanelHeight = 428f;
     private const float ReviewPanelHeight = 360f;
     private const float ShelfPanelHeight = 450f;
-    private const float PartSelectionPanelHeight = 662f;
+    private const float PartSelectionPanelHeight = 780f;
     private const float ColorSelectionPanelHeight = 680f;
     private const float SelfiePanelHeight = 670f;
     private const float VariantSelectionPanelHeight = 460f;
     private const float BodyActionsPanelHeight = 470f;
-    private const float DesignSelectionPanelHeight = 600f;
+    private const float DesignSelectionPanelHeight = 780f;
     private const float BandSelectionPanelHeight = 840f;
     private const float VertexSculptPanelHeight = 600f;
-    private const float HistoryBarHeight = 78f;
+    private const float HistoryBarHeight = 118f;
     private const int MaxHistory = 20;
 
     private sealed class LanternSnapshot
@@ -622,7 +623,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (buttonText != null)
         {
             buttonText.fontSize = 22f;
-            buttonText.fontStyle = FontStyles.Bold;
             buttonText.color = DarkTextGreen;
         }
         vertexSculptButton.onClick.AddListener(ShowVertexSculpt);
@@ -763,11 +763,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             dist = 2f;
         }
 
-        float targetDist = dist * 0.62f;
-        float minDist = Mathf.Max(0.28f, bounds.extents.magnitude * 0.36f);
-        if (minDist > dist * 0.8f)
-            minDist = dist * 0.50f;
-        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.78f);
+        float targetDist = dist * 0.80f;
+        float minDist = Mathf.Max(0.40f, bounds.extents.magnitude * 0.50f);
+        if (minDist > dist * 0.88f)
+            minDist = dist * 0.72f;
+        targetDist = Mathf.Clamp(targetDist, minDist, dist * 0.90f);
 
         Vector3 back = offset.normalized;
         Vector3 camRight = storedSculptCamRot * Vector3.right;
@@ -776,7 +776,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         else
             camRight.Normalize();
 
-        targetPos = focus + back * targetDist + camRight * (targetDist * 0.10f);
+        focus += Vector3.up * Mathf.Max(0.10f, bounds.extents.y * 0.22f);
+        targetPos = focus + back * targetDist + camRight * (targetDist * 0.08f);
         targetRot = storedSculptCamRot;
         targetFov = storedSculptCamFov;
     }
@@ -949,7 +950,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (sizeText != null)
             {
                 sizeText.fontSize = 18f;
-                sizeText.fontStyle = FontStyles.Bold;
                 sizeText.color = DarkTextGreen;
             }
             vertexSculptSizeButtons[s].onClick.AddListener(() => SelectVertexSculptSize(sizeIdx));
@@ -977,7 +977,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (strengthText != null)
             {
                 strengthText.fontSize = 16f;
-                strengthText.fontStyle = FontStyles.Bold;
                 strengthText.color = DarkTextGreen;
             }
             vertexSculptStrengthButtons[s].onClick.AddListener(() => SelectVertexSculptStrength(strengthIdx));
@@ -992,7 +991,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (clayColText != null)
         {
             clayColText.fontSize = 24f;
-            clayColText.fontStyle = FontStyles.Bold;
             clayColText.color = DarkTextGreen;
         }
         RegisterHitTarget(clayColorBtn, false, false, default);
@@ -1017,7 +1015,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (doneText != null)
         {
             doneText.fontSize = 26f;
-            doneText.fontStyle = FontStyles.Bold;
             doneText.color = DarkTextGreen;
         }
         done.onClick.AddListener(ShowMainMenu);
@@ -1161,9 +1158,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         ApplyBottomRightDocking();
         EnsureSelfieOnPalette();
-        RectTransform boundPartRect = partGroup.GetComponent<RectTransform>();
-        if (boundPartRect != null)
-            DockTop(boundPartRect, -124f, 472f);
+        MorphicStudioLayout.PlacePartList(partGroup.transform, partNames.Length, PillStride);
 
         selectPartButton.onClick.AddListener(ShowPartSelection);
         RegisterHitTarget(selectPartButton, false, false, default);
@@ -1192,9 +1187,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         if (nextColorsButton != null)
             nextColorsButton.gameObject.SetActive(false);
-        RectTransform partDoneRect = partDoneButton.GetComponent<RectTransform>();
-        if (partDoneRect != null)
-            partDoneRect.anchoredPosition = new Vector2(0f, -360f);
         partDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(partDoneButton, false, false, default);
 
@@ -1283,10 +1275,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         headerBackText = headerBackButton.GetComponentInChildren<TMP_Text>();
 
         instructionText = CreateText(
-            "Instruction", panelRect, new Vector2(10f, -78f),
-            new Vector2(520f, 38f), "Choose the whole lantern or one part.", 19.5f,
+            "Instruction", panelRect, new Vector2(10f, -90f),
+            new Vector2(520f, 52f), "Choose the whole lantern or one part.", 22f,
             TextAlignmentOptions.Center, FontStyles.Bold);
-        instructionText.color = DarkTextGreen;
+        MorphicText.FitBody(instructionText);
 
         mainActionGroup = new GameObject("MainActions", typeof(RectTransform));
         mainActionGroup.transform.SetParent(panelRect, false);
@@ -1314,7 +1306,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         partGroup = new GameObject("PartSelection", typeof(RectTransform));
         partGroup.transform.SetParent(panelRect, false);
         RectTransform partRect = partGroup.GetComponent<RectTransform>();
-        DockTop(partRect, -124f, 472f);
+        MorphicStudioLayout.DockContent(
+            partRect, true, MorphicStudioLayout.PartListHeight(partNames.Length, PillStride));
 
         for (int i = 0; i < partNames.Length; i++)
         {
@@ -1322,7 +1315,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             Button partButton = CreateButton(
                 "Part" + i,
                 partRect,
-                new Vector2(0f, -i * 70f),
+                new Vector2(0f, -i * PillStride),
                 new Vector2(PillWidth, PillHeight),
                 partNames[i],
                 PillPink);
@@ -1332,7 +1325,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         Button partDoneButton = CreateButton(
-            "Done", partRect, new Vector2(0f, -360f),
+            "Done", partRect, new Vector2(0f, -partNames.Length * PillStride),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         partDoneButton.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(partDoneButton, false, false, default);
@@ -1402,7 +1395,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (uText != null)
             {
                 uText.fontSize = 24f;
-                uText.fontStyle = FontStyles.Bold;
                 uText.color = DarkTextGreen;
             }
             RegisterHitTarget(undo, false, false, default);
@@ -1424,7 +1416,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (redoText != null)
             {
                 redoText.fontSize = 24f;
-                redoText.fontStyle = FontStyles.Bold;
                 redoText.color = DarkTextGreen;
             }
             RegisterHitTarget(redo, false, false, default);
@@ -1439,7 +1430,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (rText != null)
             {
                 rText.fontSize = 24f;
-                rText.fontStyle = FontStyles.Bold;
                 rText.color = DarkTextGreen;
             }
             RegisterHitTarget(reset, false, false, default);
@@ -1480,7 +1470,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (uText != null)
         {
             uText.fontSize = 24f;
-            uText.fontStyle = FontStyles.Bold;
             uText.color = DarkTextGreen;
         }
         undo.onClick.AddListener(UndoHistory);
@@ -1494,7 +1483,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (redoText != null)
         {
             redoText.fontSize = 24f;
-            redoText.fontStyle = FontStyles.Bold;
             redoText.color = DarkTextGreen;
         }
         redo.onClick.AddListener(RedoHistory);
@@ -1508,7 +1496,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (rText != null)
         {
             rText.fontSize = 24f;
-            rText.fontStyle = FontStyles.Bold;
             rText.color = DarkTextGreen;
         }
         reset.onClick.AddListener(ShowConfirmReset);
@@ -2342,15 +2329,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         StyleMorphicCard(panelRect);
 
         selfieHeaderText = CreateText(
-            "Header", panelRect, new Vector2(20f, -16f),
-            new Vector2(380f, 48f), "SELFIE", 32f,
+            "Header", panelRect, new Vector2(10f, -16f),
+            new Vector2(520f, 52f), "SELFIE", 32f,
             TextAlignmentOptions.Center, FontStyles.Bold);
         StyleMorphicTitle(selfieHeaderText);
         selfieInstructionText = CreateText(
-            "Instruction", panelRect, new Vector2(20f, -70f),
-            new Vector2(380f, 40f), "Frame your photo, then take a selfie.", 18f,
+            "Instruction", panelRect, new Vector2(16f, -78f),
+            new Vector2(508f, 48f), "Frame your photo, then take a selfie.", 20f,
             TextAlignmentOptions.Center, FontStyles.Bold);
-        selfieInstructionText.color = LanguagePageBuilder.Green;
+        MorphicText.FitBody(selfieInstructionText);
 
         BuildSelfieGroup(panelRect);
         selfiePanel.SetActive(false);
@@ -2532,7 +2519,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         popGestureArmed = false;
         SetSculptControllersEnabled(false);
         mode = ColorMode.SelectPart;
-        SetPanelHeight(PartSelectionPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(
+            MorphicStudioLayout.PartListHeight(partNames.Length, PillStride), true));
         mainActionGroup.SetActive(false);
         partGroup.SetActive(true);
         MorphicLoc.BindTree(partGroup.transform);
@@ -2564,6 +2552,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(true);
         MorphicLoc.Apply(instructionText, "Choose the whole lantern or one part.");
+        MorphicText.FitBody(instructionText);
+        MorphicStudioLayout.PlacePartList(partGroup.transform, partNames.Length, PillStride);
         Transform leftoverColors = partGroup != null ? partGroup.transform.Find("NextColors") : null;
         if (leftoverColors != null)
             leftoverColors.gameObject.SetActive(false);
@@ -2684,8 +2674,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             MorphicLoc.Apply(
                 instructionText,
                 selectedPart == 2
-                    ? "Pinch with your right hand and lift to pop the shape."
-                    : "Pinch with your left hand and lift to pop the shape.");
+                    ? "Pinch with your right hand. Lift to open, lower to close."
+                    : "Pinch with your left hand. Lift to open, lower to close.");
             SetHoveredTarget(null);
             return;
         }
@@ -2968,6 +2958,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             patternPainter.SetPaintingEnabled(false);
         HideReviewAndShelf();
         colorGroup.SetActive(true);
+        MorphicStudioLayout.DockContent(colorGroup.GetComponent<RectTransform>(), true, 490f);
         SetTitleBurstsVisible(false);
         if (selfieEntryButton != null)
             selfieEntryButton.gameObject.SetActive(false);
@@ -2982,6 +2973,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             SetHeaderBackLabel("← BODY");
         else
             SetHeaderBackLabel(PartNeedsVariant(selectedPart) ? "← SHAPE" : "← PARTS");
+        SetHeaderBackVisible(true);
         MorphicLoc.Apply(
             instructionText,
             designTintActive
@@ -3946,7 +3938,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (text != null)
         {
             text.fontSize = 17.5f;
-            text.fontStyle = FontStyles.Bold;
             text.color = DarkTextGreen;
         }
         button.onClick.AddListener(NavigateBack);
@@ -3985,42 +3976,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (headerBackButton != null)
             headerBackButton.gameObject.SetActive(visible);
 
-        if (headerText != null)
-        {
-            RectTransform hRect = headerText.rectTransform;
-            if (visible)
-            {
-                hRect.anchoredPosition = new Vector2(10f, -44f);
-                hRect.sizeDelta = new Vector2(520f, 48f);
-                headerText.fontSize = 35f;
-                headerText.fontStyle = FontStyles.Bold;
-                headerText.color = DarkTextGreen;
-                if (instructionText != null)
-                {
-                    instructionText.rectTransform.anchoredPosition = new Vector2(10f, -92f);
-                    instructionText.rectTransform.sizeDelta = new Vector2(520f, 42f);
-                    instructionText.fontSize = 19.5f;
-                    instructionText.fontStyle = FontStyles.Bold;
-                    instructionText.color = DarkTextGreen;
-                }
-            }
-            else
-            {
-                hRect.anchoredPosition = new Vector2(10f, -18f);
-                hRect.sizeDelta = new Vector2(520f, 60f);
-                headerText.fontSize = 40f;
-                headerText.fontStyle = FontStyles.Bold;
-                headerText.color = DarkTextGreen;
-                if (instructionText != null)
-                {
-                    instructionText.rectTransform.anchoredPosition = new Vector2(10f, -84f);
-                    instructionText.rectTransform.sizeDelta = new Vector2(520f, 42f);
-                    instructionText.fontSize = 20f;
-                    instructionText.fontStyle = FontStyles.Bold;
-                    instructionText.color = DarkTextGreen;
-                }
-            }
-        }
+        MorphicStudioLayout.PlaceHeader(headerText, instructionText, visible);
     }
 
     private void SetHeaderBackLabel(string label)
@@ -4028,9 +3984,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (headerBackText != null)
         {
             MorphicLoc.Bind(headerBackText, label);
-            headerBackText.fontSize = 17.5f;
-            headerBackText.fontStyle = FontStyles.Bold;
-            headerBackText.color = DarkTextGreen;
+            MorphicText.FitButton(headerBackText);
         }
     }
 
@@ -4213,6 +4167,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             SetSculptControllersEnabled(false);
             SetFistRotationEnabled(false);
+            return;
+        }
+
+        bool exclusiveDraw =
+            vertexSculptEnabled ||
+            mode == ColorMode.VertexSculpt ||
+            mode == ColorMode.DrawBandTargeting;
+        if (exclusiveDraw)
+        {
+            SetSculptControllersEnabled(false);
+            SetFistRotationEnabled(!overUi);
+            if (patternPainter != null && overUi)
+                patternPainter.SetPaintingEnabled(false);
             return;
         }
 
@@ -5019,11 +4986,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         Button button = frame.gameObject.AddComponent<Button>();
         button.targetGraphic = fill;
-        ColorBlock colors = button.colors;
-        colors.highlightedColor = Color.Lerp(fillColor, Color.white, 0.18f);
-        colors.pressedColor = Color.Lerp(fillColor, Color.black, 0.12f);
-        colors.disabledColor = new Color(fillColor.r, fillColor.g, fillColor.b, 0.22f);
-        button.colors = colors;
+        button.colors = LanguagePageBuilder.ButtonColors();
 
         if (!string.IsNullOrEmpty(label))
         {
@@ -5032,7 +4995,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                 label, isDone || isChangeColor ? 26f : 24f,
                 TextAlignmentOptions.Center, FontStyles.Bold);
             Stretch(text.rectTransform);
-            text.color = DarkTextGreen;
+            MorphicText.Style(text);
             text.raycastTarget = false;
         }
 
@@ -5046,8 +5009,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         LanguagePageBuilder.Stretch(frame.rectTransform);
         frame.raycastTarget = false;
         Image fill = LanguagePageBuilder.CreateRoundedImage(
-            "Fill", panelRect, 28, CardCream);
-        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(8f, 8f));
+            "Fill", panelRect, 24, CardCream, false);
+        LanguagePageBuilder.Stretch(fill.rectTransform, 12f, HistoryBarHeight, 12f, 12f);
+        LanguagePageBuilder.RaiseCream(fill, 24);
         fill.raycastTarget = false;
     }
 
@@ -5056,13 +5020,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (text == null)
             return;
 
-        text.color = DarkTextGreen;
-        text.fontStyle = FontStyles.Bold;
-        Outline outline = text.GetComponent<Outline>();
-        if (outline == null)
-            outline = text.gameObject.AddComponent<Outline>();
-        outline.effectColor = new Color32(0x0E, 0x2A, 0x14, 0x66);
-        outline.effectDistance = new Vector2(2f, -2f);
+        MorphicText.Style(text);
     }
 
     private void BuildTitleBursts(RectTransform parent)
@@ -5255,12 +5213,16 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (gestureIndicator != null)
             text.font = gestureIndicator.font;
         MorphicLoc.Bind(text, content);
-        text.fontSize = fontSize;
-        text.fontStyle = style;
+        text.fontSize = MorphicText.Size(fontSize);
         text.alignment = alignment;
-        text.color = DarkTextGreen;
-        text.textWrappingMode = TextWrappingModes.Normal;
         text.raycastTarget = false;
+        if (objectName == "Label")
+            MorphicText.FitButton(text);
+        else if (objectName == "Instruction")
+            MorphicText.FitBody(text);
+        else
+            MorphicText.FitTitle(text);
+        text.transform.SetAsLastSibling();
         return text;
     }
 
@@ -5309,7 +5271,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         designTintActive = false;
         selectedPart = 1;
         mode = ColorMode.SelectBodyActions;
-        SetPanelHeight(BodyActionsPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(310f, true));
         mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
         if (variantGroup != null)
@@ -5334,6 +5296,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetTitleBurstsVisible(false);
         MorphicLoc.Apply(headerText, "LANTERN BODY");
         SetHeaderBackLabel("← PARTS");
+        SetHeaderBackVisible(true);
+        if (bodyActionGroup != null)
+            MorphicStudioLayout.DockContent(
+                bodyActionGroup.GetComponent<RectTransform>(), true, 310f);
         MorphicLoc.Apply(
             instructionText,
             appliedDesignTexture != null
@@ -5351,7 +5317,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         colorBackToDesigns = true;
         selectedPart = 1;
         mode = ColorMode.SelectDesign;
-        SetPanelHeight(DesignSelectionPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.DesignContentHeight, true));
         mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
         if (variantGroup != null)
@@ -5376,6 +5342,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetTitleBurstsVisible(false);
         MorphicLoc.Apply(headerText, "ADD DESIGN");
         SetHeaderBackLabel("← BODY");
+        SetHeaderBackVisible(true);
+        RelayoutDesignGroup();
         MorphicLoc.Apply(
             instructionText,
             stampPatterns == null || stampPatterns.Length == 0
@@ -5452,7 +5420,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         bodyActionGroup = new GameObject("BodyActions", typeof(RectTransform));
         bodyActionGroup.transform.SetParent(panel.transform, false);
         RectTransform bodyRect = bodyActionGroup.GetComponent<RectTransform>();
-        DockTop(bodyRect, -124f, 310f);
+        MorphicStudioLayout.DockContent(bodyRect, true, 310f);
 
         Button changeColor = CreateButton(
             "ChangeColor", bodyRect, new Vector2(0f, 0f),
@@ -5488,7 +5456,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         bandGroup = new GameObject("BandSelection", typeof(RectTransform));
         bandGroup.transform.SetParent(panel.transform, false);
         RectTransform bandRect = bandGroup.GetComponent<RectTransform>();
-        DockTop(bandRect, -120f, 720f);
+        MorphicStudioLayout.DockContent(bandRect, true, MorphicStudioLayout.BandContentHeight);
 
         // 8 Motif buttons in 4 rows x 2 columns (Width 232f, height 90f)
         for (int i = 0; i < bandButtons.Length; i++)
@@ -5538,7 +5506,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             labelText.text = MorphicLoc.F("BAND {0}", i + 1);
             MorphicLoc.ApplyFont(labelText);
             labelText.fontSize = 18f;
-            labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
             labelText.color = DarkTextGreen;
             labelText.raycastTarget = false;
@@ -5573,7 +5540,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (sizeText != null)
             {
                 sizeText.fontSize = 18f;
-                sizeText.fontStyle = FontStyles.Bold;
                 sizeText.color = DarkTextGreen;
             }
             bandSizeButtons[s].onClick.AddListener(() => SelectBandSize(sizeIdx));
@@ -5589,7 +5555,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (bColText != null)
         {
             bColText.fontSize = 24f;
-            bColText.fontStyle = FontStyles.Bold;
             bColText.color = DarkTextGreen;
         }
         RegisterHitTarget(bandColorBtn, false, false, default);
@@ -5616,7 +5581,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (clearText != null)
         {
             clearText.fontSize = 22f;
-            clearText.fontStyle = FontStyles.Bold;
             clearText.color = DarkTextGreen;
         }
         clearStrokes.onClick.AddListener(() =>
@@ -5635,12 +5599,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (doneText != null)
         {
             doneText.fontSize = 26f;
-            doneText.fontStyle = FontStyles.Bold;
             doneText.color = DarkTextGreen;
         }
         done.onClick.AddListener(ShowBodyActions);
         RegisterHitTarget(done, false, false, default);
 
+        MorphicStudioLayout.PlaceBandLayout(bandGroup.transform);
         bandGroup.SetActive(false);
     }
 
@@ -5669,7 +5633,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (txt != null)
             {
                 txt.fontSize = 18.5f;
-                txt.fontStyle = FontStyles.Bold;
                 txt.color = DarkTextGreen;
             }
         }
@@ -5681,7 +5644,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             {
                 MorphicLoc.Apply(label, "SIZE: " + bandSizeLabels[selectedBandSizeIndex]);
                 label.fontSize = 17f;
-                label.fontStyle = FontStyles.Bold;
                 label.color = DarkTextGreen;
             }
         }
@@ -5758,20 +5720,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         bandTargetingBar = new GameObject("BandTargetingBar", typeof(RectTransform));
         bandTargetingBar.transform.SetParent(panel.transform, false);
         RectTransform barRect = bandTargetingBar.GetComponent<RectTransform>();
-        DockTop(barRect, -116f, 56f);
+        MorphicStudioLayout.DockContent(barRect, true, MorphicStudioLayout.TargetingContentHeight);
 
         // [SIZE: M] button
         targetingSizeBtn = CreateButton(
             "TargetingSize", barRect,
-            new Vector2(-187f, 0f),
-            new Vector2(126f, 48f),
+            new Vector2(-118f, -8f),
+            new Vector2(236f, 64f),
             "SIZE: " + bandSizeLabels[selectedBandSizeIndex],
             PillPink);
         TMP_Text tSize = targetingSizeBtn.GetComponentInChildren<TMP_Text>();
         if (tSize != null)
         {
             tSize.fontSize = 18f;
-            tSize.fontStyle = FontStyles.Bold;
             tSize.color = DarkTextGreen;
         }
         targetingSizeBtn.onClick.AddListener(() =>
@@ -5784,15 +5745,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         // [COLOR] button
         targetingColorBtn = CreateButton(
             "TargetingColor", barRect,
-            new Vector2(-80f, 0f),
-            new Vector2(84f, 48f),
+            new Vector2(118f, -8f),
+            new Vector2(236f, 64f),
             "COLOR",
             ActionPink);
         TMP_Text tColor = targetingColorBtn.GetComponentInChildren<TMP_Text>();
         if (tColor != null)
         {
             tColor.fontSize = 18f;
-            tColor.fontStyle = FontStyles.Bold;
             tColor.color = DarkTextGreen;
         }
         targetingColorBtn.onClick.AddListener(() =>
@@ -5805,15 +5765,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         // [UNDO] button
         Button undoBtn = CreateButton(
             "TargetingUndo", barRect,
-            new Vector2(8f, 0f),
-            new Vector2(84f, 48f),
+            new Vector2(-156f, -88f),
+            new Vector2(148f, 64f),
             "UNDO",
             PillPink);
         TMP_Text tUndo = undoBtn.GetComponentInChildren<TMP_Text>();
         if (tUndo != null)
         {
             tUndo.fontSize = 18f;
-            tUndo.fontStyle = FontStyles.Bold;
             tUndo.color = DarkTextGreen;
         }
         undoBtn.onClick.AddListener(() =>
@@ -5826,15 +5785,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         Button redoBtn = CreateButton(
             "TargetingRedo", barRect,
-            new Vector2(96f, 0f),
-            new Vector2(84f, 48f),
+            new Vector2(0f, -88f),
+            new Vector2(148f, 64f),
             "REDO",
             PillPink);
         TMP_Text tRedo = redoBtn.GetComponentInChildren<TMP_Text>();
         if (tRedo != null)
         {
             tRedo.fontSize = 18f;
-            tRedo.fontStyle = FontStyles.Bold;
             tRedo.color = DarkTextGreen;
         }
         redoBtn.onClick.AddListener(() =>
@@ -5848,15 +5806,14 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         // [CLEAR] button
         Button clearBtn = CreateButton(
             "TargetingClear", barRect,
-            new Vector2(186f, 0f),
-            new Vector2(92f, 48f),
+            new Vector2(156f, -88f),
+            new Vector2(148f, 64f),
             "CLEAR",
             PillPink);
         TMP_Text tClear = clearBtn.GetComponentInChildren<TMP_Text>();
         if (tClear != null)
         {
             tClear.fontSize = 18f;
-            tClear.fontStyle = FontStyles.Bold;
             tClear.color = DarkTextGreen;
         }
         clearBtn.onClick.AddListener(() =>
@@ -5867,6 +5824,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         });
         RegisterHitTarget(clearBtn, false, false, default);
 
+        MorphicStudioLayout.PlaceTargetingBar(bandTargetingBar.transform);
         bandTargetingBar.SetActive(false);
     }
 
@@ -5887,7 +5845,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             patternPainter.SetStrokeColor(committedBandColor, false);
             patternPainter.SetPaintingEnabled(true);
         }
-        SetPanelHeight(330f);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.TargetingContentHeight, true));
+        if (bandTargetingBar != null)
+            MorphicStudioLayout.PlaceTargetingBar(bandTargetingBar.transform);
         string motifName = appliedBandTexture != null ? appliedBandTexture.name.Replace("Band_", "").ToUpper() : "BAND";
         headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motifName));
         MorphicLoc.ApplyFont(headerText);
@@ -5895,7 +5855,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetHeaderBackVisible(true);
         MorphicLoc.Apply(instructionText, "Trace index finger across lantern to draw. Open palm to lock.");
         instructionText.fontSize = 20f;
-        instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
         instructionText.gameObject.SetActive(true);
         ResetDwell();
@@ -5919,7 +5878,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             bandColorChip.color = committedBandColor;
         selectedPart = 1;
         mode = ColorMode.SelectDrawMotif;
-        SetPanelHeight(BandSelectionPanelHeight);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.BandContentHeight, true));
         mainActionGroup.SetActive(false);
         partGroup.SetActive(false);
         if (variantGroup != null)
@@ -5940,6 +5899,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         MorphicLoc.Apply(headerText, "DRAW BAND");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
+        if (bandGroup != null)
+            MorphicStudioLayout.PlaceBandLayout(bandGroup.transform);
         MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on lantern.");
         ResetDwell();
         SetHoveredTarget(null);
@@ -5967,7 +5928,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
                     bName = bName.Substring(5);
                 MorphicLoc.Apply(label, bName.ToUpper());
                 label.fontSize = 18f;
-                label.fontStyle = FontStyles.Bold;
                 label.color = DarkTextGreen;
             }
         }
@@ -6008,14 +5968,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (bandTargetingBar != null)
             bandTargetingBar.SetActive(true);
 
-        SetPanelHeight(330f);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.TargetingContentHeight, true));
+        if (bandTargetingBar != null)
+            MorphicStudioLayout.PlaceTargetingBar(bandTargetingBar.transform);
         headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motif.name.Replace("Band_", "").ToUpperInvariant()));
         MorphicLoc.ApplyFont(headerText);
         SetHeaderBackLabel("← MOTIFS");
         SetHeaderBackVisible(true);
         MorphicLoc.Apply(instructionText, "Trace index finger across lantern to draw. Open palm to lock.");
         instructionText.fontSize = 20f;
-        instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
         instructionText.gameObject.SetActive(true);
         ResetDwell();
@@ -6053,6 +6014,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         {
             designGroup = existing.gameObject;
             BindExistingDesignButtons(existing);
+            RelayoutDesignGroup();
             designGroup.SetActive(false);
             return;
         }
@@ -6060,7 +6022,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         designGroup = new GameObject("DesignSelection", typeof(RectTransform));
         designGroup.transform.SetParent(panel.transform, false);
         RectTransform designRect = designGroup.GetComponent<RectTransform>();
-        DockTop(designRect, -124f, 420f);
+        MorphicStudioLayout.DockContent(designRect, true, MorphicStudioLayout.DesignContentHeight);
 
         for (int i = 0; i < designButtons.Length; i++)
         {
@@ -6070,8 +6032,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             designButtons[i] = CreateButton(
                 "Stamp" + i,
                 designRect,
-                new Vector2(-76f + column * 152f, -row * 78f),
-                new Vector2(138f, 70f),
+                new Vector2(
+                    column == 0 ? -MorphicStudioLayout.StampGapX * 0.5f : MorphicStudioLayout.StampGapX * 0.5f,
+                    -row * MorphicStudioLayout.StampGapY),
+                new Vector2(MorphicStudioLayout.StampW, MorphicStudioLayout.StampH),
                 "Stamp " + (i + 1),
                 PillPink);
             designButtons[i].onClick.AddListener(() => ApplyStamp(stampIndex));
@@ -6079,24 +6043,50 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             RegisterHitTarget(designButtons[i], false, true, default);
         }
 
+        float actionsY = MorphicStudioLayout.StampActionsY(designButtons.Length);
         Button tintButton = CreateButton(
-            "ChangeColor", designRect, new Vector2(0f, -246f),
+            "ChangeColor", designRect, new Vector2(0f, actionsY),
             new Vector2(PillWidth, PillHeight), "CHANGE COLOR", ActionPink);
         tintButton.onClick.AddListener(OpenDesignTintColor);
         RegisterHitTarget(tintButton, false, false, default);
 
         Button clearButton = CreateButton(
-            "ClearDesign", designRect, new Vector2(0f, -318f),
+            "ClearDesign", designRect, new Vector2(0f, actionsY - 80f),
             new Vector2(PillWidth, PillHeight), "CLEAR DESIGN", PillPink);
         clearButton.onClick.AddListener(ClearDesign);
         RegisterHitTarget(clearButton, false, false, default);
 
         Button done = CreateButton(
-            "Done", designRect, new Vector2(0f, -390f),
+            "Done", designRect, new Vector2(0f, actionsY - 160f),
             new Vector2(PillWidth, PillHeight), "DONE", DonePink);
         done.onClick.AddListener(ShowMainMenu);
         RegisterHitTarget(done, false, false, default);
         designGroup.SetActive(false);
+        RelayoutDesignGroup();
+    }
+
+    private void RelayoutDesignGroup()
+    {
+        if (designGroup == null)
+            return;
+
+        RectTransform designRect = designGroup.GetComponent<RectTransform>();
+        MorphicStudioLayout.DockContent(designRect, true, MorphicStudioLayout.DesignContentHeight);
+        MorphicStudioLayout.PlaceStampGrid(designButtons);
+
+        float actionsY = MorphicStudioLayout.StampActionsY(designButtons.Length);
+        float stride = MorphicStudioLayout.DesignActionStride;
+        SetChildPos(designGroup.transform, "ChangeColor", new Vector2(0f, actionsY));
+        SetChildPos(designGroup.transform, "ClearDesign", new Vector2(0f, actionsY - stride));
+        SetChildPos(designGroup.transform, "Done", new Vector2(0f, actionsY - stride * 2f));
+    }
+
+    private static void SetChildPos(Transform root, string childName, Vector2 position)
+    {
+        Transform child = root.Find(childName);
+        RectTransform rect = child as RectTransform;
+        if (rect != null)
+            rect.anchoredPosition = position;
     }
 
     private void BindExistingDesignButtons(Transform designRoot)

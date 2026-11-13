@@ -76,7 +76,6 @@ public class MorphicGestureHelpUI : MonoBehaviour
         LanguagePageBuilder.Stretch(label.Rect);
         if (label.Label != null)
         {
-            label.Label.fontStyle = FontStyles.Bold;
             label.Label.characterSpacing = 0.8f;
         }
 

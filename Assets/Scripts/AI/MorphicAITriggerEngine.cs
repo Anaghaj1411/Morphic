@@ -9,11 +9,13 @@ public class MorphicAITriggerEngine : MonoBehaviour
 
     [Header("AI Request Safety")]
     [SerializeField] private float minimumRequestInterval = 20f;
+    [SerializeField] private float userHelpDebounce = 0.2f;
 
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = true;
 
     private float nextAllowedRequestTime = 0f;
+    private float nextUserHelpTime;
 
     // One session ID for the entire current Play session.
     private string sessionId;
@@ -98,7 +100,7 @@ public class MorphicAITriggerEngine : MonoBehaviour
         {
             userQuestion = userQuestion,
             currentStage = currentStage
-        }, false);
+        }, false, true);
     }
 
     public bool RequestSculptHelp(MorphicCraftHelpState state)
@@ -106,7 +108,7 @@ public class MorphicAITriggerEngine : MonoBehaviour
         if (state == null)
             return false;
 
-        return TriggerAI("user_requested_help", state, true);
+        return TriggerAI("user_requested_help", state, true, true);
     }
 
     public void TriggerMeaningfulEvent(
@@ -119,17 +121,25 @@ public class MorphicAITriggerEngine : MonoBehaviour
     private bool TriggerAI(
         string eventType,
         MorphicCraftHelpState state,
-        bool live
+        bool live,
+        bool userAsked
     )
     {
         if (aiClient == null)
             return false;
 
-        if (Time.time < nextAllowedRequestTime)
-            return false;
-
-        if (aiClient.IsRequestRunning)
-            return false;
+        if (userAsked)
+        {
+            if (Time.time < nextUserHelpTime)
+                return false;
+        }
+        else
+        {
+            if (Time.time < nextAllowedRequestTime)
+                return false;
+            if (aiClient.IsRequestRunning)
+                return false;
+        }
 
         SculptContext context = new SculptContext
         {
@@ -170,7 +180,11 @@ public class MorphicAITriggerEngine : MonoBehaviour
             context = context
         };
 
-        nextAllowedRequestTime = Time.time + minimumRequestInterval;
+        if (userAsked)
+            nextUserHelpTime = Time.time + userHelpDebounce;
+        else
+            nextAllowedRequestTime = Time.time + minimumRequestInterval;
+
         aiClient.SendFeedback(JsonUtility.ToJson(eventData), live);
         return true;
     }

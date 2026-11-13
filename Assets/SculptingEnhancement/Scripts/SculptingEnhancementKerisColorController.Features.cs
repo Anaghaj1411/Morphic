@@ -778,7 +778,6 @@ public sealed partial class SculptingEnhancementKerisColorController
             labelText.text = MorphicLoc.F("BAND {0}", i + 1);
             MorphicLoc.ApplyFont(labelText);
             labelText.fontSize = 18f;
-            labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
             labelText.color = DarkTextGreen;
             labelText.raycastTarget = false;
@@ -812,7 +811,6 @@ public sealed partial class SculptingEnhancementKerisColorController
             if (sizeText != null)
             {
                 sizeText.fontSize = 18f;
-                sizeText.fontStyle = FontStyles.Bold;
                 sizeText.color = DarkTextGreen;
             }
             bandSizeButtons[s].onClick.AddListener(() => SelectBandSize(sizeIdx));
@@ -827,7 +825,6 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (bColText != null)
         {
             bColText.fontSize = 24f;
-            bColText.fontStyle = FontStyles.Bold;
             bColText.color = DarkTextGreen;
         }
         RegisterHitTarget(bandColorBtn, false, false, Color.white);
@@ -852,7 +849,6 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (clearText != null)
         {
             clearText.fontSize = 22f;
-            clearText.fontStyle = FontStyles.Bold;
             clearText.color = DarkTextGreen;
         }
         clearStrokes.onClick.AddListener(() =>
@@ -928,14 +924,15 @@ public sealed partial class SculptingEnhancementKerisColorController
             bandTargetingBar.SetActive(true);
         if (historyBar != null)
             historyBar.SetActive(false);
-        SetPanelHeight(330f);
+        SetPanelHeight(MorphicStudioLayout.CardHeight(MorphicStudioLayout.TargetingContentHeight, true));
+        if (bandTargetingBar != null)
+            MorphicStudioLayout.PlaceTargetingBar(bandTargetingBar.transform);
         headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motifName.ToUpperInvariant()));
         MorphicLoc.ApplyFont(headerText);
         SetHeaderBackLabel("← MOTIFS");
         SetHeaderBackVisible(true);
         instructionText.gameObject.SetActive(true);
         instructionText.fontSize = 20f;
-        instructionText.fontStyle = FontStyles.Bold;
         instructionText.color = DarkTextGreen;
         MorphicLoc.Apply(instructionText, "Trace index finger across the keris to draw. Open palm to lock.");
         ResetDwell();
@@ -1019,11 +1016,11 @@ public sealed partial class SculptingEnhancementKerisColorController
         bandTargetingBar = new GameObject("BandTargetingBar", typeof(RectTransform));
         bandTargetingBar.transform.SetParent(panel.transform, false);
         RectTransform barRect = bandTargetingBar.GetComponent<RectTransform>();
-        DockTop(barRect, -116f, 56f);
+        MorphicStudioLayout.DockContent(barRect, true, MorphicStudioLayout.TargetingContentHeight);
 
         targetingSizeBtn = CreateButton(
-            "TargetingSize", barRect, new Vector2(-187f, 0f),
-            new Vector2(126f, 48f),
+            "TargetingSize", barRect, new Vector2(-118f, -8f),
+            new Vector2(236f, 64f),
             "SIZE: " + bandSizeLabels[selectedBandSizeIndex], PillPink);
         targetingSizeBtn.onClick.AddListener(() =>
         {
@@ -1032,8 +1029,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         RegisterHitTarget(targetingSizeBtn, false, false, Color.white);
 
         targetingColorBtn = CreateButton(
-            "TargetingColor", barRect, new Vector2(-80f, 0f),
-            new Vector2(84f, 48f), "COLOR", ActionPink);
+            "TargetingColor", barRect, new Vector2(118f, -8f),
+            new Vector2(236f, 64f), "COLOR", ActionPink);
         targetingColorBtn.onClick.AddListener(() =>
         {
             returnToBandDrawing = true;
@@ -1042,8 +1039,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         RegisterHitTarget(targetingColorBtn, false, false, Color.white);
 
         Button undoBtn = CreateButton(
-            "TargetingUndo", barRect, new Vector2(8f, 0f),
-            new Vector2(84f, 48f), "UNDO", PillPink);
+            "TargetingUndo", barRect, new Vector2(-156f, -88f),
+            new Vector2(148f, 64f), "UNDO", PillPink);
         undoBtn.onClick.AddListener(() =>
         {
             if (patternPainter != null)
@@ -1053,8 +1050,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         RegisterHitTarget(undoBtn, false, false, Color.white);
 
         Button redoBtn = CreateButton(
-            "TargetingRedo", barRect, new Vector2(96f, 0f),
-            new Vector2(84f, 48f), "REDO", PillPink);
+            "TargetingRedo", barRect, new Vector2(0f, -88f),
+            new Vector2(148f, 64f), "REDO", PillPink);
         redoBtn.onClick.AddListener(() =>
         {
             if (patternPainter != null)
@@ -1064,8 +1061,8 @@ public sealed partial class SculptingEnhancementKerisColorController
         RegisterHitTarget(redoBtn, false, false, Color.white);
 
         Button clearBtn = CreateButton(
-            "TargetingClear", barRect, new Vector2(186f, 0f),
-            new Vector2(92f, 48f), "CLEAR", PillPink);
+            "TargetingClear", barRect, new Vector2(156f, -88f),
+            new Vector2(148f, 64f), "CLEAR", PillPink);
         clearBtn.onClick.AddListener(() =>
         {
             if (patternPainter != null)
@@ -1073,6 +1070,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             MorphicLoc.Apply(instructionText, "All drawings cleared.");
         });
         RegisterHitTarget(clearBtn, false, false, Color.white);
+        MorphicStudioLayout.PlaceTargetingBar(bandTargetingBar.transform);
         bandTargetingBar.SetActive(false);
     }
 

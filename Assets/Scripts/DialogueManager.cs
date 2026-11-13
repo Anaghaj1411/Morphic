@@ -88,6 +88,8 @@ public class DialogueManager : MonoBehaviour
     private MorphicRotationResetUI rotationResetUi;
     private MorphicGestureHelpUI gestureHelpUi;
     private MorphicSculptZoomUI zoomUi;
+    private MorphicStudioHelpUI studioHelpUi;
+    private MorphicSettingsUI settingsUi;
     private GameObject sculptBackRoot;
     private GameObject menuBackRoot;
     private GameObject craftExitRoot;
@@ -96,6 +98,7 @@ public class DialogueManager : MonoBehaviour
     private int currentDialogueNode = -1;
     private string currentCraftIntro;
     private DialogueButtonClickSound dialogueButtonSound;
+    private MorphicLisaPortrait lisaPortrait;
 
     private void Awake()
     {
@@ -103,6 +106,7 @@ public class DialogueManager : MonoBehaviour
         EnsureDialogueButtonSound();
         StyleDialogueUi();
         StyleCultureChoices();
+        EnsureLisaPortrait();
 
         // The Teapot gesture label is a scene UI element, so hide it on the
         // main menu even if it is not parented under the inactive Teapot.
@@ -135,6 +139,13 @@ public class DialogueManager : MonoBehaviour
         if (zoomUi == null)
             zoomUi = gameObject.AddComponent<MorphicSculptZoomUI>();
         zoomUi.SetVisible(false);
+
+        studioHelpUi = FindFirstObjectByType<MorphicStudioHelpUI>(FindObjectsInactive.Include);
+        if (studioHelpUi == null)
+            studioHelpUi = gameObject.AddComponent<MorphicStudioHelpUI>();
+        studioHelpUi.SetVisible(false);
+
+        SetSettingsVisible(false);
 
         // The teapot is placed in the scene like the lantern, but stays hidden
         // until the user chooses India and presses Start Sculpting.
@@ -228,7 +239,7 @@ public class DialogueManager : MonoBehaviour
         dialogueButtonSound.RegisterAllSceneButtons();
     }
 
-    private void AddHoverEffect(Button btn)
+    private static void AddHoverEffect(Button btn)
     {
         if (btn != null &&
             btn.gameObject.GetComponent<ButtonHoverEffect>() == null)
@@ -270,6 +281,7 @@ public class DialogueManager : MonoBehaviour
     private void OnStartTransitionCompleted()
     {
         SetMenuBackVisible(true);
+        SetSettingsVisible(true);
 
         if (!restartDialogueOnMenuStart)
             return;
@@ -310,6 +322,8 @@ public class DialogueManager : MonoBehaviour
         if (dialoguePanel != null)
             dialoguePanel.SetActive(true);
 
+        SetSettingsVisible(true);
+        SetLisaPortraitVisible(true);
         ShowNode(0);
     }
 
@@ -478,12 +492,12 @@ public class DialogueManager : MonoBehaviour
 
     private void SetDialogue(string speaker, string message)
     {
-        ApplyDialogueLabel(speakerName, speaker, new Color32(42, 83, 49, 255));
-        ApplyDialogueLabel(dialogueText, message, new Color32(48, 48, 39, 255));
+        ApplyDialogueLabel(speakerName, speaker, false);
+        ApplyDialogueLabel(dialogueText, message, true);
         MorphicLisaVoice.SpeakLine(message);
     }
 
-    private static void ApplyDialogueLabel(TMP_Text label, string message, Color32 color)
+    private static void ApplyDialogueLabel(TMP_Text label, string message, bool body)
     {
         if (label == null)
             return;
@@ -491,8 +505,10 @@ public class DialogueManager : MonoBehaviour
         label.gameObject.SetActive(true);
         label.enabled = true;
         MorphicLoc.Bind(label, message);
-        label.color = color;
-        label.alpha = 1f;
+        if (body)
+            MorphicText.FitDialogue(label);
+        else
+            MorphicText.FitButton(label);
         if (label.rectTransform.rect.width > 1f &&
             label.rectTransform.rect.height > 1f)
             label.ForceMeshUpdate();
@@ -502,8 +518,10 @@ public class DialogueManager : MonoBehaviour
             if (label == null)
                 return;
             MorphicLoc.Bind(label, message);
-            label.color = color;
-            label.alpha = 1f;
+            if (body)
+                MorphicText.FitDialogue(label);
+            else
+                MorphicText.FitButton(label);
             label.ForceMeshUpdate();
         });
     }
@@ -549,54 +567,86 @@ public class DialogueManager : MonoBehaviour
             panelRect.pivot = new Vector2(0.5f, 0f);
             panelRect.anchoredPosition = new Vector2(0f, 24f);
             panelRect.sizeDelta = new Vector2(
-                Mathf.Min(1180f, Mathf.Max(640f, availableWidth)),
-                340f);
+                Mathf.Min(820f, Mathf.Max(560f, availableWidth)),
+                300f);
         }
+
+        MorphicText.StripGhostTree(dialoguePanel.transform);
 
         Image panelImage = dialoguePanel.GetComponent<Image>();
         if (panelImage != null)
         {
             LanguagePageBuilder.ApplyRoundedSprite(panelImage, 32);
-            panelImage.color = new Color32(255, 239, 214, 255);
+            panelImage.color = LanguagePageBuilder.Green;
+            LanguagePageBuilder.Polish(panelImage, 32, LanguagePageBuilder.Green);
         }
 
-        Outline panelOutline = dialoguePanel.GetComponent<Outline>();
-        if (panelOutline != null)
+        Transform innerTransform = dialoguePanel.transform.Find("MorphicInner");
+        if (innerTransform == null)
         {
-            panelOutline.effectColor = new Color32(42, 83, 49, 235);
-            panelOutline.effectDistance = new Vector2(2f, -3f);
+            Image inner = LanguagePageBuilder.CreateRoundedImage(
+                "MorphicInner", dialoguePanel.transform, 28, LanguagePageBuilder.Cream, false);
+            inner.transform.SetAsFirstSibling();
+            LanguagePageBuilder.Stretch(inner.rectTransform, new Vector2(14f, 14f));
+            inner.raycastTarget = false;
+            innerTransform = inner.transform;
+        }
+        else
+        {
+            StripGloss(innerTransform);
+            Image innerImage = innerTransform.GetComponent<Image>();
+            if (innerImage != null)
+                innerImage.color = LanguagePageBuilder.Cream;
+            LanguagePageBuilder.Stretch(innerTransform as RectTransform, new Vector2(14f, 14f));
+            RectMask2D mask = innerTransform.GetComponent<RectMask2D>();
+            if (mask != null)
+                Object.DestroyImmediate(mask);
         }
 
-        Shadow panelShadow = dialoguePanel.GetComponent<Shadow>();
-        if (panelShadow == null)
-            panelShadow = dialoguePanel.AddComponent<Shadow>();
-        panelShadow.effectColor = new Color(0.08f, 0.12f, 0.08f, 0.24f);
-        panelShadow.effectDistance = new Vector2(0f, -7f);
-        panelShadow.useGraphicAlpha = true;
+        if (speakerName != null && dialoguePanel.transform.Find("LisaChip") == null)
+        {
+            Image chip = LanguagePageBuilder.CreateRoundedImage(
+                "LisaChip", dialoguePanel.transform, 20, LanguagePageBuilder.Green, false);
+            RectTransform chipRect = chip.rectTransform;
+            chipRect.anchorMin = chipRect.anchorMax = new Vector2(0f, 1f);
+            chipRect.pivot = new Vector2(0f, 0.5f);
+            chipRect.anchoredPosition = new Vector2(28f, 8f);
+            chipRect.sizeDelta = new Vector2(168f, 44f);
+            chip.raycastTarget = false;
 
-        StyleDialogueText(speakerName, 23f, 18f, 26f, false);
-        StyleDialogueText(dialogueText, 21f, 17f, 24f, true);
+            Image chipFill = LanguagePageBuilder.CreateRoundedImage(
+                "Fill", chip.transform, 16, LanguagePageBuilder.Pink);
+            LanguagePageBuilder.Stretch(chipFill.rectTransform, new Vector2(4f, 4f));
+            chipFill.raycastTarget = false;
+        }
+
+        StyleDialogueText(speakerName, 22f, 16f, 26f, false);
+        StyleDialogueText(dialogueText, 20f, 16f, 24f, true);
 
         if (speakerName != null)
         {
-            speakerName.color = new Color32(42, 83, 49, 255);
-            speakerName.fontStyle = FontStyles.Bold;
-            speakerName.alignment = TextAlignmentOptions.MidlineLeft;
+            speakerName.alignment = TextAlignmentOptions.Center;
+            MorphicText.FitButton(speakerName);
             SetTextRect(speakerName.rectTransform,
-                new Vector2(36f, -20f), new Vector2(280f, 40f),
+                new Vector2(28f, 8f), new Vector2(168f, 44f),
                 new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(0f, 1f));
+                new Vector2(0f, 0.5f));
+            speakerName.transform.SetAsLastSibling();
         }
 
         if (dialogueText != null)
         {
-            dialogueText.color = new Color32(48, 48, 39, 255);
-            dialogueText.alignment = TextAlignmentOptions.TopLeft;
+            if (innerTransform != null && dialogueText.transform.parent == innerTransform)
+                dialogueText.transform.SetParent(dialoguePanel.transform, false);
+
+            MorphicText.FitDialogue(dialogueText);
             SetTextRect(dialogueText.rectTransform,
                 Vector2.zero, Vector2.zero,
                 Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
-            dialogueText.rectTransform.offsetMin = new Vector2(36f, 108f);
-            dialogueText.rectTransform.offsetMax = new Vector2(-36f, -72f);
+            dialogueText.rectTransform.offsetMin = new Vector2(32f, 84f);
+            dialogueText.rectTransform.offsetMax = new Vector2(-32f, -36f);
+            dialogueText.overflowMode = TextOverflowModes.Overflow;
+            dialogueText.transform.SetAsLastSibling();
         }
 
         Button[] choices = { choice1Button, choice2Button, choice3Button, choice4Button };
@@ -644,7 +694,7 @@ public class DialogueManager : MonoBehaviour
         }
 
         if (dialogueText != null)
-            dialogueText.rectTransform.offsetMin = new Vector2(36f, compact ? 68f : 108f);
+            dialogueText.rectTransform.offsetMin = new Vector2(32f, compact ? 64f : 84f);
     }
 
     private static void StyleChoiceButton(Button button, bool compact = false)
@@ -688,7 +738,11 @@ public class DialogueManager : MonoBehaviour
             fill.raycastTarget = true;
             fill.transform.SetAsFirstSibling();
             button.targetGraphic = fill;
+            LanguagePageBuilder.Polish(fill, 20, LanguagePageBuilder.Pink);
         }
+
+        button.colors = LanguagePageBuilder.ButtonColors();
+        AddHoverEffect(button);
 
         LayoutElement layout = button.GetComponent<LayoutElement>();
         if (layout == null)
@@ -709,36 +763,16 @@ public class DialogueManager : MonoBehaviour
         label.transform.SetAsLastSibling();
         label.gameObject.SetActive(true);
         label.enabled = true;
-        label.enableAutoSizing = false;
-        label.fontSizeMin = compact ? 14f : 16f;
-        label.fontSizeMax = compact ? 20f : 26f;
-        label.fontSize = compact ? 20f : 24f;
-        label.fontStyle = FontStyles.Bold;
-        label.characterSpacing = 0.4f;
-        label.color = LanguagePageBuilder.Green;
-        label.alpha = 1f;
-        label.alignment = TextAlignmentOptions.Center;
-        label.enableWordWrapping = false;
-        label.overflowMode = TextOverflowModes.Overflow;
         label.raycastTarget = false;
         LanguagePageBuilder.Stretch(label.rectTransform, new Vector2(12f, 6f));
-
-        Outline textOutline = label.GetComponent<Outline>();
-        if (textOutline != null)
-            textOutline.enabled = false;
+        MorphicText.FitButton(label);
     }
 
     private static void FinishChoiceLabel(TMP_Text label)
     {
         if (label == null)
             return;
-        label.enableAutoSizing = false;
-        if (label.fontSize < 16f)
-            label.fontSize = 22f;
-        label.color = LanguagePageBuilder.Green;
-        label.alpha = 1f;
-        label.overflowMode = TextOverflowModes.Overflow;
-        label.enableWordWrapping = false;
+        MorphicText.FitButton(label);
     }
 
     private void StyleCultureChoices()
@@ -751,8 +785,8 @@ public class DialogueManager : MonoBehaviour
         {
             panelRect.anchorMin = panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.anchoredPosition = new Vector2(0f, 36f);
-            panelRect.sizeDelta = new Vector2(1480f, 420f);
+            panelRect.anchoredPosition = new Vector2(0f, 48f);
+            panelRect.sizeDelta = new Vector2(1240f, 400f);
         }
 
         Image background = cultureChoicesPanel.GetComponent<Image>();
@@ -769,8 +803,8 @@ public class DialogueManager : MonoBehaviour
             IgnoreLayout(frame.gameObject);
 
             Image fill = LanguagePageBuilder.CreateRoundedImage(
-                "Fill", frame.transform, 32, new Color32(255, 239, 214, 245));
-            LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(10f, 10f));
+                "Fill", frame.transform, 28, LanguagePageBuilder.Cream, false);
+            LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(12f, 12f));
             fill.raycastTarget = false;
         }
 
@@ -783,7 +817,7 @@ public class DialogueManager : MonoBehaviour
             titleRect.anchorMin = titleRect.anchorMax = new Vector2(0.5f, 1f);
             titleRect.pivot = new Vector2(0.5f, 0.5f);
             titleRect.anchoredPosition = new Vector2(0f, 18f);
-            titleRect.sizeDelta = new Vector2(420f, 56f);
+            titleRect.sizeDelta = new Vector2(480f, 60f);
             title.raycastTarget = false;
 
             Image titleFill = LanguagePageBuilder.CreateRoundedImage(
@@ -795,19 +829,18 @@ public class DialogueManager : MonoBehaviour
             labelObject.transform.SetParent(titleFill.transform, false);
             TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
             MorphicLoc.Bind(label, "CHOOSE A CRAFT");
-            label.fontSize = 24f;
-            label.fontStyle = FontStyles.Bold;
+            label.fontSize = MorphicText.Size(24f);
             label.alignment = TextAlignmentOptions.Center;
-            label.color = LanguagePageBuilder.Green;
             label.raycastTarget = false;
             LanguagePageBuilder.Stretch(label.rectTransform);
+            MorphicText.Style(label);
         }
 
         HorizontalLayoutGroup layout = cultureChoicesPanel.GetComponent<HorizontalLayoutGroup>();
         if (layout != null)
         {
-            layout.padding = new RectOffset(40, 40, 52, 32);
-            layout.spacing = 28f;
+            layout.padding = new RectOffset(48, 48, 56, 36);
+            layout.spacing = 36f;
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.childForceExpandWidth = false;
             layout.childForceExpandHeight = false;
@@ -824,13 +857,40 @@ public class DialogueManager : MonoBehaviour
 
             RectTransform rect = button.transform as RectTransform;
             if (rect != null)
-                rect.sizeDelta = new Vector2(300f, 300f);
+                rect.sizeDelta = new Vector2(260f, 260f);
+
+            Image card = button.GetComponent<Image>();
+            if (card != null)
+            {
+                bool keepArt = card.sprite != null &&
+                    card.sprite.name.IndexOf("Rounded", System.StringComparison.Ordinal) < 0;
+                if (!keepArt)
+                {
+                    LanguagePageBuilder.ApplyRoundedSprite(card, 28);
+                    card.color = LanguagePageBuilder.Green;
+                    LanguagePageBuilder.Polish(card, 28, LanguagePageBuilder.Green);
+                    if (button.transform.Find("MorphicFill") == null)
+                    {
+                        Image fill = LanguagePageBuilder.CreateRoundedImage(
+                            "MorphicFill", button.transform, 24, LanguagePageBuilder.Cream);
+                        fill.transform.SetAsFirstSibling();
+                        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(8f, 8f));
+                        fill.raycastTarget = false;
+                    }
+                }
+                else
+                {
+                    Shadow artShadow = card.GetComponent<Shadow>();
+                    if (artShadow == null)
+                        artShadow = card.gameObject.AddComponent<Shadow>();
+                    artShadow.effectColor = new Color(0.05f, 0.1f, 0.03f, 0.4f);
+                    artShadow.effectDistance = new Vector2(0f, -6f);
+                }
+            }
 
             Outline outline = button.GetComponent<Outline>();
-            if (outline == null)
-                outline = button.gameObject.AddComponent<Outline>();
-            outline.effectColor = LanguagePageBuilder.Green;
-            outline.effectDistance = new Vector2(4f, -4f);
+            if (outline != null)
+                outline.enabled = false;
         }
     }
 
@@ -844,13 +904,11 @@ public class DialogueManager : MonoBehaviour
         if (text == null)
             return;
 
-        text.enableAutoSizing = true;
-        text.fontSize = size;
-        text.fontSizeMin = minimumSize;
-        text.fontSizeMax = maximumSize;
-        text.enableWordWrapping = wrap;
-        text.overflowMode = TextOverflowModes.Overflow;
         text.raycastTarget = false;
+        if (wrap)
+            MorphicText.FitDialogue(text);
+        else
+            MorphicText.FitButton(text);
     }
 
     private static void SetTextRect(
@@ -869,6 +927,19 @@ public class DialogueManager : MonoBehaviour
         rect.pivot = pivot;
         rect.anchoredPosition = position;
         rect.sizeDelta = size;
+    }
+
+    private static void StripGloss(Transform root)
+    {
+        if (root == null)
+            return;
+        string[] names = { "Shine", "Specular", "Shade" };
+        for (int i = 0; i < names.Length; i++)
+        {
+            Transform child = root.Find(names[i]);
+            if (child != null)
+                Object.DestroyImmediate(child.gameObject);
+        }
     }
 
     private static void IgnoreLayout(GameObject target)
@@ -925,7 +996,13 @@ public class DialogueManager : MonoBehaviour
             return;
         }
 
+        if (dialoguePanel != null)
+            dialoguePanel.SetActive(true);
+
         cultureChoicesPanel.SetActive(true);
+        if (cultureChoicesPanel.transform.parent != null)
+            cultureChoicesPanel.transform.parent.gameObject.SetActive(true);
+        cultureChoicesPanel.transform.SetAsLastSibling();
 
         Transform title = cultureChoicesPanel.transform.Find("Title/Fill/Label");
         if (title != null)
@@ -987,6 +1064,9 @@ public class DialogueManager : MonoBehaviour
             return;
         }
 
+        MorphicLisaVoice.Stop();
+        SetLisaPortraitVisible(false);
+
         cameraTransition.PotteryStudioTransitionCompleted
             -= OnCameraFinished;
 
@@ -1018,6 +1098,8 @@ public class DialogueManager : MonoBehaviour
             dialoguePanel.SetActive(true);
         }
 
+        SetSettingsVisible(true);
+        SetLisaPortraitVisible(false);
         ShowNode(10);
     }
 
@@ -1105,17 +1187,11 @@ public class DialogueManager : MonoBehaviour
         MorphicLisaVoice.Stop();
         HideAllChoices();
         HideCultureChoices();
+        SetLisaPortraitVisible(false);
         SetMenuBackVisible(false);
 
         // Hide AI help dialog when switching cultures
-        if (aiHelpUi != null)
-            aiHelpUi.SetVisible(false);
-        if (rotationResetUi != null)
-            rotationResetUi.SetVisible(false);
-        if (gestureHelpUi != null)
-            gestureHelpUi.SetVisible(false);
-        if (zoomUi != null)
-            zoomUi.SetVisible(false);
+        HideStudioHud();
 
         if (lanternColorController == null)
         {
@@ -1269,7 +1345,7 @@ public class DialogueManager : MonoBehaviour
                 }
                 if (teapotColorController != null)
                     teapotColorController.SetPaletteAvailable(false);
-                ShowAiHelp();
+                ShowStudioHud();
                 SetLanternSculptDriving(false);
                 StartLanternGestureTutorial();
 
@@ -1366,7 +1442,7 @@ public class DialogueManager : MonoBehaviour
                     teapotColorController.SetPaletteAvailable(false);
                     if (teapotGestures != null)
                         teapotGestures.suppressDriving = true;
-                    ShowAiHelp();
+                    ShowStudioHud();
                     StartTeapotGestureTutorial();
                 }
                 else
@@ -1422,7 +1498,7 @@ public class DialogueManager : MonoBehaviour
                         indonesiaKeris.GetComponentInChildren<KerisGestureController>(true);
                     if (kerisGestures != null)
                         kerisGestures.suppressDriving = true;
-                    ShowAiHelp();
+                    ShowStudioHud();
                     StartKerisGestureTutorial();
                 }
                 else
@@ -1838,34 +1914,110 @@ public class DialogueManager : MonoBehaviour
             teapotColorController.SetPaletteAvailable(true);
         }
 
-        ShowAiHelp();
+        ShowStudioHud();
     }
 
-    private void ShowAiHelp()
+    private void ShowStudioHud()
     {
-        if (aiHelpUi == null)
-            aiHelpUi = FindFirstObjectByType<MorphicAIHelpUI>(FindObjectsInactive.Include);
-        if (aiHelpUi == null)
-            aiHelpUi = gameObject.AddComponent<MorphicAIHelpUI>();
-        aiHelpUi.SetVisible(true);
+        if (aiHelpUi != null)
+            aiHelpUi.SetVisible(false);
+        if (rotationResetUi != null)
+            rotationResetUi.SetVisible(false);
+        if (gestureHelpUi != null)
+            gestureHelpUi.SetVisible(false);
 
-        if (rotationResetUi == null)
-            rotationResetUi = FindFirstObjectByType<MorphicRotationResetUI>(FindObjectsInactive.Include);
-        if (rotationResetUi == null)
-            rotationResetUi = gameObject.AddComponent<MorphicRotationResetUI>();
-        rotationResetUi.SetVisible(true);
-
-        if (gestureHelpUi == null)
-            gestureHelpUi = FindFirstObjectByType<MorphicGestureHelpUI>(FindObjectsInactive.Include);
-        if (gestureHelpUi == null)
-            gestureHelpUi = gameObject.AddComponent<MorphicGestureHelpUI>();
-        gestureHelpUi.SetVisible(true);
+        if (studioHelpUi == null)
+            studioHelpUi = FindFirstObjectByType<MorphicStudioHelpUI>(FindObjectsInactive.Include);
+        if (studioHelpUi == null)
+            studioHelpUi = gameObject.AddComponent<MorphicStudioHelpUI>();
+        studioHelpUi.SetVisible(true);
+        SetSettingsVisible(true);
+        if (aiHelpUi != null)
+            aiHelpUi.WarmBackend();
 
         if (zoomUi == null)
             zoomUi = FindFirstObjectByType<MorphicSculptZoomUI>(FindObjectsInactive.Include);
         if (zoomUi == null)
             zoomUi = gameObject.AddComponent<MorphicSculptZoomUI>();
         zoomUi.SetVisible(true);
+    }
+
+    private void EnsureLisaPortrait()
+    {
+        if (lisaPortrait != null)
+            return;
+        Transform canvas = null;
+        if (dialoguePanel != null)
+            canvas = dialoguePanel.transform.parent;
+        if (canvas == null)
+        {
+            Canvas found = FindFirstObjectByType<Canvas>();
+            if (found != null)
+                canvas = found.transform;
+        }
+        if (canvas == null)
+            return;
+        lisaPortrait = MorphicLisaPortrait.Ensure(canvas);
+        lisaPortrait.SetVisible(false);
+    }
+
+    private void SetLisaPortraitVisible(bool visible)
+    {
+        EnsureLisaPortrait();
+        if (lisaPortrait != null)
+            lisaPortrait.SetVisible(visible);
+        ShiftDialogueForLisa(visible);
+    }
+
+    private void ShiftDialogueForLisa(bool lisaVisible)
+    {
+        RectTransform panelRect = dialoguePanel != null
+            ? dialoguePanel.transform as RectTransform
+            : null;
+        if (panelRect == null)
+            return;
+
+        panelRect.anchoredPosition = new Vector2(0f, 24f);
+        panelRect.sizeDelta = new Vector2(820f, 300f);
+    }
+
+    private void SetSettingsVisible(bool visible)
+    {
+        if (settingsUi == null)
+            settingsUi = FindFirstObjectByType<MorphicSettingsUI>(FindObjectsInactive.Include);
+        if (settingsUi == null)
+            settingsUi = gameObject.AddComponent<MorphicSettingsUI>();
+
+        bool showPill = visible && !IsHomeMenuShowing();
+        settingsUi.SetVisible(showPill);
+        if (!visible)
+            settingsUi.HideSheet();
+    }
+
+    private static bool IsHomeMenuShowing()
+    {
+        GameObject start = GameObject.Find("Start Button");
+        if (start == null || !start.activeInHierarchy)
+            return false;
+
+        CanvasGroup group = start.GetComponent<CanvasGroup>();
+        if (group == null)
+            return true;
+        return group.alpha > 0.2f && (group.interactable || group.blocksRaycasts);
+    }
+
+    private void HideStudioHud()
+    {
+        if (aiHelpUi != null)
+            aiHelpUi.SetVisible(false);
+        if (rotationResetUi != null)
+            rotationResetUi.SetVisible(false);
+        if (gestureHelpUi != null)
+            gestureHelpUi.SetVisible(false);
+        if (zoomUi != null)
+            zoomUi.SetVisible(false);
+        if (studioHelpUi != null)
+            studioHelpUi.SetVisible(false);
     }
 
     private void EnsureCraftExitButton()
@@ -2019,6 +2171,8 @@ public class DialogueManager : MonoBehaviour
         menuBackRoot.SetActive(visible);
         if (visible)
             menuBackRoot.transform.SetAsLastSibling();
+        if (visible)
+            SetSettingsVisible(true);
     }
 
     private void ReturnToMainMenu()
@@ -2033,6 +2187,8 @@ public class DialogueManager : MonoBehaviour
         if (dialoguePanel != null)
             dialoguePanel.SetActive(false);
 
+        SetLisaPortraitVisible(false);
+
         if (dialogueCoroutine != null)
         {
             StopCoroutine(dialogueCoroutine);
@@ -2042,14 +2198,8 @@ public class DialogueManager : MonoBehaviour
         dialogueStarted = false;
         restartDialogueOnMenuStart = true;
 
-        if (aiHelpUi != null)
-            aiHelpUi.SetVisible(false);
-        if (rotationResetUi != null)
-            rotationResetUi.SetVisible(false);
-        if (gestureHelpUi != null)
-            gestureHelpUi.SetVisible(false);
-        if (zoomUi != null)
-            zoomUi.SetVisible(false);
+        HideStudioHud();
+        SetSettingsVisible(false);
 
         FindMissingReferences();
         if (cameraTransition == null)
@@ -2069,14 +2219,7 @@ public class DialogueManager : MonoBehaviour
     {
         SetSculptBackVisible(false);
 
-        if (aiHelpUi != null)
-            aiHelpUi.SetVisible(false);
-        if (rotationResetUi != null)
-            rotationResetUi.SetVisible(false);
-        if (gestureHelpUi != null)
-            gestureHelpUi.SetVisible(false);
-        if (zoomUi != null)
-            zoomUi.SetVisible(false);
+        HideStudioHud();
 
         SculptingGestureTutorial lanternTutorial =
             GetComponent<SculptingGestureTutorial>();
@@ -2168,7 +2311,7 @@ public class DialogueManager : MonoBehaviour
             kerisColorController.SetPaletteAvailable(true);
         }
 
-        ShowAiHelp();
+        ShowStudioHud();
     }
 
     public void OpenGestureCards()

@@ -76,7 +76,8 @@ public sealed class KerisGestureController : MonoBehaviour
         LeftPinch,
         TwoV,
         SingleFist,
-        OpenPalm
+        OpenPalm,
+        PointIndex
     }
 
     private bool practiceRightPinchHeld;
@@ -341,6 +342,8 @@ public sealed class KerisGestureController : MonoBehaviour
             return PracticeGesture.SingleFist;
         if (hasTwo && LooksLikeHandleFist(second) && !LooksLikeHandleFist(first))
             return PracticeGesture.SingleFist;
+        if ((IsIndexPointing(first) || (hasTwo && IsIndexPointing(second))) && !twoIndex)
+            return PracticeGesture.PointIndex;
         if (IsOpenPalm(first) || (hasTwo && IsOpenPalm(second)))
             return PracticeGesture.OpenPalm;
         return PracticeGesture.None;

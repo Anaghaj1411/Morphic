@@ -32,8 +32,8 @@ public class VertexSculptController : MonoBehaviour
     [SerializeField, Min(0.1f)] private float holdAccelerationTime = 0.8f;
     [Header("Stroke Stabilization")]
     [SerializeField, Range(0f, 1f)] private float stabilization = 0.45f;
-    [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 1.4f;
-    [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.02f;
+        [SerializeField, Range(0.4f, 8f)] private float oneEuroMinCutoff = 4.2f;
+        [SerializeField, Range(0.001f, 0.2f)] private float oneEuroBeta = 0.08f;
     [SerializeField, Range(8f, 72f)] private float pullPixels = 16f;
     [SerializeField, Min(0f)] private float pinchStartDistance = 0.055f;
     [SerializeField, Min(0f)] private float pinchReleaseDistance = 0.08f;
@@ -103,9 +103,11 @@ public class VertexSculptController : MonoBehaviour
             sculptingCamera = Camera.main;
         if (handRunner == null)
             handRunner = FindFirstObjectByType<SculptHandLandmarkerRunner>();
-        handTrackingGracePeriod = 0.4f;
+        handTrackingGracePeriod = 0.7f;
         cursorMissGracePeriod = 0.35f;
         stabilization = 0.45f;
+        oneEuroMinCutoff = 4.2f;
+        oneEuroBeta = 0.08f;
         pullPixels = 16f;
         InitializeMesh();
         CreateBrushIndicator();
@@ -145,7 +147,7 @@ public class VertexSculptController : MonoBehaviour
             return;
         }
 
-        if (!handRunner.TryGetLatestHand(out SculptHandFrame hand))
+        if (!TryGetTrackedHand(out SculptHandFrame hand))
         {
             bool trackingTimedOut = lastValidHandTime < 0f ||
                 Time.unscaledTime - lastValidHandTime > handTrackingGracePeriod;
@@ -162,9 +164,19 @@ public class VertexSculptController : MonoBehaviour
 
         lastValidHandTime = Time.unscaledTime;
 
+        if (!TryGetPointingHand(out hand))
+        {
+            if (isSculptPinching)
+                FinishSculptStroke();
+            isSculptPinching = false;
+            pinchHoldDuration = 0f;
+            HideBrush();
+            SetDebugStatus("Vertex Sculpt: Point your index finger to sculpt. Fist rotates.");
+            return;
+        }
+
         bool wasPinching = isSculptPinching;
-        float pinchThreshold = wasPinching ? pinchReleaseDistance : pinchStartDistance;
-        bool pinchNow = !uiBlocked && hand.PinchDistance <= pinchThreshold;
+        bool pinchNow = !uiBlocked;
         isSculptPinching = pinchNow;
         if (isSculptPinching && !wasPinching && !undoBlockedUntilPinchRelease)
             BeginSculptStroke();
@@ -196,8 +208,8 @@ public class VertexSculptController : MonoBehaviour
                 int movedVertexCount = Sculpt(
                     hit.point, hit.normal, Time.deltaTime * sculptRate * speedMultiplier);
                 SetDebugStatus(movedVertexCount > 0
-                    ? "Vertex Sculpt: Pinch is moving mesh vertices."
-                    : "Vertex Sculpt: Pinch detected, but the brush found no vertices to move.");
+                    ? "Vertex Sculpt: Index is pushing the clay."
+                    : "Vertex Sculpt: Index is on the mesh, but no vertices moved.");
             }
             else
             {
@@ -218,6 +230,55 @@ public class VertexSculptController : MonoBehaviour
 
         lastDebugStatus = status;
         Debug.Log(status, this);
+    }
+
+    private bool TryGetTrackedHand(out SculptHandFrame hand)
+    {
+        if (handRunner.TryGetLatestTwoHands(out hand, out SculptHandFrame second))
+            return true;
+        return handRunner.TryGetLatestHand(out hand);
+    }
+
+    private bool TryGetPointingHand(out SculptHandFrame hand)
+    {
+        hand = default;
+        bool hasTwo = handRunner.TryGetLatestTwoHands(
+            out SculptHandFrame first, out SculptHandFrame second);
+        if (!hasTwo && !handRunner.TryGetLatestHand(out first))
+            return false;
+
+        if (IsIndexPointing(first))
+        {
+            hand = first;
+            return true;
+        }
+
+        if (hasTwo && IsIndexPointing(second))
+        {
+            hand = second;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsIndexPointing(SculptHandFrame hand)
+    {
+        if (IsClosedFist(hand))
+            return false;
+
+        return hand.IndexExtensionAngle >= 118f &&
+               hand.IndexTipPalmRatio >= 1.05f &&
+               hand.MiddleTipPalmRatio <= 1.14f &&
+               hand.OtherFingersCurlRatio <= 1.5f &&
+               hand.PinchDistance >= hand.PalmWidth * 0.28f;
+    }
+
+    private static bool IsClosedFist(SculptHandFrame hand)
+    {
+        return hand.IndexExtensionAngle < 112f &&
+               hand.FingerCurlRatio <= 1.18f &&
+               hand.IndexTipPalmRatio <= 1.08f;
     }
 
     private void InitializeMesh()

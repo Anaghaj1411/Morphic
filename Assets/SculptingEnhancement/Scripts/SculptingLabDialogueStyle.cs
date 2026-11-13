@@ -27,12 +27,13 @@ public sealed class SculptingLabDialogueStyle : MonoBehaviour
 
     private void OnEnable()
     {
-        ApplyStyle();
+        // DialogueManager.StyleDialogueUi owns Lisa now. Re-applying this
+        // style set FontStyles.Bold (ghosted letters) and a second cream sprite.
     }
 
     private void Start()
     {
-        ApplyStyle();
+        enabled = false;
     }
 
     private void OnDestroy()

@@ -77,8 +77,16 @@ public sealed class MorphicMenuLocalizer : MonoBehaviour
 
     private void ApplyMenuLabels()
     {
+        ShowHomeSettingsButton();
         for (int i = 0; i < ButtonNames.Length; i++)
             OverlayButton(ButtonNames[i], ButtonKeys[i]);
+    }
+
+    public static void ShowHomeSettingsButton()
+    {
+        Transform button = FindNamed("Settings Button");
+        if (button != null)
+            button.gameObject.SetActive(true);
     }
 
     private static void OverlayButton(string objectName, string english)

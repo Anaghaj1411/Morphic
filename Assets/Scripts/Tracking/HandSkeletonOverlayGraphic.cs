@@ -22,82 +22,63 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         [SerializeField, Min(1f)] private float lineWidth = 4f;
         [SerializeField, Min(1f)] private float landmarkRadius = 5f;
 
-        private IReadOnlyList<Vector2[]> hands = System.Array.Empty<Vector2[]>();
-        private List<Vector2[]> smoothedHands = new List<Vector2[]>();
-        private const float MissingDetectionGrace = 0.12f;
-        private float missingDetectionTime;
-        private float lastHandSampleTime;
-
-        public void SetHands(IReadOnlyList<Vector2[]> normalizedHands)
+        private readonly Vector2[][] smoothedHands =
         {
-            if (normalizedHands == null || normalizedHands.Count == 0)
-            {
-                missingDetectionTime += Time.unscaledDeltaTime;
-                if (missingDetectionTime < MissingDetectionGrace)
-                {
-                    return;
-                }
+            new Vector2[21],
+            new Vector2[21]
+        };
+        private readonly Vector2[] pixelPoints = new Vector2[21];
+        private int visibleHandCount;
+        private bool hasTargets;
+        private const float MissingDetectionGrace = 0.45f;
+        private float missingSince = -1f;
 
-                smoothedHands.Clear();
-                hands = System.Array.Empty<Vector2[]>();
-                SetVerticesDirty();
+        public void SetHands(IReadOnlyList<Vector2[]> normalizedHands, int handCount = -1)
+        {
+            int count = handCount >= 0
+                ? handCount
+                : (normalizedHands != null ? normalizedHands.Count : 0);
+            if (normalizedHands == null)
+                count = 0;
+            else
+                count = Mathf.Min(count, Mathf.Min(2, normalizedHands.Count));
+
+            if (count <= 0)
+            {
+                hasTargets = false;
+                if (missingSince < 0f)
+                    missingSince = Time.unscaledTime;
                 return;
             }
 
-            missingDetectionTime = 0f;
-
-            float now = Time.unscaledTime;
-            float dt = lastHandSampleTime > 0f
-                ? Mathf.Clamp(now - lastHandSampleTime, 1f / 120f, 0.25f)
-                : 1f / 30f;
-            lastHandSampleTime = now;
-
-            if (smoothedHands.Count != normalizedHands.Count)
+            hasTargets = true;
+            missingSince = -1f;
+            visibleHandCount = count;
+            for (int handIndex = 0; handIndex < count; handIndex++)
             {
-                smoothedHands.Clear();
-                for (int handIndex = 0; handIndex < normalizedHands.Count; handIndex++)
-                {
-                    smoothedHands.Add((Vector2[])normalizedHands[handIndex].Clone());
-                }
-            }
-            else
-            {
-                for (int handIndex = 0; handIndex < normalizedHands.Count; handIndex++)
-                {
-                    Vector2[] previous = smoothedHands[handIndex];
-                    Vector2[] current = normalizedHands[handIndex];
-                    if (previous.Length != current.Length)
-                    {
-                        smoothedHands[handIndex] = (Vector2[])current.Clone();
-                        continue;
-                    }
+                Vector2[] current = normalizedHands[handIndex];
+                Vector2[] dest = smoothedHands[handIndex];
+                if (current == null)
+                    continue;
 
-                    for (int pointIndex = 0; pointIndex < current.Length; pointIndex++)
-                    {
-                        Vector2 difference = current[pointIndex] - previous[pointIndex];
-                        float distance = difference.magnitude;
-                        if (distance <= 0.0015f)
-                        {
-                            continue;
-                        }
-
-                        float movementSpeed = distance / dt;
-                        float adaptiveSpeed = 32f + Mathf.Clamp(movementSpeed, 0f, 3f) * 2f;
-                        float smoothing = 1f - Mathf.Exp(-adaptiveSpeed * dt);
-
-                        // Let real hand movement through gradually while
-                        // damping isolated landmark jumps.
-                        if (distance > 0.12f)
-                        {
-                            smoothing *= 0.75f;
-                        }
-
-                        previous[pointIndex] += difference * smoothing;
-                    }
-                }
+                int points = Mathf.Min(dest.Length, current.Length);
+                for (int pointIndex = 0; pointIndex < points; pointIndex++)
+                    dest[pointIndex] = current[pointIndex];
             }
 
-            hands = smoothedHands;
+            SetVerticesDirty();
+        }
+
+        private void LateUpdate()
+        {
+            if (hasTargets || visibleHandCount <= 0)
+                return;
+
+            if (missingSince < 0f ||
+                Time.unscaledTime - missingSince < MissingDetectionGrace)
+                return;
+
+            visibleHandCount = 0;
             SetVerticesDirty();
         }
 
@@ -105,24 +86,20 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         {
             vertexHelper.Clear();
 
-            if (hands == null || hands.Count == 0)
-            {
+            if (visibleHandCount <= 0)
                 return;
-            }
 
             UnityEngine.Rect bounds = GetPixelAdjustedRect();
 
-            foreach (Vector2[] hand in hands)
+            for (int handIndex = 0; handIndex < visibleHandCount; handIndex++)
             {
+                Vector2[] hand = smoothedHands[handIndex];
                 if (hand == null || hand.Length < 21)
-                {
                     continue;
-                }
 
-                Vector2[] points = new Vector2[hand.Length];
-                for (int i = 0; i < hand.Length; i++)
+                for (int i = 0; i < 21; i++)
                 {
-                    points[i] = new Vector2(
+                    pixelPoints[i] = new Vector2(
                         bounds.xMin + hand[i].x * bounds.width,
                         bounds.yMax - hand[i].y * bounds.height
                     );
@@ -132,16 +109,14 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 {
                     AddLine(
                         vertexHelper,
-                        points[Connections[i, 0]],
-                        points[Connections[i, 1]],
+                        pixelPoints[Connections[i, 0]],
+                        pixelPoints[Connections[i, 1]],
                         lineWidth
                     );
                 }
 
                 for (int i = 0; i < 21; i++)
-                {
-                    AddCircle(vertexHelper, points[i], landmarkRadius, 12);
-                }
+                    AddDot(vertexHelper, pixelPoints[i], landmarkRadius);
             }
         }
 
@@ -163,26 +138,16 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             );
         }
 
-        private void AddCircle(VertexHelper vertexHelper, Vector2 center, float radius, int segments)
+        private void AddDot(VertexHelper vertexHelper, Vector2 center, float radius)
         {
-            int centerIndex = vertexHelper.currentVertCount;
-            AddVertex(vertexHelper, center);
-
-            for (int i = 0; i < segments; i++)
-            {
-                float angle = Mathf.PI * 2f * i / segments;
-                AddVertex(
-                    vertexHelper,
-                    center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius
-                );
-            }
-
-            for (int i = 0; i < segments; i++)
-            {
-                int current = centerIndex + 1 + i;
-                int next = centerIndex + 1 + ((i + 1) % segments);
-                vertexHelper.AddTriangle(centerIndex, current, next);
-            }
+            Vector2 extent = new Vector2(radius, radius);
+            AddQuad(
+                vertexHelper,
+                center + new Vector2(-extent.x, -extent.y),
+                center + new Vector2(-extent.x, extent.y),
+                center + new Vector2(extent.x, extent.y),
+                center + new Vector2(extent.x, -extent.y)
+            );
         }
 
         private void AddQuad(VertexHelper vertexHelper, Vector2 a, Vector2 b, Vector2 c, Vector2 d)

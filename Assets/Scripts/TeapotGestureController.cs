@@ -134,7 +134,8 @@ public sealed class TeapotGestureController : MonoBehaviour
         RightV,
         TwoV,
         SingleFist,
-        OpenPalm
+        OpenPalm,
+        PointIndex
     }
 
     public SculptHandLandmarkerRunner HandRunner => handRunner;
@@ -306,6 +307,8 @@ public sealed class TeapotGestureController : MonoBehaviour
             return PracticeGesture.SingleFist;
         if (hasTwo && LooksLikeFist(second) && !LooksLikeFist(first))
             return PracticeGesture.SingleFist;
+        if ((IsIndexPointing(first) || (hasTwo && IsIndexPointing(second))) && !twoIndex)
+            return PracticeGesture.PointIndex;
         if (IsOpenPalm(first) || (hasTwo && IsOpenPalm(second)))
             return PracticeGesture.OpenPalm;
         return PracticeGesture.None;

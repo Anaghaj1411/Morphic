@@ -13,6 +13,7 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         public string Instruction;
         public TeapotGestureController.PracticeGesture Gesture;
         public string ImagePath;
+        public string Preview;
     }
 
     private const string ImageFolder =
@@ -68,6 +69,21 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
             Instruction = "Make a V with your right hand and raise or lower it.",
             Gesture = TeapotGestureController.PracticeGesture.RightV,
             ImagePath = ImageFolder + "gesture_right_v.jpg"
+        },
+        new Step
+        {
+            Title = "VERTEX SCULPT",
+            Instruction = "Point your right index finger at the teapot and move it to push the clay.",
+            Gesture = TeapotGestureController.PracticeGesture.PointIndex,
+            ImagePath = ImageFolder + "gesture_two_index.jpg"
+        },
+        new Step
+        {
+            Title = "DRAW BAND",
+            Instruction = "Point your right index finger and trace a band. Open your palm to lock.",
+            Gesture = TeapotGestureController.PracticeGesture.PointIndex,
+            ImagePath = ImageFolder + "gesture_two_index.jpg",
+            Preview = "DrawBand"
         },
         new Step
         {
@@ -166,7 +182,7 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         RectTransform cardRect = frame.rectTransform;
         cardRect.anchorMin = cardRect.anchorMax = new Vector2(0.5f, 0.5f);
         cardRect.pivot = new Vector2(0.5f, 0.5f);
-        cardRect.sizeDelta = new Vector2(760f, 620f);
+        cardRect.sizeDelta = new Vector2(760f, 680f);
         frame.raycastTarget = true;
 
         Image fill = LanguagePageBuilder.CreateRoundedImage(
@@ -174,12 +190,9 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(10f, 10f));
         fill.raycastTarget = false;
 
-        stepText = CreateChip(cardRect, "Step", new Vector2(0f, 258f), new Vector2(280f, 40f), 18f);
-        titleText = CreateLabel(cardRect, "Title", new Vector2(0f, 204f), 640f, 48f, 36);
-        titleText.color = LanguagePageBuilder.Pink;
-        Outline titleOutline = titleText.gameObject.AddComponent<Outline>();
-        titleOutline.effectColor = LanguagePageBuilder.Green;
-        titleOutline.effectDistance = new Vector2(3f, -3f);
+        stepText = CreateChip(cardRect, "Step", new Vector2(0f, 258f), new Vector2(360f, 44f), 16f);
+        titleText = CreateLabel(cardRect, "Title", new Vector2(0f, 200f), 640f, 52f, 32);
+        MorphicText.FitTitle(titleText);
 
         Image artFrame = LanguagePageBuilder.CreateRoundedImage(
             "ArtFrame", cardRect, 28, LanguagePageBuilder.Green);
@@ -196,18 +209,19 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         gestureImage = CreateRawImage(artFill.transform, "GestureImage", Vector2.zero, new Vector2(196f, 196f));
         gesturePreview = MorphicGesturePreview.Create(gestureImage);
 
-        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -112f), 640f, 72f, 20);
-        instructionText.enableWordWrapping = true;
-        statusText = CreateLabel(cardRect, "Status", new Vector2(0f, -178f), 400f, 40f, 24);
+        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -152f), 640f, 90f, 20);
+        MorphicText.FitBody(instructionText);
+        statusText = CreateLabel(cardRect, "Status", new Vector2(0f, -248f), 400f, 36f, 22);
+        MorphicText.Style(statusText);
         statusText.gameObject.SetActive(false);
 
-        CreateMorphicButton(cardRect, "Skip", new Vector2(278f, 258f), new Vector2(150f, 48f),
+        CreateMorphicButton(cardRect, "Skip", new Vector2(278f, 258f), new Vector2(160f, 48f),
             "SKIP", LanguagePageBuilder.Pink, Skip);
-        CreateMorphicButton(cardRect, "Replay", new Vector2(-105f, -246f), new Vector2(140f, 56f),
+        CreateMorphicButton(cardRect, "Replay", new Vector2(-110f, -268f), new Vector2(168f, 56f),
             "REPLAY", LanguagePageBuilder.Pink, Replay);
         CreateIconButton(cardRect, "Back", new Vector2(-278f, 258f), new Vector2(56f, 56f), 
             "MorphicBackButton", LanguagePageBuilder.Pink, Back);
-        nextButton = CreateMorphicButton(cardRect, "Next", new Vector2(105f, -246f), new Vector2(140f, 56f),
+        nextButton = CreateMorphicButton(cardRect, "Next", new Vector2(120f, -268f), new Vector2(188f, 56f),
             "NEXT", new Color32(236, 64, 168, 255), Next);
     }
 
@@ -219,9 +233,14 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         MorphicLoc.ApplyFont(stepText);
         stepText.text = MorphicLoc.F("GESTURE {0} OF {1}", stepIndex + 1, Steps.Length);
         MorphicLoc.Bind(titleText, step.Title);
+        MorphicText.FitTitle(titleText);
         MorphicLoc.Bind(instructionText, step.Instruction);
+        MorphicText.FitBody(instructionText);
+        MorphicText.FitButton(stepText);
         if (gesturePreview != null)
-            gesturePreview.Play(step.Gesture.ToString(), step.ImagePath);
+            gesturePreview.Play(
+                string.IsNullOrEmpty(step.Preview) ? step.Gesture.ToString() : step.Preview,
+                step.ImagePath);
         if (statusText != null)
         {
             statusText.text = "";
@@ -353,10 +372,10 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         rect.anchoredPosition = position;
         rect.sizeDelta = new Vector2(width, height);
         TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
-        text.fontSize = size;
+        text.fontSize = MorphicText.Size(size);
         text.alignment = TextAlignmentOptions.Center;
-        text.color = new Color32(52, 101, 29, 255);
-        text.fontStyle = FontStyles.Bold;
+        MorphicText.Style(text);
+        MorphicText.FitButton(text);
         return text;
     }
 
@@ -449,11 +468,13 @@ public sealed class TeapotGestureTutorial : MonoBehaviour
         fill.raycastTarget = true;
         Button button = frame.gameObject.AddComponent<Button>();
         button.targetGraphic = fill;
+        button.colors = LanguagePageBuilder.ButtonColors();
         DialogueButtonClickSound.Instance?.RegisterButton(button);
         button.onClick.AddListener(() => onClick());
-        TMP_Text text = CreateLabel(fill.transform, "Label", Vector2.zero, size.x - 12f, size.y, 20f);
+        TMP_Text text = CreateLabel(fill.transform, "Label", Vector2.zero, size.x - 12f, size.y, 18f);
         Stretch(text.rectTransform);
         MorphicLoc.Bind(text, label);
+        MorphicText.FitButton(text);
         return button;
     }
 }

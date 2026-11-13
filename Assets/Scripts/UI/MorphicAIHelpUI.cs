@@ -10,6 +10,8 @@ public class MorphicAIHelpUI : MonoBehaviour
     private TMP_InputField questionInput;
     private GameObject root;
     private GameObject askCard;
+    private GameObject askDimmer;
+    private bool openedFromStudio;
     private MorphicAITriggerEngine trigger;
     private MorphicAIClient client;
 
@@ -20,12 +22,37 @@ public class MorphicAIHelpUI : MonoBehaviour
             return;
         root.SetActive(visible);
         if (visible)
+        {
+            openedFromStudio = false;
+            if (helpButton != null)
+                helpButton.gameObject.SetActive(true);
             root.transform.SetAsLastSibling();
+            WarmBackend();
+        }
         else
         {
             MorphicLisaVoice.Stop();
             HideAskCard();
         }
+    }
+
+    public void OpenAskFromStudio()
+    {
+        openedFromStudio = true;
+        MorphicStudioHelpUI studioHelp =
+            FindFirstObjectByType<MorphicStudioHelpUI>(FindObjectsInactive.Include);
+        if (studioHelp != null)
+            studioHelp.HideSheet();
+
+        EnsureUi();
+        if (root == null)
+            return;
+        root.SetActive(true);
+        if (helpButton != null)
+            helpButton.gameObject.SetActive(false);
+        root.transform.SetAsLastSibling();
+        WarmBackend();
+        OpenAskCard();
     }
 
     private void Awake()
@@ -77,6 +104,14 @@ public class MorphicAIHelpUI : MonoBehaviour
         if (client == null)
             client = host.GetComponent<MorphicAIClient>();
         BindClient();
+        WarmBackend();
+    }
+
+    public void WarmBackend()
+    {
+        EnsureAi();
+        if (client != null)
+            client.Warmup();
     }
 
     private void BindClient()
@@ -146,7 +181,6 @@ public class MorphicAIHelpUI : MonoBehaviour
         WireHelpButton();
 
         TMP_Text label = CreateLabel(fill.transform, "AI HELP", 20f, TextAlignmentOptions.Center);
-        label.fontStyle = FontStyles.Bold;
 
         BuildAskCard(root.transform);
     }
@@ -190,7 +224,6 @@ public class MorphicAIHelpUI : MonoBehaviour
         helpText = CreateLabel(
             cream.transform, "", 24f, TextAlignmentOptions.TopLeft);
         helpText.color = new Color32(32, 24, 18, 255);
-        helpText.fontStyle = FontStyles.Bold;
         helpText.enableWordWrapping = true;
         helpText.overflowMode = TextOverflowModes.Overflow;
         helpText.lineSpacing = 4f;
@@ -207,7 +240,7 @@ public class MorphicAIHelpUI : MonoBehaviour
         RectTransform sendRect = sendFrame.rectTransform;
         sendRect.anchorMin = sendRect.anchorMax = new Vector2(1f, 0f);
         sendRect.pivot = new Vector2(1f, 0f);
-        sendRect.anchoredPosition = new Vector2(-12f, 12f);
+        sendRect.anchoredPosition = new Vector2(-64f, 12f);
         sendRect.sizeDelta = new Vector2(118f, 52f);
         sendFrame.raycastTarget = true;
 
@@ -224,10 +257,66 @@ public class MorphicAIHelpUI : MonoBehaviour
         sendButton.targetGraphic = sendFill;
         sendButton.onClick.AddListener(SendQuestion);
         TMP_Text sendLabel = CreateLabel(sendFill.transform, "SEND", 20f, TextAlignmentOptions.Center);
-        sendLabel.fontStyle = FontStyles.Bold;
 
+        CreateCloseButton(cream.transform);
         questionInput = CreateQuestionInput(cream.transform);
+        BuildAskDimmer(parent);
         askCard.SetActive(false);
+    }
+
+    private void CreateCloseButton(Transform parent)
+    {
+        Image frame = LanguagePageBuilder.CreateRoundedImage(
+            "Close", parent, 18, LanguagePageBuilder.Green);
+        RectTransform rect = frame.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(1f, 0f);
+        rect.pivot = new Vector2(1f, 0f);
+        rect.anchoredPosition = new Vector2(-12f, 12f);
+        rect.sizeDelta = new Vector2(44f, 52f);
+        frame.raycastTarget = true;
+
+        Image fill = LanguagePageBuilder.CreateRoundedImage(
+            "Fill", frame.transform, 14, LanguagePageBuilder.Pink);
+        RectTransform fillRect = fill.rectTransform;
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = new Vector2(4f, 4f);
+        fillRect.offsetMax = new Vector2(-4f, -4f);
+        fill.raycastTarget = true;
+
+        Button button = frame.gameObject.AddComponent<Button>();
+        button.targetGraphic = fill;
+        button.colors = LanguagePageBuilder.ButtonColors();
+        button.onClick.AddListener(CloseAskDialog);
+        TMP_Text label = CreateLabel(fill.transform, "X", 22f, TextAlignmentOptions.Center);
+    }
+
+    private void BuildAskDimmer(Transform parent)
+    {
+        if (askDimmer != null)
+            return;
+
+        Transform existing = parent.Find("AskDimmer");
+        if (existing != null)
+            Destroy(existing.gameObject);
+
+        GameObject dimmer = new GameObject("AskDimmer", typeof(RectTransform), typeof(Image), typeof(Button));
+        dimmer.transform.SetParent(parent, false);
+        dimmer.transform.SetAsFirstSibling();
+        StretchFull(dimmer.GetComponent<RectTransform>());
+
+        Image image = dimmer.GetComponent<Image>();
+        image.color = new Color(0f, 0f, 0f, 0.18f);
+        image.raycastTarget = true;
+
+        Button button = dimmer.GetComponent<Button>();
+        button.targetGraphic = image;
+        button.transition = Selectable.Transition.None;
+        button.onClick.RemoveAllListeners();
+        button.interactable = false;
+        image.raycastTarget = false;
+        askDimmer = dimmer;
+        askDimmer.SetActive(false);
     }
 
     private TMP_InputField CreateQuestionInput(Transform parent)
@@ -245,7 +334,7 @@ public class MorphicAIHelpUI : MonoBehaviour
         inputRect.anchorMax = new Vector2(1f, 0f);
         inputRect.pivot = new Vector2(0.5f, 0f);
         inputRect.offsetMin = new Vector2(12f, 12f);
-        inputRect.offsetMax = new Vector2(-142f, 64f);
+        inputRect.offsetMax = new Vector2(-198f, 64f);
 
         GameObject textArea = new GameObject("Text Area", typeof(RectTransform));
         textArea.transform.SetParent(inputRoot.transform, false);
@@ -320,10 +409,10 @@ public class MorphicAIHelpUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         TMP_Text tmp = go.AddComponent<TextMeshProUGUI>();
         MorphicLoc.Bind(tmp, text);
-        tmp.fontSize = size;
+        tmp.fontSize = MorphicText.Size(size);
         tmp.alignment = align;
-        tmp.color = LanguagePageBuilder.Green;
         tmp.raycastTarget = false;
+        MorphicText.FitButton(tmp);
         RectTransform rect = tmp.rectTransform;
         rect.anchorMin = Vector2.zero;
         rect.anchorMax = Vector2.one;
@@ -338,6 +427,8 @@ public class MorphicAIHelpUI : MonoBehaviour
         if (askCard == null)
             return;
 
+        if (askDimmer != null)
+            askDimmer.SetActive(false);
         askCard.SetActive(true);
         askCard.transform.SetAsLastSibling();
         if (helpText != null)
@@ -347,6 +438,7 @@ public class MorphicAIHelpUI : MonoBehaviour
         }
 
         UpdateAskCardHeight();
+        WarmBackend();
         if (questionInput != null)
         {
             questionInput.text = "";
@@ -360,8 +452,20 @@ public class MorphicAIHelpUI : MonoBehaviour
     {
         if (askCard != null)
             askCard.SetActive(false);
+        if (askDimmer != null)
+            askDimmer.SetActive(false);
         if (questionInput != null)
             questionInput.text = "";
+    }
+
+    private void CloseAskDialog()
+    {
+        MorphicLisaVoice.Stop();
+        HideAskCard();
+        if (EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(null);
+        if (openedFromStudio && root != null)
+            root.SetActive(false);
     }
 
     private void HandleInputSubmit(string _)
@@ -382,8 +486,16 @@ public class MorphicAIHelpUI : MonoBehaviour
         MorphicCraftHelpState state = BuildHelpState();
         state.userQuestion = MorphicLoc.WithAiLanguage(question);
         EnsureAi();
+        if (questionInput != null)
+        {
+            questionInput.SetTextWithoutNotify("");
+            questionInput.ActivateInputField();
+            if (EventSystem.current != null)
+                EventSystem.current.SetSelectedGameObject(questionInput.gameObject);
+        }
+
         if (trigger == null || !trigger.RequestSculptHelp(state))
-            ShowMessage("LISA: Could not reach help. Try again.");
+            ShowMessage("LISA: Help is waking up. Send again.");
     }
 
     private MorphicCraftHelpState BuildHelpState()
@@ -453,7 +565,7 @@ public class MorphicAIHelpUI : MonoBehaviour
 
     private void HandleAiFailed()
     {
-        ShowMessage("LISA: Could not reach help. Try again.");
+        ShowMessage("LISA: Help is waking up. Send again.");
     }
 
     private void ShowMessage(string message)

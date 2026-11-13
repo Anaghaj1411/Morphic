@@ -674,17 +674,17 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public static bool IsIndexPointing(SculptHandFrame hand, bool alreadyDrawing, bool easyMode)
     {
-        if (IsOpenPalm(hand))
+        if (IsOpenPalm(hand) || IsClosedFist(hand))
             return false;
 
         float palm = Mathf.Max(hand.PalmWidth, 0.001f);
         bool clay = alreadyDrawing || easyMode;
-        float minAngle = clay ? 48f : 58f;
-        float minIndexReach = clay ? 0.52f : 0.64f;
-        float maxMiddle = clay ? 1.10f : 0.98f;
-        float maxOthers = clay ? 1.30f : 1.12f;
-        float minLead = clay ? 0.08f : 0.12f;
-        float minPinch = alreadyDrawing ? palm * 0.04f : palm * 0.07f;
+        float minAngle = clay ? 112f : 118f;
+        float minIndexReach = clay ? 1.02f : 1.05f;
+        float maxMiddle = clay ? 1.12f : 0.98f;
+        float maxOthers = clay ? 1.42f : 1.18f;
+        float minLead = clay ? 0.10f : 0.14f;
+        float minPinch = palm * 0.28f;
 
         bool indexOut = hand.IndexExtensionAngle >= minAngle &&
                         hand.IndexTipPalmRatio >= minIndexReach;
@@ -693,6 +693,14 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         bool indexLeads = hand.IndexTipPalmRatio >= hand.MiddleTipPalmRatio + minLead;
         bool notPinching = hand.PinchDistance >= minPinch;
         return indexOut && othersCurled && indexLeads && notPinching;
+    }
+
+    public static bool IsClosedFist(SculptHandFrame hand)
+    {
+        return hand.IndexExtensionAngle < 112f &&
+               hand.FingerCurlRatio <= 1.18f &&
+               hand.IndexTipPalmRatio <= 1.08f &&
+               hand.OtherFingersCurlRatio <= 1.16f;
     }
 
     public static bool IsOpenPalm(SculptHandFrame hand)
@@ -1140,8 +1148,9 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     private void ApplyDrawIntent(bool hasHandData, SculptHandFrame hand, bool mouseHeld)
     {
         bool openPalm = hasHandData && IsOpenPalm(hand);
+        bool closedFist = hasHandData && IsClosedFist(hand);
         bool pointing = false;
-        if (!isDrawingLocked && !openPalm)
+        if (!isDrawingLocked && !openPalm && !closedFist)
         {
             if (hasHandData)
                 pointing = IsIndexPointing(hand, isDrawingActive, clayCoilMode);
@@ -1149,16 +1158,16 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
                 pointing = mouseHeld;
         }
 
-        if (openPalm)
+        if (openPalm || closedFist)
             lostPointHold = 1f;
         else if (pointing)
             lostPointHold = 0f;
         else if (isDrawingActive)
             lostPointHold += Time.unscaledDeltaTime;
 
-        bool shouldDraw = !isDrawingLocked && !openPalm &&
+        bool shouldDraw = !isDrawingLocked && !openPalm && !closedFist &&
             (isPointerOnSurface || isDrawingActive) &&
-            (pointing || (isDrawingActive && lostPointHold < 0.18f));
+            (pointing || (isDrawingActive && lostPointHold < 0.08f));
 
         if (shouldDraw)
         {

@@ -21,6 +21,8 @@ public sealed class MorphicLisaVoice : MonoBehaviour
 
     private const int PcmSampleRate = 24000;
     private const string ElevenLabsVoiceId = "WtA85syCrJwasGeHGH2p";
+    private const string MuteKey = "Morphic.LisaVoiceMuted";
+    private const string VolumeKey = "Morphic.LisaVoiceVolume";
 
     private static MorphicLisaVoice instance;
     private MorphicLisaVoiceConfig config;
@@ -28,6 +30,7 @@ public sealed class MorphicLisaVoice : MonoBehaviour
     private MorphicEdgeTts edge;
     private AudioSource audio;
     private Coroutine speakRoutine;
+    private bool speechPending;
     private int speakTicket;
     private object voice;
     private string boundCode;
@@ -57,16 +60,41 @@ public sealed class MorphicLisaVoice : MonoBehaviour
         root.AddComponent<MorphicLisaVoice>();
     }
 
+    public static bool Muted
+    {
+        get { return PlayerPrefs.GetInt(MuteKey, 0) == 1; }
+        set
+        {
+            PlayerPrefs.SetInt(MuteKey, value ? 1 : 0);
+            PlayerPrefs.Save();
+            if (value)
+                Stop();
+        }
+    }
+
+    public static float Volume
+    {
+        get { return Mathf.Clamp01(PlayerPrefs.GetFloat(VolumeKey, 1f)); }
+        set
+        {
+            float clamped = Mathf.Clamp01(value);
+            PlayerPrefs.SetFloat(VolumeKey, clamped);
+            PlayerPrefs.Save();
+            if (instance != null && instance.audio != null)
+                instance.audio.volume = clamped;
+        }
+    }
+
     public static void SpeakLine(string english)
     {
-        if (instance == null)
+        if (instance == null || Muted)
             return;
         instance.SpeakText(MorphicLoc.T(english), false);
     }
 
     public static void SpeakReply(string displayed)
     {
-        if (instance == null)
+        if (instance == null || Muted)
             return;
         instance.SpeakText(displayed, true);
     }
@@ -75,6 +103,18 @@ public sealed class MorphicLisaVoice : MonoBehaviour
     {
         if (instance != null)
             instance.StopSpeaking();
+    }
+
+    public static bool IsSpeaking
+    {
+        get
+        {
+            if (instance == null)
+                return false;
+            if (instance.speechPending)
+                return true;
+            return instance.audio != null && instance.audio.isPlaying;
+        }
     }
 
     private void Awake()
@@ -92,7 +132,7 @@ public sealed class MorphicLisaVoice : MonoBehaviour
             audio = gameObject.AddComponent<AudioSource>();
         audio.playOnAwake = false;
         audio.spatialBlend = 0f;
-        audio.volume = 1f;
+        audio.volume = Volume;
         piper = gameObject.GetComponent<MorphicPiperTts>();
         if (piper == null)
             piper = gameObject.AddComponent<MorphicPiperTts>();
@@ -209,8 +249,11 @@ public sealed class MorphicLisaVoice : MonoBehaviour
 
     private void SpeakText(string text, bool isReply)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (Muted || string.IsNullOrWhiteSpace(text))
             return;
+
+        if (audio != null)
+            audio.volume = Volume;
 
         text = StripLisaPrefix(text);
         if (string.IsNullOrWhiteSpace(text))
@@ -218,14 +261,27 @@ public sealed class MorphicLisaVoice : MonoBehaviour
         if (isReply && IsStatusLine(text))
             return;
 
+        speechPending = true;
         speakTicket++;
         if (speakRoutine != null)
             StopCoroutine(speakRoutine);
         speakRoutine = StartCoroutine(SpeakEdgeThenFallback(text, speakTicket));
     }
 
+    private void LateUpdate()
+    {
+        if (!speechPending)
+            return;
+        if (speakRoutine != null)
+            return;
+        if (audio != null && audio.isPlaying)
+            return;
+        speechPending = false;
+    }
+
     private void StopSpeaking()
     {
+        speechPending = false;
         speakTicket++;
         if (speakRoutine != null)
         {

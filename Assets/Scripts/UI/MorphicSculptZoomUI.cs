@@ -160,10 +160,7 @@ public class MorphicSculptZoomUI : MonoBehaviour
         LanguagePageBuilder.Stretch(label.Rect);
         zoomLabel = label.Label;
         if (zoomLabel != null)
-        {
-            zoomLabel.fontStyle = FontStyles.Bold;
-            zoomLabel.characterSpacing = 0.8f;
-        }
+            MorphicText.FitButton(zoomLabel);
 
         zoomButton = frame.gameObject.AddComponent<Button>();
         zoomButton.targetGraphic = fill;
@@ -451,11 +448,11 @@ public class MorphicSculptZoomUI : MonoBehaviour
         if (button == null)
             return;
 
-        // Under GESTURES in the top-left cluster beside BACK.
-        button.anchorMin = button.anchorMax = new Vector2(0f, 1f);
-        button.pivot = new Vector2(0f, 1f);
-        button.anchoredPosition = new Vector2(122f, -156f);
-        button.sizeDelta = new Vector2(236f, 54f);
+        // Under HELP in the top-right corner.
+        button.anchorMin = button.anchorMax = new Vector2(1f, 1f);
+        button.pivot = new Vector2(1f, 1f);
+        button.anchoredPosition = new Vector2(-24f, -86f);
+        button.sizeDelta = new Vector2(100f, 48f);
     }
 
     private static void StretchFull(RectTransform rect)

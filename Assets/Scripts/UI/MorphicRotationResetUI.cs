@@ -77,7 +77,6 @@ public class MorphicRotationResetUI : MonoBehaviour
         LanguagePageBuilder.Stretch(label.Rect);
         if (label.Label != null)
         {
-            label.Label.fontStyle = FontStyles.Bold;
             label.Label.characterSpacing = 0.8f;
             label.Label.enableAutoSizing = true;
             label.Label.fontSizeMin = 14f;
@@ -95,10 +94,10 @@ public class MorphicRotationResetUI : MonoBehaviour
         if (resetButton == null)
             return;
         resetButton.onClick.RemoveAllListeners();
-        resetButton.onClick.AddListener(ResetActiveCraftRotation);
+        resetButton.onClick.AddListener(ResetActiveCraft);
     }
 
-    private static void ResetActiveCraftRotation()
+    public static void ResetActiveCraft()
     {
         ResetActive(FindFirstObjectByType<LanternFistRotationController>(
             FindObjectsInactive.Exclude));

@@ -19,6 +19,10 @@ public class MorphicAIClient : MonoBehaviour
     public event Action<string> OnFeedbackMessageReceived;
     public event Action OnRequestFailed;
 
+    private Coroutine runningRequest;
+    private UnityWebRequest currentRequest;
+    private bool warmupRunning;
+
     [Serializable]
     private class AIResponse
     {
@@ -75,6 +79,21 @@ public class MorphicAIClient : MonoBehaviour
                 "MorphicAIClient: MorphicAIActionRouter reference is missing."
             );
         }
+
+        Warmup();
+        StartCoroutine(KeepAliveRoutine());
+    }
+
+    private void OnDestroy()
+    {
+        CancelCurrentRequest();
+    }
+
+    public void Warmup()
+    {
+        if (aiSettings == null || warmupRunning)
+            return;
+        StartCoroutine(WarmupRoutine());
     }
 
     public void SendFeedback(string jsonData)
@@ -84,19 +103,6 @@ public class MorphicAIClient : MonoBehaviour
 
     public void SendFeedback(string jsonData, bool live)
     {
-        if (IsRequestRunning)
-        {
-            if (showDebugLogs)
-            {
-                Debug.Log(
-                    "MorphicAIClient: A request is already running. Ignoring new request."
-                );
-            }
-
-            OnRequestFailed?.Invoke();
-            return;
-        }
-
         if (aiSettings == null)
         {
             Debug.LogError(
@@ -116,9 +122,51 @@ public class MorphicAIClient : MonoBehaviour
             return;
         }
 
-        StartCoroutine(
+        CancelCurrentRequest();
+        runningRequest = StartCoroutine(
             SendFeedbackCoroutine(jsonData, live)
         );
+    }
+
+    private void CancelCurrentRequest()
+    {
+        if (runningRequest != null)
+        {
+            StopCoroutine(runningRequest);
+            runningRequest = null;
+        }
+
+        if (currentRequest != null)
+        {
+            currentRequest.Abort();
+            currentRequest.Dispose();
+            currentRequest = null;
+        }
+
+        IsRequestRunning = false;
+    }
+
+    private IEnumerator WarmupRoutine()
+    {
+        warmupRunning = true;
+        string endpoint = aiSettings.GetWarmupEndpoint();
+        using (UnityWebRequest ping = UnityWebRequest.Get(endpoint))
+        {
+            ping.timeout = 20;
+            yield return ping.SendWebRequest();
+        }
+
+        warmupRunning = false;
+    }
+
+    private IEnumerator KeepAliveRoutine()
+    {
+        WaitForSecondsRealtime wait = new WaitForSecondsRealtime(240f);
+        while (true)
+        {
+            yield return wait;
+            Warmup();
+        }
     }
 
     private IEnumerator SendFeedbackCoroutine(
@@ -148,57 +196,42 @@ public class MorphicAIClient : MonoBehaviour
         byte[] bodyRaw =
             Encoding.UTF8.GetBytes(jsonData);
 
-        using (
-            UnityWebRequest request =
-                new UnityWebRequest(
-                    endpoint,
-                    "POST"
-                )
-        )
+        UnityWebRequest request = new UnityWebRequest(endpoint, "POST");
+        currentRequest = request;
+        request.timeout = 25;
+        request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+        request.downloadHandler = new DownloadHandlerBuffer();
+        request.SetRequestHeader("Content-Type", "application/json");
+
+        yield return request.SendWebRequest();
+        currentRequest = null;
+
+        if (request.result == UnityWebRequest.Result.Success)
         {
-            request.uploadHandler =
-                new UploadHandlerRaw(bodyRaw);
-
-            request.downloadHandler =
-                new DownloadHandlerBuffer();
-
-            request.SetRequestHeader(
-                "Content-Type",
-                "application/json"
-            );
-
-            yield return request.SendWebRequest();
-
-            if (
-                request.result ==
-                UnityWebRequest.Result.Success
-            )
+            string responseText = request.downloadHandler.text;
+            if (showDebugLogs)
             {
-                string responseText =
-                    request.downloadHandler.text;
-
-                if (showDebugLogs)
-                {
-                    Debug.Log(
-                        "MorphicAIClient: Response received:\n" +
-                        responseText
-                    );
-                }
-
-                HandleResponse(responseText);
-            }
-            else
-            {
-                Debug.LogError(
-                    "MorphicAIClient: Request failed.\n" +
-                    "Error: " + request.error + "\n" +
-                    "HTTP Status: " + request.responseCode
+                Debug.Log(
+                    "MorphicAIClient: Response received:\n" +
+                    responseText
                 );
-                OnRequestFailed?.Invoke();
             }
+
+            HandleResponse(responseText);
+        }
+        else
+        {
+            Debug.LogError(
+                "MorphicAIClient: Request failed.\n" +
+                "Error: " + request.error + "\n" +
+                "HTTP Status: " + request.responseCode
+            );
+            OnRequestFailed?.Invoke();
         }
 
+        request.Dispose();
         IsRequestRunning = false;
+        runningRequest = null;
     }
 
     private void HandleResponse(
