@@ -390,9 +390,9 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             }
         }
 
-        bool overUi = nextHovered != null ||
-                      ContainsScreenPoint(panel, screenPosition) ||
-                      ContainsScreenPoint(selfiePanel, screenPosition);
+        bool panelHit = ContainsScreenPoint(panel, screenPosition);
+        bool selfieHit = ContainsScreenPoint(selfiePanel, screenPosition);
+        bool overUi = nextHovered != null || panelHit || selfieHit;
         bool exclusiveDraw = mode == ColorMode.VertexSculpt || mode == ColorMode.DrawBandTargeting;
         bool allowGestures = !sculptLockedByTutorial && !overUi && mode != ColorMode.Hidden && !exclusiveDraw;
         SetSculptGesturesEnabled(allowGestures);

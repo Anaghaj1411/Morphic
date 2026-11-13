@@ -117,6 +117,9 @@ public class DialogueManager : MonoBehaviour
         GameObject teapotGestureStatus = FindSceneObject("Teapot Gesture Status");
         if (teapotGestureStatus != null)
             teapotGestureStatus.SetActive(false);
+        GameObject kerisGestureStatus = FindSceneObject("Keris Gesture Status");
+        if (kerisGestureStatus != null)
+            kerisGestureStatus.SetActive(false);
 
         lanternColorController =
             FindFirstObjectByType<SculptingEnhancementLanternColorController>(
@@ -1498,6 +1501,9 @@ public class DialogueManager : MonoBehaviour
                 GameObject teapotGestureStatus = FindSceneObject("Teapot Gesture Status");
                 if (teapotGestureStatus != null)
                     teapotGestureStatus.SetActive(false);
+                GameObject kerisGestureStatus = FindSceneObject("Keris Gesture Status");
+                if (kerisGestureStatus != null)
+                    kerisGestureStatus.SetActive(false);
 
                 // Deactivate Taiwan gesture controllers
                 if (taiwanGestureController != null)
@@ -2375,6 +2381,9 @@ public class DialogueManager : MonoBehaviour
         GameObject teapotStatus = FindSceneObject("Teapot Gesture Status");
         if (teapotStatus != null)
             teapotStatus.SetActive(false);
+        GameObject kerisStatus = FindSceneObject("Keris Gesture Status");
+        if (kerisStatus != null)
+            kerisStatus.SetActive(false);
 
         if (webcamDisplayController != null)
             webcamDisplayController.SetActive(false);

@@ -68,6 +68,8 @@ public class MorphicSculptZoomUI : MonoBehaviour
         {
             zoomUi.StopMove();
             zoomUi.extraZoomLevel = 0;
+            zoomUi.SetVisible(true);
+            zoomUi.BringToFront();
         }
     }
 
@@ -113,7 +115,19 @@ public class MorphicSculptZoomUI : MonoBehaviour
 
         root.SetActive(visible);
         if (visible)
+            BringToFront();
+    }
+
+    public void BringToFront()
+    {
+        if (root != null && root.activeSelf)
             root.transform.SetAsLastSibling();
+    }
+
+    private void LateUpdate()
+    {
+        if (root != null && root.activeSelf)
+            BringToFront();
     }
 
     private void Awake()

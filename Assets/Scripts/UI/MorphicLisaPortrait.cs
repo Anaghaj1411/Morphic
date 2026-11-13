@@ -199,8 +199,8 @@ public sealed class MorphicLisaPortrait : MonoBehaviour
         frame.anchorMin = new Vector2(0.5f, 0f);
         frame.anchorMax = new Vector2(0.5f, 0f);
         frame.pivot = new Vector2(1f, 0f);
-        frame.anchoredPosition = new Vector2(-230f, 48f);
-        frame.sizeDelta = new Vector2(380f, 560f);
+        frame.anchoredPosition = new Vector2(-230f, 8f);
+        frame.sizeDelta = new Vector2(400f, 640f);
     }
 
     private void PutBehindDialogue()

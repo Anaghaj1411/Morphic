@@ -65,7 +65,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         /// moves shapes about as much as a close-up hand.
         /// </summary>
         public float DistanceGain =>
-            Mathf.Clamp(0.12f / Mathf.Max(palmWidth, 0.02f), 1f, 2.6f);
+            Mathf.Clamp(0.11f / Mathf.Max(palmWidth, 0.012f), 1f, 4.2f);
 
         public static float CombinedDistanceGain(
             in SculptHandFrame first,
@@ -256,8 +256,8 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
         private float activeSpeedBeta = 0.32f;
         private float activeDeadzone = 0.0024f;
         private const float LostHandGrace = 0.48f;
-        private const float SecondHandGrace = 0.35f;
-        private const float MinPalmWidth = 0.0012f;
+        private const float SecondHandGrace = 0.45f;
+        private const float MinPalmWidth = 0.0008f;
         private const float DetectTimeout = 0.16f;
         private const float MinDetectInterval = 0.016f;
         private const float JitterDeadzone = 0.0024f;
@@ -318,9 +318,9 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                 Tasks.Vision.Core.RunningMode.LIVE_STREAM;
 
             config.NumHands = 2;
-            config.MinHandDetectionConfidence = 0.04f;
-            config.MinHandPresenceConfidence = 0.05f;
-            config.MinTrackingConfidence = 0.05f;
+            config.MinHandDetectionConfidence = 0.02f;
+            config.MinHandPresenceConfidence = 0.025f;
+            config.MinTrackingConfidence = 0.03f;
 
             landmarkMinCutoff = 3.6f;
             landmarkSpeedBeta = 0.32f;
@@ -359,8 +359,10 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             otherHand = secondHand;
 
             return hasLatestHand &&
-                   hasSecondHand &&
-                   Time.unscaledTime - lastResultTime < LostHandGrace;
+                   Time.unscaledTime - lastResultTime < LostHandGrace &&
+                   (hasSecondHand ||
+                    (hasSmoothedSecondHand &&
+                     Time.unscaledTime - lastSecondResultTime <= SecondHandGrace));
         }
 
         public override void Stop()
@@ -853,7 +855,7 @@ Debug.Log("MORPHIC: Camera resolution = " +
                     out rawSecondHand
                 );
 
-            if (hasRawSecond && PalmsAreDistinct(rawFirstHand, rawSecondHand))
+            if (hasRawSecond && AreLikelyTwoHands(rawFirstHand, rawSecondHand))
             {
                 AssignTwoHands(rawFirstHand, rawSecondHand);
             }
@@ -930,10 +932,24 @@ Debug.Log("MORPHIC: Camera resolution = " +
             SculptHandFrame firstHand,
             SculptHandFrame otherHand)
         {
+            return AreLikelyTwoHands(firstHand, otherHand);
+        }
+
+        private static bool AreLikelyTwoHands(
+            SculptHandFrame firstHand,
+            SculptHandFrame otherHand)
+        {
+            float dist = PalmDistance(firstHand, otherHand);
+            if (firstHand.HasHandedness &&
+                otherHand.HasHandedness &&
+                firstHand.IsRightHand != otherHand.IsRightHand &&
+                dist >= 0.008f)
+                return true;
+
             float minSep = Mathf.Max(
-                0.045f,
-                (firstHand.PalmWidth + otherHand.PalmWidth) * 0.38f);
-            return PalmDistance(firstHand, otherHand) >= minSep;
+                0.012f,
+                (firstHand.PalmWidth + otherHand.PalmWidth) * 0.14f);
+            return dist >= minSep;
         }
 
         private void ClearHandTracking()
@@ -1019,10 +1035,10 @@ Debug.Log("MORPHIC: Camera resolution = " +
             if (hasRawSecondHand)
                 palm = Mathf.Min(palm, rawSecondHand.PalmWidth);
 
-            float closeness = Mathf.Clamp01(Mathf.InverseLerp(0.034f, 0.13f, palm));
-            activeMinCutoff = Mathf.Lerp(2.2f, landmarkMinCutoff, closeness);
-            activeSpeedBeta = Mathf.Lerp(0.18f, landmarkSpeedBeta, closeness);
-            activeDeadzone = Mathf.Lerp(0.0032f, JitterDeadzone, closeness);
+            float closeness = Mathf.Clamp01(Mathf.InverseLerp(0.028f, 0.14f, palm));
+            activeMinCutoff = Mathf.Lerp(4.0f, 3.2f, closeness);
+            activeSpeedBeta = Mathf.Lerp(0.26f, 0.16f, closeness);
+            activeDeadzone = Mathf.Lerp(0.0010f, 0.0020f, closeness);
         }
 
         private float SmoothScalar(float currentValue, float targetValue, ref float dx)
