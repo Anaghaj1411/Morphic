@@ -557,9 +557,9 @@ public sealed class KerisGestureController : MonoBehaviour
         bool continueHandle = currentGesture == GestureMode.HandleDown && hasTwoHands &&
                               !twoVNow && !twoIndex && !rightPinching && !leftPinching;
         bool continueSharp = currentGesture == GestureMode.PinchSharpness && hasRightHand &&
-                             !twoVNow && !twoIndex && !bothFists;
+                             rightPinching && !twoVNow && !twoIndex && !bothFists;
         bool continueCurve = currentGesture == GestureMode.PinchCurve && hasLeftHand &&
-                             !twoVNow && !twoIndex && !bothFists;
+                             leftPinching && !twoVNow && !twoIndex && !bothFists;
 
         if ((twoVNow || continueV) && hasTwoHands)
         {
@@ -744,49 +744,37 @@ public sealed class KerisGestureController : MonoBehaviour
                 break;
 
             case GestureMode.PinchSharpness:
-                if (twoVNow || twoIndex || bothFists)
+                if (twoVNow || twoIndex || bothFists || !rightPinching)
                 {
                     CommitPinchLift(sharpnessLift, true);
+                    SetBlendShapeWeight("Sharpness", latchedSharpness);
                     break;
                 }
-                if (rightPinching && hasRightHand && DrivePinchUp(rightHand, true))
+                if (hasRightHand && DrivePinchUp(rightHand, true))
                 {
                     FreezeOthersFor(GestureMode.PinchSharpness);
                     IsDrivingSculpt = true;
-                    return true;
-                }
-                if (sharpnessLift.active && sharpnessLift.hold > 0f)
-                {
-                    sharpnessLift.hold -= Time.unscaledDeltaTime;
-                    PausePinchLift(sharpnessLift);
-                    FreezeOthersFor(GestureMode.PinchSharpness);
-                    IsDrivingSculpt = false;
                     return true;
                 }
                 CommitPinchLift(sharpnessLift, true);
+                SetBlendShapeWeight("Sharpness", latchedSharpness);
                 break;
 
             case GestureMode.PinchCurve:
-                if (twoVNow || twoIndex || bothFists)
+                if (twoVNow || twoIndex || bothFists || !leftPinching)
                 {
                     CommitPinchLift(curveLift, false);
+                    SetBlendShapeWeight("Curve", latchedCurve);
                     break;
                 }
-                if (leftPinching && hasLeftHand && DrivePinchUp(leftHand, false))
+                if (hasLeftHand && DrivePinchUp(leftHand, false))
                 {
                     FreezeOthersFor(GestureMode.PinchCurve);
                     IsDrivingSculpt = true;
                     return true;
                 }
-                if (curveLift.active && curveLift.hold > 0f)
-                {
-                    curveLift.hold -= Time.unscaledDeltaTime;
-                    PausePinchLift(curveLift);
-                    FreezeOthersFor(GestureMode.PinchCurve);
-                    IsDrivingSculpt = false;
-                    return true;
-                }
                 CommitPinchLift(curveLift, false);
+                SetBlendShapeWeight("Curve", latchedCurve);
                 break;
         }
 
@@ -1236,15 +1224,12 @@ public sealed class KerisGestureController : MonoBehaviour
                 : currentGesture == GestureMode.PinchCurve);
         bool pinching = IsPinching(hand, physicalRight, ref lift.held, drivingThis);
         float dt = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
-        if (pinching)
-            lift.hold = GestureHoldGrace;
-        else
-            lift.hold -= dt;
-
-        bool keep = pinching || (lift.active && lift.hold > 0f && !IsOpenPalm(hand) && !IsVSign(hand));
-        if (!keep)
+        if (!pinching)
         {
             CommitPinchLift(lift, physicalRight);
+            SetBlendShapeWeight(
+                shapeName,
+                physicalRight ? latchedSharpness : latchedCurve);
             return false;
         }
 
@@ -1261,19 +1246,33 @@ public sealed class KerisGestureController : MonoBehaviour
             lift.baselineY = rawY;
             lift.filteredY = rawY;
             lift.filterSeeded = true;
+            lift.hold = GestureHoldGrace;
         }
         else
         {
-            float follow = 1f - Mathf.Exp(-(physicalRight ? 34f : 26f) * dt);
+            float follow = 1f - Mathf.Exp(-(physicalRight ? 22f : 18f) * dt);
             lift.filteredY = Mathf.Lerp(lift.filteredY, rawY, Mathf.Clamp01(follow));
         }
 
         lift.paused = false;
+        lift.hold = GestureHoldGrace;
         float gain = physicalRight ? sharpnessLiftSensitivity : pinchLiftSensitivity;
-        float delta = rawY - lift.baselineY;
+        float delta = lift.filteredY - lift.baselineY;
+        float dead = 0.0075f / Mathf.Max(hand.DistanceGain, 1f);
+        if (Mathf.Abs(delta) < dead)
+            delta = 0f;
+        else
+            delta -= Mathf.Sign(delta) * dead;
+        // Lowering the pinch still retracts, but much slower so other poses
+        // cannot slam sharpness/curve back to zero.
+        if (delta < 0f)
+            delta *= 0.18f;
         float target = Mathf.Clamp(
             lift.starting + delta * gain * hand.DistanceGain, 0f, 100f);
-        float blend = 1f - Mathf.Exp(-(physicalRight ? 38f : 28f) * dt);
+        float blendHz = delta < 0f
+            ? (physicalRight ? 10f : 8f)
+            : (physicalRight ? 28f : 22f);
+        float blend = 1f - Mathf.Exp(-blendHz * dt);
         lift.current = Mathf.Lerp(lift.current, target, Mathf.Clamp01(blend));
         lift.target = target;
         SetBlendShapeWeight(shapeName, lift.current);
@@ -1889,8 +1888,10 @@ public sealed class KerisGestureController : MonoBehaviour
 
     private void CaptureHeldBodyShapes()
     {
-        heldSharpness = latchedSharpness;
-        heldCurve = latchedCurve;
+        heldSharpness = Mathf.Max(latchedSharpness, ReadShape("Sharpness"));
+        heldCurve = Mathf.Max(latchedCurve, ReadShape("Curve"));
+        latchedSharpness = heldSharpness;
+        latchedCurve = heldCurve;
         heldWidth = ReadShape("Width");
         heldHeight = ReadShape("Height");
         heldCarving = ReadShape(ActiveCarvingName);
@@ -1906,6 +1907,8 @@ public sealed class KerisGestureController : MonoBehaviour
     {
         if (!holdBodyShapes)
             CaptureHeldBodyShapes();
+        latchedSharpness = heldSharpness;
+        latchedCurve = heldCurve;
         SetBlendShapeWeight("Sharpness", heldSharpness);
         SetBlendShapeWeight("Curve", heldCurve);
         SetBlendShapeWeight("Width", heldWidth);

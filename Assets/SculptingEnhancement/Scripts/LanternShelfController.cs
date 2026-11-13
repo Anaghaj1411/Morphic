@@ -22,6 +22,8 @@ public sealed class LanternShelfController : MonoBehaviour
     [SerializeField] private Transform shelfCameraTarget;
     [SerializeField] private Vector3 shelfCameraPosition = new Vector3(-25.723f, 2.13f, -5.95f);
     [SerializeField] private Vector3 shelfCameraRotation = new Vector3(-180f, -101.054f, -90f);
+    private const float ShelfViewPullBack = 0.28f;
+    private const float ShelfViewDrop = 0.24f;
 
     private Vector3 storedPosition;
     private Quaternion storedRotation;
@@ -280,6 +282,9 @@ public sealed class LanternShelfController : MonoBehaviour
             position = shelfCameraPosition;
             rotation = Quaternion.Euler(shelfCameraRotation);
         }
+
+        position -= rotation * Vector3.forward * ShelfViewPullBack;
+        position -= rotation * Vector3.up * ShelfViewDrop;
 
         fieldOfView = storedCameraFieldOfView > 1f
             ? storedCameraFieldOfView
