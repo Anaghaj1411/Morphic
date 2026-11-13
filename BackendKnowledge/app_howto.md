@@ -3,7 +3,8 @@ Click the AI HELP button at the top right.
 A text box appears at the bottom center.
 Type a question.
 Press SEND.
-Lisa answers with short steps.
+Lisa answers with short steps for how-to questions.
+If the player asks how their work looks, Lisa uses the live sculpture data (shape, colors, stamps, bands, selfie, vertex sculpt) and gives specific praise through OpenAI.
 AI HELP does not send a question by itself.
 
 # Where to go in MORPHIC

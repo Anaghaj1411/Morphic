@@ -9,6 +9,7 @@ public sealed class MorphicSettingsUI : MonoBehaviour
 {
     private GameObject root;
     private GameObject sheet;
+    private GameObject dimmer;
     private GameObject pill;
     private Button settingsButton;
     private TMP_Text voiceToggleLabel;
@@ -28,11 +29,16 @@ public sealed class MorphicSettingsUI : MonoBehaviour
     public void OpenSheet()
     {
         EnsureUi();
+        RebuildSheetIfNeeded();
         if (root == null || sheet == null)
             return;
         root.SetActive(true);
         sheet.SetActive(true);
+        if (dimmer != null)
+            dimmer.SetActive(true);
         RefreshSoundLabels();
+        if (dimmer != null)
+            dimmer.transform.SetAsLastSibling();
         sheet.transform.SetAsLastSibling();
         root.transform.SetAsLastSibling();
     }
@@ -41,6 +47,8 @@ public sealed class MorphicSettingsUI : MonoBehaviour
     {
         if (sheet != null)
             sheet.SetActive(false);
+        if (dimmer != null)
+            dimmer.SetActive(false);
     }
 
     private void Awake()
@@ -86,9 +94,14 @@ public sealed class MorphicSettingsUI : MonoBehaviour
             settingsButton = frame != null
                 ? frame.GetComponent<Button>()
                 : existing.GetComponentInChildren<Button>(true);
-            Transform existingSheet = existing.Find("SettingsSheet");
+            Transform existingSheet = existing.Find("SettingsCardV2");
+            if (existingSheet == null)
+                existingSheet = existing.Find("SettingsSheet");
             if (existingSheet != null)
                 sheet = existingSheet.gameObject;
+            Transform existingDimmer = existing.Find("SettingsDimmer");
+            if (existingDimmer != null)
+                dimmer = existingDimmer.gameObject;
             WireButton();
             PlaceSettingsButton();
             RebuildSheetIfNeeded();
@@ -136,40 +149,62 @@ public sealed class MorphicSettingsUI : MonoBehaviour
 
     private void BuildSheet(Transform parent)
     {
+        GameObject veilGo = new GameObject(
+            "SettingsDimmer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        veilGo.transform.SetParent(parent, false);
+        dimmer = veilGo;
+        Image veil = veilGo.GetComponent<Image>();
+        StretchFull(veil.rectTransform);
+        veil.color = new Color(0.12f, 0.08f, 0.05f, 0.42f);
+        veil.raycastTarget = true;
+        veil.sprite = null;
+        Button dimmerButton = dimmer.AddComponent<Button>();
+        dimmerButton.transition = Selectable.Transition.None;
+        dimmerButton.onClick.AddListener(HideSheet);
+        dimmer.SetActive(false);
+
         Image outline = LanguagePageBuilder.CreateRoundedImage(
-            "SettingsSheet", parent, 32, LanguagePageBuilder.Green);
+            "SettingsCardV2", parent, 36, LanguagePageBuilder.Green);
         sheet = outline.gameObject;
         RectTransform box = outline.rectTransform;
         box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
         box.pivot = new Vector2(0.5f, 0.5f);
-        box.sizeDelta = new Vector2(500f, 500f);
+        box.sizeDelta = new Vector2(520f, 560f);
         outline.raycastTarget = true;
 
         Image cream = LanguagePageBuilder.CreateRoundedImage(
-            "Fill", outline.transform, 28, LanguagePageBuilder.Cream, false);
-        LanguagePageBuilder.Stretch(cream.rectTransform, new Vector2(10f, 10f));
+            "Fill", outline.transform, 32, LanguagePageBuilder.Cream, false);
+        LanguagePageBuilder.Stretch(cream.rectTransform, new Vector2(12f, 12f));
         cream.raycastTarget = true;
 
+        Image titleChip = LanguagePageBuilder.CreateRoundedImage(
+            "TitleChip", cream.transform, 22, LanguagePageBuilder.Green);
+        Place(titleChip.rectTransform, new Vector2(0f, -22f), new Vector2(280f, 52f), new Vector2(0.5f, 1f));
+        Image titleFill = LanguagePageBuilder.CreateRoundedImage(
+            "Fill", titleChip.transform, 18, LanguagePageBuilder.Pink);
+        LanguagePageBuilder.Stretch(titleFill.rectTransform, new Vector2(5f, 5f));
         LanguagePageBuilder.TextLabel title = LanguagePageBuilder.CreateLabel(
-            "Title", cream.transform, "SETTINGS", 28);
-        Place(title.Rect, new Vector2(0f, -16f), new Vector2(380f, 44f), new Vector2(0.5f, 1f));
+            "Title", titleFill.transform, "SETTINGS", 26);
+        LanguagePageBuilder.Stretch(title.Rect);
         if (title.Label != null)
             MorphicText.FitTitle(title.Label);
 
-        CreateVolumeRow(cream.transform, "Music", "MUSIC", -76f,
+        CreateCircleStepper(cream.transform, "Close", "×", new Vector2(-28f, -22f), HideSheet, true);
+
+        CreateVolumeRow(cream.transform, "Music", "MUSIC", -96f,
             () => NudgeMusic(-1f), () => NudgeMusic(1f), out musicLabel);
 
-        CreateVolumeRow(cream.transform, "Sfx", "SFX", -148f,
+        CreateVolumeRow(cream.transform, "Sfx", "SFX", -176f,
             () => NudgeSfx(-1f), () => NudgeSfx(1f), out sfxLabel);
 
         voiceToggleLabel = CreateSheetButton(
             cream.transform, "VoiceToggle", VoiceToggleLabel(),
-            new Vector2(0f, -220f), new Vector2(420f, 64f), ToggleVoice).GetComponentInChildren<TMP_Text>();
+            new Vector2(0f, -256f), new Vector2(440f, 68f), ToggleVoice).GetComponentInChildren<TMP_Text>();
 
-        CreateVolumeRow(cream.transform, "Vol", "LISA", -292f,
+        CreateVolumeRow(cream.transform, "Vol", "LISA", -344f,
             () => NudgeVolume(-0.1f), () => NudgeVolume(0.1f), out volumeLabel);
 
-        CreateSheetButton(cream.transform, "Exit", "EXIT", new Vector2(0f, -364f), new Vector2(420f, 64f),
+        CreateSheetButton(cream.transform, "Exit", "EXIT", new Vector2(0f, -424f), new Vector2(280f, 64f),
             HideSheet);
         sheet.SetActive(false);
     }
@@ -184,17 +219,17 @@ public sealed class MorphicSettingsUI : MonoBehaviour
         out TMP_Text label)
     {
         Image frame = LanguagePageBuilder.CreateRoundedImage(
-            name + "Row", parent, 22, LanguagePageBuilder.Green);
+            name + "Track", parent, 24, LanguagePageBuilder.Green);
         RectTransform rect = frame.rectTransform;
         rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
         rect.pivot = new Vector2(0.5f, 1f);
         rect.anchoredPosition = new Vector2(0f, y);
-        rect.sizeDelta = new Vector2(420f, 64f);
+        rect.sizeDelta = new Vector2(440f, 70f);
         frame.raycastTarget = false;
 
         Image fill = LanguagePageBuilder.CreateRoundedImage(
-            "Fill", frame.transform, 18, LanguagePageBuilder.Pink);
-        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(4f, 4f));
+            "Fill", frame.transform, 20, LanguagePageBuilder.Pink);
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
         fill.raycastTarget = false;
 
         LanguagePageBuilder.TextLabel titleLabel = LanguagePageBuilder.CreateLabel(
@@ -202,14 +237,17 @@ public sealed class MorphicSettingsUI : MonoBehaviour
         RectTransform titleRect = titleLabel.Rect;
         titleRect.anchorMin = titleRect.anchorMax = new Vector2(0f, 0.5f);
         titleRect.pivot = new Vector2(0f, 0.5f);
-        titleRect.anchoredPosition = new Vector2(16f, 0f);
-        titleRect.sizeDelta = new Vector2(110f, 48f);
+        titleRect.anchoredPosition = new Vector2(20f, 0f);
+        titleRect.sizeDelta = new Vector2(120f, 48f);
         if (titleLabel.Label != null)
+        {
+            titleLabel.Label.alignment = TextAlignmentOptions.Left;
             MorphicText.FitButton(titleLabel.Label);
+        }
 
-        CreateCircleStepper(fill.transform, name + "Down", "–", new Vector2(28f, 0f), down);
-        label = CreateValuePill(fill.transform, name + "Readout", new Vector2(118f, 0f));
-        CreateCircleStepper(fill.transform, name + "Up", "+", new Vector2(208f, 0f), up);
+        CreateCircleStepper(fill.transform, name + "Down", "–", new Vector2(-168f, 0f), down);
+        label = CreateValuePill(fill.transform, name + "Readout", new Vector2(-96f, 0f));
+        CreateCircleStepper(fill.transform, name + "Up", "+", new Vector2(-32f, 0f), up);
     }
 
     private static TMP_Text CreateValuePill(Transform parent, string name, Vector2 pos)
@@ -217,10 +255,10 @@ public sealed class MorphicSettingsUI : MonoBehaviour
         Image frame = LanguagePageBuilder.CreateRoundedImage(
             name, parent, 18, LanguagePageBuilder.Green);
         RectTransform rect = frame.rectTransform;
-        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.anchorMin = rect.anchorMax = new Vector2(1f, 0.5f);
         rect.pivot = new Vector2(0.5f, 0.5f);
         rect.anchoredPosition = pos;
-        rect.sizeDelta = new Vector2(92f, 42f);
+        rect.sizeDelta = new Vector2(88f, 40f);
         frame.raycastTarget = false;
 
         Image fill = LanguagePageBuilder.CreateRoundedImage(
@@ -241,15 +279,24 @@ public sealed class MorphicSettingsUI : MonoBehaviour
         string name,
         string symbol,
         Vector2 pos,
-        UnityEngine.Events.UnityAction click)
+        UnityEngine.Events.UnityAction click,
+        bool topRight = false)
     {
-        const float size = 46f;
+        const float size = 48f;
         Sprite circle = LanguagePageBuilder.Circle(128);
 
         Image disc = LanguagePageBuilder.CreateImage(name, parent, circle);
         RectTransform rect = disc.rectTransform;
-        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
-        rect.pivot = new Vector2(0.5f, 0.5f);
+        if (topRight)
+        {
+            rect.anchorMin = rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+        }
+        else
+        {
+            rect.anchorMin = rect.anchorMax = new Vector2(1f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+        }
         rect.anchoredPosition = pos;
         rect.sizeDelta = new Vector2(size, size);
         disc.color = LanguagePageBuilder.Green;
@@ -416,9 +463,18 @@ public sealed class MorphicSettingsUI : MonoBehaviour
         if (root == null)
             return;
 
-        bool stale = sheet == null || FindNamed(sheet.transform, "MusicRow") == null;
+        bool stale = sheet == null
+            || sheet.name != "SettingsCardV2"
+            || FindNamed(root.transform, "SettingsDimmer") == null
+            || FindNamed(sheet.transform, "TitleChip") == null
+            || FindNamed(sheet.transform, "MusicTrack") == null;
         if (stale)
         {
+            if (dimmer != null)
+            {
+                Object.DestroyImmediate(dimmer);
+                dimmer = null;
+            }
             if (sheet != null)
             {
                 Object.DestroyImmediate(sheet);

@@ -3,12 +3,13 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// Pink/green ZOOM pill. Shown after the user picks lantern, teapot, or
-/// keris so they can dolly the camera in on the sculpt. Click again to
-/// return to the studio framing.
+/// Pink/green zoom cluster with plus and minus. Shown after the user
+/// picks lantern, teapot, or keris so they can step the camera in or out.
 public class MorphicSculptZoomUI : MonoBehaviour
 {
-    private const float MoveDuration = 0.4f;
+    private const float MoveDuration = 0.28f;
+    private const int MaxZoomLevel = 10;
+    private const float CloseOvershoot = 0.62f;
     private const float ZoomPullFraction = 0.22f;
     private const float MinPull = 0.28f;
     private const float MaxPull = 0.65f;
@@ -20,10 +21,12 @@ public class MorphicSculptZoomUI : MonoBehaviour
     private static readonly Vector3 KerisZoomEuler = new Vector3(0f, -257f, 90f);
 
     private GameObject root;
-    private Button zoomButton;
-    private TMP_Text zoomLabel;
+    private Button minusButton;
+    private Button plusButton;
     private Coroutine moveRoutine;
     private bool zoomed;
+    private int zoomLevel;
+    private int extraZoomLevel;
     private bool hasRestPose;
     private Vector3 restPosition;
     private Quaternion restRotation;
@@ -63,7 +66,10 @@ public class MorphicSculptZoomUI : MonoBehaviour
             hasStored = true;
         }
 
-        zoomUi.ReleaseWithoutRestore();
+        zoomUi.StopMove();
+        zoomUi.zoomed = false;
+        zoomUi.zoomLevel = 0;
+        zoomUi.extraZoomLevel = 0;
     }
 
     public static void ReleaseIfPresent()
@@ -71,15 +77,19 @@ public class MorphicSculptZoomUI : MonoBehaviour
         vertexSculptOwnsCamera = false;
         MorphicSculptZoomUI zoomUi = FindInstance();
         if (zoomUi != null)
+        {
+            zoomUi.extraZoomLevel = 0;
             zoomUi.ReleaseWithoutRestore();
+        }
     }
 
     public void ReleaseWithoutRestore()
     {
         StopMove();
         zoomed = false;
+        zoomLevel = 0;
+        extraZoomLevel = 0;
         hasRestPose = false;
-        UpdateLabel();
     }
 
     public void SetVisible(bool visible)
@@ -94,7 +104,6 @@ public class MorphicSculptZoomUI : MonoBehaviour
         root.SetActive(visible);
         if (visible)
             root.transform.SetAsLastSibling();
-        UpdateLabel();
     }
 
     private void Awake()
@@ -112,8 +121,16 @@ public class MorphicSculptZoomUI : MonoBehaviour
     {
         if (root != null)
         {
-            WireButton();
-            return;
+            if (minusButton != null && plusButton != null)
+            {
+                WireButtons();
+                return;
+            }
+
+            Object.DestroyImmediate(root);
+            root = null;
+            minusButton = null;
+            plusButton = null;
         }
 
         Canvas canvas = FindFirstObjectByType<Canvas>();
@@ -123,14 +140,21 @@ public class MorphicSculptZoomUI : MonoBehaviour
         Transform existing = canvas.transform.Find("MorphicSculptZoom");
         if (existing != null)
         {
-            root = existing.gameObject;
-            zoomButton = existing.GetComponentInChildren<Button>(true);
-            zoomLabel = existing.GetComponentInChildren<TMP_Text>(true);
-            Transform existingFrame = existing.Find("Zoom");
-            if (existingFrame != null)
-                PlaceTopLeft(existingFrame.GetComponent<RectTransform>());
-            WireButton();
-            return;
+            if (existing.Find("Zoom/Fill/ZoomWord") == null)
+            {
+                Object.DestroyImmediate(existing.gameObject);
+            }
+            else
+            {
+                root = existing.gameObject;
+                minusButton = existing.Find("Zoom/Fill/Minus")?.GetComponent<Button>();
+                plusButton = existing.Find("Zoom/Fill/Plus")?.GetComponent<Button>();
+                Transform existingFrame = existing.Find("Zoom");
+                if (existingFrame != null)
+                    PlaceTopRight(existingFrame.GetComponent<RectTransform>());
+                WireButtons();
+                return;
+            }
         }
 
         root = new GameObject("MorphicSculptZoom", typeof(RectTransform));
@@ -140,64 +164,183 @@ public class MorphicSculptZoomUI : MonoBehaviour
 
         Image frame = LanguagePageBuilder.CreateRoundedImage(
             "Zoom", root.transform, 28, LanguagePageBuilder.Green);
-        PlaceTopLeft(frame.rectTransform);
+        PlaceTopRight(frame.rectTransform);
         frame.raycastTarget = true;
 
         Image fill = LanguagePageBuilder.CreateRoundedImage(
             "Fill", frame.transform, 24, LanguagePageBuilder.Pink);
-        RectTransform fillRect = fill.rectTransform;
-        fillRect.anchorMin = Vector2.zero;
-        fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = new Vector2(5f, 5f);
-        fillRect.offsetMax = new Vector2(-5f, -5f);
-        fill.raycastTarget = true;
+        LanguagePageBuilder.Stretch(fill.rectTransform, new Vector2(5f, 5f));
+        fill.raycastTarget = false;
 
-        LanguagePageBuilder.TextLabel label = LanguagePageBuilder.CreateLabel(
-            "Label",
-            fill.transform,
-            "ZOOM",
-            18);
-        LanguagePageBuilder.Stretch(label.Rect);
-        zoomLabel = label.Label;
-        if (zoomLabel != null)
-            MorphicText.FitButton(zoomLabel);
-
-        zoomButton = frame.gameObject.AddComponent<Button>();
-        zoomButton.targetGraphic = fill;
-        zoomButton.colors = LanguagePageBuilder.ButtonColors();
-        WireButton();
+        minusButton = CreateZoomStepper(fill.transform, "Minus", "–", new Vector2(-78f, 0f), ZoomOut);
+        LanguagePageBuilder.TextLabel zoomWord = LanguagePageBuilder.CreateLabel(
+            "ZoomWord", fill.transform, "ZOOM", 16);
+        RectTransform wordRect = zoomWord.Rect;
+        wordRect.anchorMin = wordRect.anchorMax = new Vector2(0.5f, 0.5f);
+        wordRect.pivot = new Vector2(0.5f, 0.5f);
+        wordRect.anchoredPosition = Vector2.zero;
+        wordRect.sizeDelta = new Vector2(88f, 40f);
+        if (zoomWord.Label != null)
+            MorphicText.FitButton(zoomWord.Label);
+        plusButton = CreateZoomStepper(fill.transform, "Plus", "+", new Vector2(78f, 0f), ZoomIn);
+        WireButtons();
     }
 
-    private void WireButton()
+    private static Button CreateZoomStepper(
+        Transform parent,
+        string name,
+        string symbol,
+        Vector2 pos,
+        UnityEngine.Events.UnityAction click)
     {
-        if (zoomButton == null)
-            return;
-        zoomButton.onClick.RemoveAllListeners();
-        zoomButton.onClick.AddListener(ToggleZoom);
+        Sprite circle = LanguagePageBuilder.Circle(128);
+        Image disc = LanguagePageBuilder.CreateImage(name, parent, circle);
+        RectTransform rect = disc.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = new Vector2(42f, 42f);
+        disc.color = LanguagePageBuilder.Green;
+        disc.raycastTarget = true;
+        disc.preserveAspect = true;
+
+        Image core = LanguagePageBuilder.CreateImage("Core", disc.transform, circle);
+        LanguagePageBuilder.Stretch(core.rectTransform, new Vector2(5f, 5f));
+        core.color = LanguagePageBuilder.Pink;
+        core.raycastTarget = false;
+        core.preserveAspect = true;
+
+        LanguagePageBuilder.TextLabel glyph = LanguagePageBuilder.CreateLabel(
+            "Glyph", disc.transform, symbol, 26);
+        LanguagePageBuilder.Stretch(glyph.Rect);
+        if (glyph.Label != null)
+            MorphicText.FitButton(glyph.Label);
+
+        Button button = disc.gameObject.AddComponent<Button>();
+        button.targetGraphic = disc;
+        button.colors = LanguagePageBuilder.ButtonColors();
+        button.onClick.AddListener(click);
+        DialogueButtonClickSound.Instance?.RegisterButton(button);
+        return button;
     }
 
-    private void ToggleZoom()
+    private void WireButtons()
+    {
+        if (minusButton != null)
+        {
+            minusButton.onClick.RemoveAllListeners();
+            minusButton.onClick.AddListener(ZoomOut);
+        }
+        if (plusButton != null)
+        {
+            plusButton.onClick.RemoveAllListeners();
+            plusButton.onClick.AddListener(ZoomIn);
+        }
+    }
+
+    private void ZoomIn()
+    {
+        NudgeZoom(1);
+    }
+
+    private void ZoomOut()
+    {
+        NudgeZoom(-1);
+    }
+
+    private void NudgeZoom(int delta)
     {
         if (vertexSculptOwnsCamera)
+        {
+            int nextExtra = Mathf.Clamp(extraZoomLevel + delta, 0, MaxZoomLevel);
+            if (nextExtra == extraZoomLevel)
+                return;
+            extraZoomLevel = nextExtra;
+            ApplyVertexExtraZoom(extraZoomLevel / (float)MaxZoomLevel);
             return;
+        }
 
         Camera view = ResolveViewCamera();
         if (view == null)
             return;
 
-        if (zoomed)
-        {
-            RestoreRestPose(true);
-            return;
-        }
+        if (!hasRestPose)
+            CaptureRestPose(view);
 
-        if (!TryGetZoomTarget(view, out Vector3 zoomPosition, out Quaternion zoomRotation))
+        int next = Mathf.Clamp(zoomLevel + delta, 0, MaxZoomLevel);
+        if (next == zoomLevel)
             return;
 
-        CaptureRestPose(view);
-        zoomed = true;
-        UpdateLabel();
-        StartMove(view, zoomPosition, zoomRotation, view.fieldOfView);
+        zoomLevel = next;
+        zoomed = zoomLevel > 0;
+        float t = zoomLevel / (float)MaxZoomLevel;
+        Vector3 targetPos = TryGetActiveCraftBounds(out Bounds bounds)
+            ? DollyAlongView(view, restPosition, t, bounds)
+            : DollyAlongView(view, restPosition, t);
+        StartMove(view, targetPos, restRotation, view.fieldOfView);
+    }
+
+    public static Vector3 DollyAlongView(Camera cam, Vector3 from, float closer01)
+    {
+        if (cam == null)
+            return from;
+        return from + LevelViewDolly(cam) * (1.6f * Mathf.Clamp01(closer01));
+    }
+
+    public static Vector3 DollyAlongView(Camera cam, Vector3 from, float closer01, Bounds bounds)
+    {
+        if (cam == null)
+            return from;
+        closer01 = Mathf.Clamp01(closer01);
+        Vector3 dolly = LevelViewDolly(cam);
+        float depth = Vector3.Dot(bounds.center - from, dolly);
+        if (depth < 0.3f)
+            depth = 1.6f;
+        return from + dolly * (depth * 0.70f * closer01);
+    }
+
+    public static Vector3 ApproachCraft(Vector3 from, Bounds bounds, float closer01)
+    {
+        return DollyAlongView(Camera.main, from, closer01, bounds);
+    }
+
+    /// <summary>
+    /// Same look-dolly as before, with the table-dip removed. This camera is
+    /// rolled 90°, so raw forward has a screen-down component; flatten that
+    /// off so plus still moves into the craft instead of onto the table.
+    /// </summary>
+    private static Vector3 LevelViewDolly(Camera cam)
+    {
+        Vector3 forward = cam.transform.forward;
+        Vector3 up = cam.transform.up;
+        Vector3 visualUp = Mathf.Abs(up.z) >= Mathf.Abs(up.y)
+            ? new Vector3(0f, 0f, 1f)
+            : Vector3.up;
+        Vector3 dir = Vector3.ProjectOnPlane(forward, visualUp);
+        if (dir.sqrMagnitude < 0.0001f)
+            return forward;
+        return dir.normalized;
+    }
+
+    private static void ApplyVertexExtraZoom(float closer01)
+    {
+        SculptingEnhancementLanternColorController lantern =
+            FindFirstObjectByType<SculptingEnhancementLanternColorController>(
+                FindObjectsInactive.Include);
+        if (lantern != null && lantern.isActiveAndEnabled)
+            lantern.ApplyExtraSculptZoom(closer01);
+
+        SculptingEnhancementTeapotColorController teapot =
+            FindFirstObjectByType<SculptingEnhancementTeapotColorController>(
+                FindObjectsInactive.Include);
+        if (teapot != null && teapot.isActiveAndEnabled)
+            teapot.ApplyExtraSculptZoom(closer01);
+
+        SculptingEnhancementKerisColorController keris =
+            FindFirstObjectByType<SculptingEnhancementKerisColorController>(
+                FindObjectsInactive.Include);
+        if (keris != null && keris.isActiveAndEnabled)
+            keris.ApplyExtraSculptZoom(closer01);
     }
 
     private void RestoreRestPose(bool animate)
@@ -207,7 +350,7 @@ public class MorphicSculptZoomUI : MonoBehaviour
             return;
 
         zoomed = false;
-        UpdateLabel();
+        zoomLevel = 0;
 
         Camera view = ResolveViewCamera();
         if (view == null || !hasRestPose)
@@ -436,23 +579,15 @@ public class MorphicSculptZoomUI : MonoBehaviour
         return FindFirstObjectByType<Camera>(FindObjectsInactive.Exclude);
     }
 
-    private void UpdateLabel()
-    {
-        if (zoomLabel == null)
-            return;
-        MorphicLoc.Bind(zoomLabel, zoomed ? "ZOOM OUT" : "ZOOM");
-    }
-
-    private static void PlaceTopLeft(RectTransform button)
+    private static void PlaceTopRight(RectTransform button)
     {
         if (button == null)
             return;
 
-        // Under HELP in the top-right corner.
         button.anchorMin = button.anchorMax = new Vector2(1f, 1f);
         button.pivot = new Vector2(1f, 1f);
         button.anchoredPosition = new Vector2(-24f, -86f);
-        button.sizeDelta = new Vector2(100f, 48f);
+        button.sizeDelta = new Vector2(236f, 56f);
     }
 
     private static void StretchFull(RectTransform rect)

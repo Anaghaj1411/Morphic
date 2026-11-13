@@ -317,6 +317,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         state.hasSelfie = appliedSelfieTexture != null ? 1 : 0;
         state.currentStage = mode == ColorMode.Sculpt ? "sculpt" : "customize";
         state.currentTool = "lantern";
+        MorphicLisaCraftReview.FillDecor(
+            state,
+            committedClayColor,
+            committedMaterialColors,
+            partNames,
+            appliedDesignTexture,
+            appliedSelfieTexture,
+            patternPainter,
+            vertexSculptController);
     }
 
     public void SetPaletteAvailable(bool available)
@@ -780,6 +789,23 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         targetPos = focus + back * targetDist + camRight * (targetDist * 0.08f);
         targetRot = storedSculptCamRot;
         targetFov = storedSculptCamFov;
+    }
+
+    public void ApplyExtraSculptZoom(float closer01)
+    {
+        if (!vertexSculptCameraZoomed)
+            return;
+
+        Camera cam = ResolveViewCamera();
+        Renderer focusRenderer = lanternRenderer;
+        if (cam == null || focusRenderer == null)
+            return;
+
+        GetSculptCameraTarget(cam, focusRenderer, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
+        targetPos = MorphicSculptZoomUI.DollyAlongView(
+            cam, targetPos, closer01, focusRenderer.bounds);
+        float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
+        StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.28f);
     }
 
     [ContextMenu("Capture Current View As Sculpt Camera")]

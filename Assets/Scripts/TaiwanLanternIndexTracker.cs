@@ -47,7 +47,7 @@ public class TaiwanLanternIndexTracker : MonoBehaviour
     {
         if (handRunner == null || lantern == null)
         {
-            SetGestureText("GESTURE: NONE");
+            SetGestureText("NO HANDS");
             return;
         }
 
@@ -111,7 +111,7 @@ public class TaiwanLanternIndexTracker : MonoBehaviour
 
         UpdateLantern();
 
-        SetGestureText("GESTURE: TWO INDEX FINGERS");
+        SetGestureText("WIDTH & HEIGHT");
     }
 
     private bool IsIndexExtended(SculptHandFrame hand)
@@ -242,7 +242,7 @@ public class TaiwanLanternIndexTracker : MonoBehaviour
     {
         if (!trackingActive)
         {
-            SetGestureText("GESTURE: NONE");
+            SetGestureText("NO HANDS");
             return;
         }
 
@@ -252,7 +252,7 @@ public class TaiwanLanternIndexTracker : MonoBehaviour
         // short MediaPipe interruptions.
         if (lostTimer < lostHandGracePeriod)
         {
-            SetGestureText("GESTURE: TWO INDEX FINGERS");
+            SetGestureText("WIDTH & HEIGHT");
             return;
         }
 
@@ -264,7 +264,7 @@ public class TaiwanLanternIndexTracker : MonoBehaviour
         trackingActive = false;
         lostTimer = 0f;
 
-        SetGestureText("GESTURE: NONE");
+        SetGestureText("NO HANDS");
     }
 
     private void SetGestureText(string message)

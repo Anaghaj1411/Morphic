@@ -289,6 +289,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         state.hasSelfie = appliedSelfieTexture != null ? 1 : 0;
         state.currentStage = mode == ColorMode.Sculpt ? "sculpt" : "customize";
         state.currentTool = "teapot";
+        MorphicLisaCraftReview.FillDecor(
+            state,
+            committedClayColor,
+            committedMaterialColors,
+            partNames,
+            appliedDesignTexture,
+            appliedSelfieTexture,
+            patternPainter,
+            vertexSculptController);
     }
 
     public void BindFrom(
@@ -2179,6 +2188,26 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         targetPos = TeapotSculptCamPos;
         targetRot = Quaternion.Euler(TeapotSculptCamEuler);
         targetFov = storedSculptCamFov > 1f ? storedSculptCamFov : Mathf.Max(10f, sculptCameraFov);
+    }
+
+    public void ApplyExtraSculptZoom(float closer01)
+    {
+        if (!vertexSculptCameraZoomed)
+            return;
+
+        Camera cam = ResolveViewCamera();
+        if (cam == null)
+            return;
+
+        GetSculptCameraTarget(cam, teapotRenderer, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
+        if (teapotRenderer != null)
+            targetPos = MorphicSculptZoomUI.DollyAlongView(
+                cam, targetPos, closer01, teapotRenderer.bounds);
+        else
+            targetPos = MorphicSculptZoomUI.DollyAlongView(cam, targetPos, closer01);
+
+        float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
+        StartSculptCameraMove(cam, targetPos, targetRot, targetFov, targetNear, 0.28f);
     }
 
     [ContextMenu("Capture Current View As Sculpt Camera")]

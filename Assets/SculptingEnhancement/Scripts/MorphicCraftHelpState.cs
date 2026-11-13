@@ -20,4 +20,9 @@ public class MorphicCraftHelpState
     public int hasStamp;
     public int hasSelfie;
     public int locked;
+    public string colors;
+    public string designs;
+    public int bands;
+    public int clayCoils;
+    public int vertexSculpt;
 }

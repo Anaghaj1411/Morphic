@@ -40,6 +40,12 @@ public class MorphicAITriggerEngine : MonoBehaviour
         public int hasStamp;
         public int hasSelfie;
         public int locked;
+        public string colors;
+        public string designs;
+        public int bands;
+        public int clayCoils;
+        public int vertexSculpt;
+        public string craftSummary;
         public string replyLanguage;
         public string replyInstruction;
     }
@@ -160,8 +166,15 @@ public class MorphicAITriggerEngine : MonoBehaviour
             hasStamp = state.hasStamp,
             hasSelfie = state.hasSelfie,
             locked = state.locked,
+            colors = state.colors,
+            designs = state.designs,
+            bands = state.bands,
+            clayCoils = state.clayCoils,
+            vertexSculpt = state.vertexSculpt,
+            craftSummary = MorphicLisaCraftReview.BuildSummary(state),
             replyLanguage = MorphicLoc.AiLanguageName(),
-            replyInstruction = MorphicLoc.WithAiLanguage("")
+            replyInstruction = MorphicLoc.WithAiLanguage("") + " " +
+                MorphicLisaCraftReview.BackendHint(state)
         };
 
         if (behaviorTracker != null)

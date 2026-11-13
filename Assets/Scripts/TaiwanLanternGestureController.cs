@@ -283,7 +283,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
 
         if (handRunner == null || lanternRenderer == null)
         {
-            SetStatus("GESTURE: NONE");
+            SetStatus("NO HANDS");
             return;
         }
 
@@ -291,7 +291,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
         if (externalFistRotationActive)
         {
             RestoreCommittedThumbShapes();
-            SetStatus("GESTURE: FIST REVOLVE");
+            SetStatus("FIST");
             return;
         }
 
@@ -304,7 +304,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
             tasselArmed = false;
             rightVArmed = false;
             leftVArmed = false;
-            SetStatus("GESTURE: NO HANDS");
+            SetStatus("NO HANDS");
             return;
         }
 
@@ -343,11 +343,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
             widthHeightArmed = false;
             bambooArmed = false;
             tasselArmed = false;
-            SetStatus("LOCKED  |  open palm  |  TOP " +
-                      current[PopTop].ToString("0") +
-                      "  BOT " + current[PopBottom].ToString("0") +
-                      "  BAM " + current[PopBamboo].ToString("0") +
-                      "  TAS " + current[ActiveTasselChannel()].ToString("0"));
+            SetStatus("OPEN PALM");
             return;
         }
 
@@ -403,11 +399,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
         }
 
         SetStatus(
-            BuildStatus(twoIndex, rightVTopper, leftVBottom, twoFists, twoV, hasTwo, first, second) +
-            "  |  TOP " + current[PopTop].ToString("0") +
-            "  BOT " + current[PopBottom].ToString("0") +
-            "  BAM " + current[PopBamboo].ToString("0") +
-            "  TAS " + current[ActiveTasselChannel()].ToString("0"));
+            BuildStatus(twoIndex, rightVTopper, leftVBottom, twoFists, twoV, hasTwo, first, second));
     }
 
     public void SetExternalFistRotationActive(bool active)
@@ -1321,21 +1313,21 @@ public class TaiwanLanternGestureController : MonoBehaviour
         SculptHandFrame second)
     {
         if (twoV)
-            return "TWO V SIDE: BAMBOO";
+            return "TWO V";
         if (twoFists)
-            return "TWO FISTS DOWN: TASSEL";
+            return "TWO FISTS";
         if (rightVTopper)
-            return "RIGHT V: TOPPER";
+            return "RIGHT V";
         if (leftVBottom)
-            return "LEFT V: BOTTOM";
+            return "LEFT V";
         if (twoIndex)
-            return "WIDTH + HEIGHT";
+            return "WIDTH & HEIGHT";
 
         string text = "";
         AppendHandStatus(ref text, first, second, hasTwo);
         if (hasTwo)
             AppendHandStatus(ref text, second, first, true);
-        return text.Length == 0 ? "GESTURE: NONE" : text;
+        return text.Length == 0 ? "NO HANDS" : text;
     }
 
     private void AppendHandStatus(
@@ -1347,13 +1339,11 @@ public class TaiwanLanternGestureController : MonoBehaviour
         bool right = IsPhysicalRightHand(hand, other, hasTwo);
         ref bool held = ref (right ? ref rightPinchHeld : ref leftPinchHeld);
         if (IsPinching(hand, right, ref held))
-            text = Append(text, right
-                ? "RIGHT PINCH: " + popTopLabel
-                : "LEFT PINCH: " + popBottomLabel);
+            text = Append(text, right ? "RIGHT PINCH" : "LEFT PINCH");
         else if (IsOpenPalm(hand))
             text = Append(text, "OPEN PALM");
         else if (IsVSign(hand))
-            text = Append(text, right ? "RIGHT V: TOPPER" : "LEFT V: BOTTOM");
+            text = Append(text, right ? "RIGHT V" : "LEFT V");
     }
 
     private static string Append(string current, string part)
@@ -1456,7 +1446,7 @@ public class TaiwanLanternGestureController : MonoBehaviour
     {
         if (progressCardGroup == null)
             return;
-        if (message == "GESTURE: NONE" || message.Contains("NO HANDS"))
+        if (message == "NO HANDS" || message.Contains("NO HANDS") || message == "NONE")
         {
             showProgressCard = false;
             return;
@@ -1466,17 +1456,17 @@ public class TaiwanLanternGestureController : MonoBehaviour
         float percent = 0f;
         if (message.Contains("WIDTH"))
             percent = (ReadRenderer(Width, current[Width]) + ReadRenderer(Height, current[Height])) * 0.5f;
-        else if (message.Contains("TASSEL"))
+        else if (message.Contains("TWO FISTS"))
             percent = current[ActiveTasselChannel()];
-        else if (message.Contains("BAMBOO"))
+        else if (message.Contains("TWO V"))
             percent = current[PopBamboo];
         else if (message.Contains("TOP CIRCLE") || message.Contains("TOP RECTANGLE"))
             percent = current[PopTop];
         else if (message.Contains("BOTTOM CIRCLE") || message.Contains("BOTTOM RECTANGLE"))
             percent = current[PopBottom];
-        else if (message.Contains("TOPPER"))
+        else if (message.Contains("RIGHT V"))
             percent = current[Topper];
-        else if (message.Contains("BOTTOM"))
+        else if (message.Contains("LEFT V"))
             percent = current[Bottom];
 
         progressPartText.text = message;

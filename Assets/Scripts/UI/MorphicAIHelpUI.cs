@@ -482,10 +482,7 @@ public class MorphicAIHelpUI : MonoBehaviour
             return;
         }
 
-        ShowMessage("LISA: Asking...");
         MorphicCraftHelpState state = BuildHelpState();
-        state.userQuestion = MorphicLoc.WithAiLanguage(question);
-        EnsureAi();
         if (questionInput != null)
         {
             questionInput.SetTextWithoutNotify("");
@@ -493,6 +490,10 @@ public class MorphicAIHelpUI : MonoBehaviour
             if (EventSystem.current != null)
                 EventSystem.current.SetSelectedGameObject(questionInput.gameObject);
         }
+
+        ShowMessage("LISA: Asking...");
+        state.userQuestion = MorphicLoc.WithAiLanguage(question);
+        EnsureAi();
 
         if (trigger == null || !trigger.RequestSculptHelp(state))
             ShowMessage("LISA: Help is waking up. Send again.");

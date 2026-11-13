@@ -167,7 +167,7 @@ public sealed class TeapotGestureController : MonoBehaviour
         ResetBevelTracking();
         currentGesture = GestureMode.None;
         lockedWidthHeightAxis = 0;
-        SetStatus("TEAPOT: ROTATE");
+        SetStatus("FIST");
     }
 
     public void SynchronizeWeightsFromRenderer()
@@ -473,7 +473,7 @@ public sealed class TeapotGestureController : MonoBehaviour
             ResetPinchTracking();
             ResetHandleDownTracking();
             ResetBevelTracking();
-            EndGesture("TEAPOT: NO HANDS");
+            EndGesture("NO HANDS");
             return;
         }
 
@@ -518,7 +518,7 @@ public sealed class TeapotGestureController : MonoBehaviour
             ResetHandleDownTracking();
             ResetBevelTracking();
             currentGesture = GestureMode.None;
-            SetStatus("LOCKED  |  open palm");
+            SetStatus("OPEN PALM");
             return;
         }
 
@@ -536,7 +536,7 @@ public sealed class TeapotGestureController : MonoBehaviour
 
             currentGesture = GestureMode.WidthHeight;
             madeDeformation = true;
-            SetStatus("TEAPOT: WIDTH / HEIGHT");
+            SetStatus("WIDTH & HEIGHT");
         }
         else if (twoV)
         {
@@ -548,7 +548,7 @@ public sealed class TeapotGestureController : MonoBehaviour
 
             DriveMiddle(first, second);
             madeDeformation = true;
-            SetStatus("TEAPOT: MIDDLE");
+            SetStatus("TWO V");
         }
         else if (twoFists)
         {
@@ -557,7 +557,7 @@ public sealed class TeapotGestureController : MonoBehaviour
             currentGesture = GestureMode.HandleDown;
             DriveHandleDown(first, second);
             madeDeformation = true;
-            SetStatus("TEAPOT: " + ActiveHandleName.ToUpperInvariant());
+            SetStatus("TWO FISTS");
         }
         else if (rightV)
         {
@@ -566,7 +566,7 @@ public sealed class TeapotGestureController : MonoBehaviour
             currentGesture = GestureMode.BevelUp;
             DriveBevelUp(rightVHand);
             madeDeformation = true;
-            SetStatus("TEAPOT: BEVEL TOP / BOTTOM");
+            SetStatus("RIGHT V");
         }
         else
         {
@@ -594,14 +594,13 @@ public sealed class TeapotGestureController : MonoBehaviour
                 madeDeformation = true;
 
             if (lidPinching && shaftPinching)
-                SetStatus("TEAPOT: " + ActiveLidName.ToUpperInvariant() +
-                    " + " + ActiveShaftName.ToUpperInvariant());
+                SetStatus("RIGHT PINCH + LEFT PINCH");
             else if (lidPinching)
-                SetStatus("TEAPOT: " + ActiveLidName.ToUpperInvariant());
+                SetStatus("RIGHT PINCH");
             else if (shaftPinching)
-                SetStatus("TEAPOT: " + ActiveShaftName.ToUpperInvariant());
+                SetStatus("LEFT PINCH");
             else
-                EndGesture("TEAPOT: READY");
+                EndGesture("NO HANDS");
         }
     }
 
@@ -681,9 +680,7 @@ public sealed class TeapotGestureController : MonoBehaviour
             blendShapeIndices[shapeName] = index;
         }
 
-        SetStatus(missingCount == 0
-            ? "TEAPOT: READY"
-            : $"TEAPOT: {missingCount} BLEND SHAPE(S) MISSING");
+        SetStatus(missingCount == 0 ? "NO HANDS" : "NO HANDS");
 
         Debug.Log(
             $"TeapotGestureController: resolved {blendShapeIndices.Count}/{RequiredBlendShapeNames.Length} " +
