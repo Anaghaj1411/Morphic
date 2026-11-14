@@ -2898,7 +2898,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             designSurfaceMaterial = new Material(shader)
             {
                 name = "Morphic Keris Stamp Material",
-                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 55
             };
         }
 
@@ -2906,7 +2906,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         Texture useTexture = painted != null ? painted : texture;
 
         Material material = designSurfaceMaterial;
-        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20;
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 55;
         if (material.HasProperty("_DesignTex"))
             material.SetTexture("_DesignTex", useTexture);
         if (material.HasProperty("_UseMeshUV"))
@@ -2969,7 +2969,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             meshRenderer.receiveShadows = false;
             meshRenderer.allowOcclusionWhenDynamic = false;
-            meshRenderer.sortingOrder = 20;
+            meshRenderer.sortingOrder = 55;
             designSurfaceRenderer = meshRenderer;
 
             stampOverlayMesh = new Mesh { name = "KerisStampTiles" };
@@ -2997,6 +2997,8 @@ public sealed partial class SculptingEnhancementKerisColorController
 
         designSurfaceRoot.gameObject.layer = kerisRenderer.gameObject.layer;
         designSurfaceRoot.gameObject.SetActive(true);
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.sortingOrder = 55;
     }
 
     private Texture2D GetStampAlphaTexture(Texture2D stamp)
@@ -3152,7 +3154,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         float spacing = StampTileRows > 1 ? span / (StampTileRows - 1) : span;
         float tileHeight = Mathf.Max(0.0005f, spacing * StampTileFillFraction);
         float tileWidth = Mathf.Max(0.0005f, Mathf.Min(tileHeight * aspect, acrossRange * 0.86f));
-        float clearance = Mathf.Max(tileWidth * 0.12f, thinSpan * 0.55f);
+        float clearance = Mathf.Max(tileWidth * 0.16f, thinSpan * 0.72f);
         float startAlong = alongMin + (alongRange - span) * 0.5f;
 
         Vector3[] outVertices = new Vector3[StampTileRows * 4];

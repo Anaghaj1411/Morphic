@@ -178,6 +178,10 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private bool designTintActive;
     private bool colorBackToDesigns;
     private bool lastDeformationLocked;
+    private float[] trackedBlendWeights;
+    private bool blendDeformDirty;
+    private float blendDeformIdle;
+    private bool applyingHistory;
     private readonly Button[] variantButtons = new Button[2];
     private readonly TMP_Text[] variantButtonLabels = new TMP_Text[2];
     private readonly Button[] designButtons = new Button[6];
@@ -269,7 +273,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private const float BandSelectionPanelHeight = 840f;
     private const float VertexSculptPanelHeight = 600f;
     private const float HistoryBarHeight = 118f;
-    private const int MaxHistory = 20;
 
     private sealed class TeapotSnapshot
     {
@@ -3103,13 +3106,17 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         overlay.updateWhenOffscreen = true;
         overlay.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         overlay.receiveShadows = false;
-        overlay.sortingOrder = 15;
+        overlay.sortingOrder = 40;
 
         Material hidden = new Material(shader) { name = "Morphic Shelf Hidden Design" };
+        hidden.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
         hidden.SetFloat("_Opacity", 0f);
         Material visible = new Material(shader) { name = "Morphic Shelf Teapot Design" };
+        visible.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
         visible.SetTexture("_DesignTex", appliedDesignTexture);
         visible.SetFloat("_Opacity", 1f);
+        if (visible.HasProperty("_SurfacePush"))
+            visible.SetFloat("_SurfacePush", 0.028f);
         visible.SetFloat("_RepeatCount", designRepeatCount);
         visible.SetFloat("_PatchHalfAngle", designPatchHalfAngle);
         visible.SetFloat("_VerticalHalfFraction", designVerticalHalfFraction);
@@ -4660,7 +4667,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             designSurfaceMaterial = new Material(shader)
             {
                 name = "Morphic Teapot Body Design Material",
-                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 15
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35
             };
         }
 
@@ -4669,10 +4676,15 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             designHiddenMaterial = new Material(shader)
             {
                 name = "Morphic Hidden Teapot Design Submesh Material",
-                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 15
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35
             };
             designHiddenMaterial.SetFloat("_Opacity", 0f);
         }
+
+        designSurfaceMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
+        designHiddenMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
+        if (designSurfaceMaterial.HasProperty("_SurfacePush"))
+            designSurfaceMaterial.SetFloat("_SurfacePush", 0.028f);
 
         Transform rendererTransform = teapotRenderer.transform;
         designSurfaceRoot.SetParent(rendererTransform.parent, false);
@@ -4694,7 +4706,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         designSurfaceRenderer.forceRenderingOff = false;
         designSurfaceRenderer.allowOcclusionWhenDynamic = false;
         designSurfaceRenderer.renderingLayerMask = teapotRenderer.renderingLayerMask;
-        designSurfaceRenderer.sortingOrder = 15;
+        designSurfaceRenderer.sortingOrder = 40;
 
         int subMeshCount = Mathf.Max(1, teapotRenderer.sharedMesh.subMeshCount);
         Material[] overlayMaterials = new Material[subMeshCount];
@@ -4739,6 +4751,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         Bounds localBounds = GetTeapotBodyLocalBounds();
         Texture painted = ResolveTintedDesign(texture, LiveDesignTint());
         designSurfaceMaterial.SetTexture("_DesignTex", painted != null ? painted : texture);
+        designSurfaceMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
+        if (designSurfaceMaterial.HasProperty("_SurfacePush"))
+            designSurfaceMaterial.SetFloat("_SurfacePush", 0.028f);
         if (isBandActive)
         {
             designSurfaceMaterial.SetFloat("_Opacity", bandOpacity);
@@ -5030,8 +5045,6 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         redoHistory.Clear();
         history.Add(CaptureSnapshot());
-        while (history.Count > MaxHistory)
-            history.RemoveAt(0);
         NoteTimedUndo(TimedUndo.History);
     }
 
@@ -5222,6 +5235,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     {
         if (snapshot == null || teapotRenderer == null)
             return;
+        applyingHistory = true;
         if (snapshot.BlendWeights != null && teapotRenderer.sharedMesh != null)
         {
             int count = Mathf.Min(snapshot.BlendWeights.Length, teapotRenderer.sharedMesh.blendShapeCount);
@@ -5229,6 +5243,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
                 teapotRenderer.SetBlendShapeWeight(i, snapshot.BlendWeights[i]);
             if (teapotGestures != null)
                 teapotGestures.SynchronizeWeightsFromRenderer();
+            if (teapotIndexGestures != null)
+                teapotIndexGestures.SynchronizeWeightsFromRenderer();
+            RememberBlendWeights(teapotRenderer);
         }
 
         if (snapshot.MaterialColors != null)
@@ -5255,17 +5272,76 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         {
             designSurfaceRenderer.enabled = false;
         }
+        applyingHistory = false;
     }
 
     private void PollSculptHistory()
     {
-        if (teapotGestures == null)
+        bool locked = teapotGestures != null && teapotGestures.IsDeformationLocked;
+        if (locked && !lastDeformationLocked)
+        {
+            PushHistory();
+            blendDeformDirty = false;
+        }
+        lastDeformationLocked = locked;
+        TrackBlendDeformation(teapotRenderer);
+    }
+
+    private void TrackBlendDeformation(SkinnedMeshRenderer skin)
+    {
+        if (applyingHistory || skin == null || skin.sharedMesh == null)
             return;
 
-        bool locked = teapotGestures.IsDeformationLocked;
-        if (locked && !lastDeformationLocked)
-            PushHistory();
-        lastDeformationLocked = locked;
+        int count = skin.sharedMesh.blendShapeCount;
+        if (trackedBlendWeights == null || trackedBlendWeights.Length != count)
+        {
+            RememberBlendWeights(skin);
+            return;
+        }
+
+        bool changed = false;
+        for (int i = 0; i < count; i++)
+        {
+            float weight = skin.GetBlendShapeWeight(i);
+            if (Mathf.Abs(weight - trackedBlendWeights[i]) > 0.6f)
+                changed = true;
+            trackedBlendWeights[i] = weight;
+        }
+
+        if (changed)
+        {
+            blendDeformDirty = true;
+            blendDeformIdle = 0f;
+            return;
+        }
+
+        if (!blendDeformDirty)
+            return;
+
+        blendDeformIdle += Time.unscaledDeltaTime;
+        if (blendDeformIdle < 0.32f)
+            return;
+
+        blendDeformDirty = false;
+        PushHistory();
+    }
+
+    private void RememberBlendWeights(SkinnedMeshRenderer skin)
+    {
+        if (skin == null || skin.sharedMesh == null)
+        {
+            trackedBlendWeights = null;
+            blendDeformDirty = false;
+            return;
+        }
+
+        int count = skin.sharedMesh.blendShapeCount;
+        if (trackedBlendWeights == null || trackedBlendWeights.Length != count)
+            trackedBlendWeights = new float[count];
+        for (int i = 0; i < count; i++)
+            trackedBlendWeights[i] = skin.GetBlendShapeWeight(i);
+        blendDeformDirty = false;
+        blendDeformIdle = 0f;
     }
 
     private void SetSculptControllersEnabled(bool enabled)

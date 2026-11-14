@@ -31,10 +31,10 @@ public class VertexSculptController : MonoBehaviour
     [SerializeField, Min(1f)] private float maxHoldSpeedMultiplier = 1.28f;
     [SerializeField, Min(0.1f)] private float holdAccelerationTime = 0.8f;
     [Header("Stroke Stabilization")]
-    [SerializeField, Range(0f, 1f)] private float stabilization = 0.45f;
-        [SerializeField, Range(0.4f, 8f)] private float oneEuroMinCutoff = 4.2f;
-        [SerializeField, Range(0.001f, 0.2f)] private float oneEuroBeta = 0.08f;
-    [SerializeField, Range(8f, 72f)] private float pullPixels = 16f;
+    [SerializeField, Range(0f, 1f)] private float stabilization = 0.62f;
+        [SerializeField, Range(0.4f, 8f)] private float oneEuroMinCutoff = 1.9f;
+        [SerializeField, Range(0.001f, 0.2f)] private float oneEuroBeta = 0.03f;
+    [SerializeField, Range(8f, 72f)] private float pullPixels = 22f;
     [SerializeField, Min(0f)] private float pinchStartDistance = 0.055f;
     [SerializeField, Min(0f)] private float pinchReleaseDistance = 0.08f;
     [SerializeField, Min(0f)] private float handTrackingGracePeriod = 0.4f;
@@ -68,6 +68,9 @@ public class VertexSculptController : MonoBehaviour
     private readonly Stack<SculptUndoRecord> undoHistory = new Stack<SculptUndoRecord>();
     private readonly Stack<SculptUndoRecord> redoHistory = new Stack<SculptUndoRecord>();
     private int[][] weldedVertexGroups;
+    private int[][] vertexNeighbors;
+    private Vector3[] smoothBuffer;
+    private readonly List<int> movedThisFrame = new List<int>(256);
     private Bounds originalMeshBounds;
     private bool isInitialized;
     private bool sculptingEnabled = false;
@@ -105,10 +108,10 @@ public class VertexSculptController : MonoBehaviour
             handRunner = FindFirstObjectByType<SculptHandLandmarkerRunner>();
         handTrackingGracePeriod = 0.7f;
         cursorMissGracePeriod = 0.35f;
-        stabilization = 0.45f;
-        oneEuroMinCutoff = 4.2f;
-        oneEuroBeta = 0.08f;
-        pullPixels = 16f;
+        stabilization = 0.62f;
+        oneEuroMinCutoff = 1.9f;
+        oneEuroBeta = 0.03f;
+        pullPixels = 22f;
         InitializeMesh();
         CreateBrushIndicator();
     }
@@ -336,6 +339,7 @@ public class VertexSculptController : MonoBehaviour
         System.Array.Copy(originalVertices, currentVertices, originalVertices.Length);
         originalMeshBounds = mesh.bounds;
         BuildWeldedVertexGroups();
+        BuildVertexNeighbors();
         BuildSculptableVertexMask();
 
         isInitialized = true;
@@ -436,6 +440,46 @@ public class VertexSculptController : MonoBehaviour
         int groupIndex = 0;
         foreach (List<int> group in groupsByPosition.Values)
             weldedVertexGroups[groupIndex++] = group.ToArray();
+    }
+
+    private void BuildVertexNeighbors()
+    {
+        if (mesh == null || currentVertices == null)
+        {
+            vertexNeighbors = null;
+            return;
+        }
+
+        int vertexCount = currentVertices.Length;
+        var buckets = new List<int>[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+            buckets[i] = new List<int>(8);
+
+        int[] triangles = mesh.triangles;
+        for (int t = 0; t < triangles.Length; t += 3)
+        {
+            int a = triangles[t];
+            int b = triangles[t + 1];
+            int c = triangles[t + 2];
+            AddNeighbor(buckets, a, b);
+            AddNeighbor(buckets, b, c);
+            AddNeighbor(buckets, c, a);
+        }
+
+        vertexNeighbors = new int[vertexCount][];
+        for (int i = 0; i < vertexCount; i++)
+            vertexNeighbors[i] = buckets[i].ToArray();
+        smoothBuffer = new Vector3[vertexCount];
+    }
+
+    private static void AddNeighbor(List<int>[] buckets, int a, int b)
+    {
+        if (a == b || a < 0 || b < 0 || a >= buckets.Length || b >= buckets.Length)
+            return;
+        if (!buckets[a].Contains(b))
+            buckets[a].Add(b);
+        if (!buckets[b].Contains(a))
+            buckets[b].Add(a);
     }
 
     private void BuildSculptableVertexMask()
@@ -863,6 +907,7 @@ public class VertexSculptController : MonoBehaviour
         Vector3[] posedVertices = bakedColliderMesh != null ? bakedColliderMesh.vertices : currentVertices;
         bool anyVertexModified = false;
         int movedVertexCount = 0;
+        movedThisFrame.Clear();
         float speedPerSecond = smallestExtent * Mathf.Lerp(0.08f, 0.42f, sculptStrength);
         float maximumFrameMove = smallestExtent *
             Mathf.Lerp(0.08f, 0.3f, sculptStrength) * Time.deltaTime;
@@ -890,8 +935,8 @@ public class VertexSculptController : MonoBehaviour
                 continue;
 
             float t = Mathf.Clamp01(distance / clayRadius);
-            float falloff = 0.5f + 0.5f * Mathf.Cos(t * Mathf.PI);
-            falloff *= falloff;
+            float u = 1f - t;
+            float falloff = u * u * u * (u * (u * 6f - 15f) + 10f);
             float moveAmount = (strength / Mathf.Max(sculptRate, 0.01f)) *
                 falloff * speedPerSecond;
             moveAmount = Mathf.Min(moveAmount, maximumFrameMove * falloff);
@@ -910,6 +955,7 @@ public class VertexSculptController : MonoBehaviour
                 if (strokeStartPositions != null && !strokeStartPositions.ContainsKey(index))
                     strokeStartPositions.Add(index, currentVertices[index]);
                 currentVertices[index] += appliedDelta;
+                movedThisFrame.Add(index);
             }
 
             anyVertexModified = true;
@@ -918,11 +964,53 @@ public class VertexSculptController : MonoBehaviour
 
         if (anyVertexModified)
         {
+            SmoothMovedVertices();
             strokeChanged = true;
             ApplyMeshChanges();
         }
 
         return movedVertexCount;
+    }
+
+    private void SmoothMovedVertices()
+    {
+        if (vertexNeighbors == null || currentVertices == null || movedThisFrame.Count == 0)
+            return;
+        if (smoothBuffer == null || smoothBuffer.Length != currentVertices.Length)
+            smoothBuffer = new Vector3[currentVertices.Length];
+
+        System.Array.Copy(currentVertices, smoothBuffer, currentVertices.Length);
+        for (int i = 0; i < movedThisFrame.Count; i++)
+        {
+            int index = movedThisFrame[i];
+            if (index < 0 || index >= vertexNeighbors.Length)
+                continue;
+
+            int[] neighbors = vertexNeighbors[index];
+            if (neighbors == null || neighbors.Length == 0)
+                continue;
+
+            Vector3 sum = currentVertices[index];
+            int count = 1;
+            for (int n = 0; n < neighbors.Length; n++)
+            {
+                int neighbor = neighbors[n];
+                if (neighbor < 0 || neighbor >= currentVertices.Length)
+                    continue;
+                sum += currentVertices[neighbor];
+                count++;
+            }
+
+            smoothBuffer[index] = Vector3.Lerp(currentVertices[index], sum / count, 0.38f);
+        }
+
+        for (int i = 0; i < movedThisFrame.Count; i++)
+        {
+            int index = movedThisFrame[i];
+            if (index < 0 || index >= currentVertices.Length)
+                continue;
+            currentVertices[index] = smoothBuffer[index];
+        }
     }
 
     private void ApplyMeshChanges()
@@ -932,6 +1020,7 @@ public class VertexSculptController : MonoBehaviour
 
         mesh.vertices = currentVertices;
         mesh.RecalculateNormals();
+        mesh.RecalculateTangents();
         mesh.RecalculateBounds();
         AssignRuntimeMesh(mesh);
         if (targetMeshCollider != null)

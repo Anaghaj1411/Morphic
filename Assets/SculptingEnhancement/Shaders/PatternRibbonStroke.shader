@@ -12,7 +12,7 @@ Shader "Morphic/Pattern Ribbon Stroke"
         Tags
         {
             "RenderPipeline" = "UniversalPipeline"
-            "Queue" = "Transparent+25"
+            "Queue" = "Transparent+45"
             "RenderType" = "Transparent"
             "DisableBatching" = "True"
         }
@@ -26,7 +26,7 @@ Shader "Morphic/Pattern Ribbon Stroke"
             ZWrite Off
             ZTest LEqual
             Cull Off
-            Offset -3, -3
+            Offset -6, -6
 
             HLSLPROGRAM
             #pragma vertex vert

@@ -222,19 +222,19 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         gestureImage = CreateRawImage(artFill.transform, "GestureImage", Vector2.zero, new Vector2(196f, 196f));
         gesturePreview = MorphicGesturePreview.Create(gestureImage);
 
-        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -168f), 640f, 90f, 20);
+        instructionText = CreateLabel(cardRect, "Instruction", new Vector2(0f, -148f), 640f, 72f, 20);
         MorphicText.FitBody(instructionText);
-        statusText = CreateLabel(cardRect, "Status", new Vector2(0f, -248f), 400f, 36f, 22);
+        statusText = CreateLabel(cardRect, "Status", new Vector2(0f, -208f), 400f, 40f, 26);
         MorphicText.Style(statusText);
         statusText.gameObject.SetActive(false);
 
         CreateMorphicButton(cardRect, "Skip", new Vector2(278f, 258f), new Vector2(160f, 48f),
             "SKIP", LanguagePageBuilder.Pink, Skip);
-        CreateMorphicButton(cardRect, "Replay", new Vector2(-226f, -268f), new Vector2(152f, 56f),
+        CreateMorphicButton(cardRect, "Replay", new Vector2(-226f, -292f), new Vector2(152f, 56f),
             "REPLAY", LanguagePageBuilder.Pink, Replay);
-        previousButton = CreateMorphicButton(cardRect, "Previous", new Vector2(0f, -268f), new Vector2(164f, 56f),
+        previousButton = CreateMorphicButton(cardRect, "Previous", new Vector2(0f, -292f), new Vector2(164f, 56f),
             "PREVIOUS", LanguagePageBuilder.Pink, Back);
-        nextButton = CreateMorphicButton(cardRect, "Next", new Vector2(226f, -268f), new Vector2(188f, 56f),
+        nextButton = CreateMorphicButton(cardRect, "Next", new Vector2(226f, -292f), new Vector2(188f, 56f),
             "NEXT", new Color32(236, 64, 168, 255), Next);
     }
 
@@ -276,9 +276,27 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         Transform card = root.transform.Find("Card");
         RectTransform art = card != null ? card.Find("ArtFrame") as RectTransform : null;
         if (art != null)
-            art.anchoredPosition = new Vector2(0f, 36f);
+            art.anchoredPosition = new Vector2(0f, 48f);
         if (instructionText != null)
-            instructionText.rectTransform.anchoredPosition = new Vector2(0f, -168f);
+            instructionText.rectTransform.anchoredPosition = new Vector2(0f, -148f);
+        if (statusText != null)
+        {
+            statusText.rectTransform.anchoredPosition = new Vector2(0f, -208f);
+            statusText.rectTransform.sizeDelta = new Vector2(400f, 40f);
+            statusText.transform.SetAsLastSibling();
+        }
+        PlaceCardButton(card, "Replay", new Vector2(-226f, -292f));
+        PlaceCardButton(card, "Previous", new Vector2(0f, -292f));
+        PlaceCardButton(card, "Next", new Vector2(226f, -292f));
+    }
+
+    private static void PlaceCardButton(Transform card, string name, Vector2 position)
+    {
+        if (card == null)
+            return;
+        RectTransform rect = card.Find(name) as RectTransform;
+        if (rect != null)
+            rect.anchoredPosition = position;
     }
 
     private void MarkRecognized()
@@ -287,6 +305,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
             return;
         stepRecognized = true;
         statusText.gameObject.SetActive(true);
+        statusText.transform.SetAsLastSibling();
         MorphicLoc.Bind(statusText, "GOOD");
         statusText.color = LanguagePageBuilder.Green;
     }

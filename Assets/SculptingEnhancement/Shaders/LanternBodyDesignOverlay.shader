@@ -10,6 +10,7 @@ Shader "Morphic/Lantern Body Design Overlay"
         _VerticalHalfFraction ("Vertical Half Fraction", Range(0.05, 0.8)) = 0.38
         _ObjectCenter ("Object Center", Vector) = (0, 0, 0, 0)
         _ObjectExtents ("Object Extents", Vector) = (1, 1, 1, 0)
+        _SurfacePush ("Surface Push", Float) = 0.028
     }
 
     SubShader
@@ -17,7 +18,7 @@ Shader "Morphic/Lantern Body Design Overlay"
         Tags
         {
             "RenderPipeline" = "UniversalPipeline"
-            "Queue" = "Transparent+15"
+            "Queue" = "Transparent+35"
             "RenderType" = "Transparent"
             "DisableBatching" = "True"
         }
@@ -31,7 +32,7 @@ Shader "Morphic/Lantern Body Design Overlay"
             ZWrite Off
             ZTest LEqual
             Cull Back
-            Offset -1, -1
+            Offset -4, -4
 
             HLSLPROGRAM
             #pragma target 3.0
@@ -52,11 +53,13 @@ Shader "Morphic/Lantern Body Design Overlay"
                 float _VerticalHalfFraction;
                 float4 _ObjectCenter;
                 float4 _ObjectExtents;
+                float _SurfacePush;
             CBUFFER_END
 
             struct Attributes
             {
                 float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -73,7 +76,10 @@ Shader "Morphic/Lantern Body Design Overlay"
                 Varyings output;
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
                 output.positionOS = input.positionOS.xyz;
-                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                float3 normal = dot(input.normalOS, input.normalOS) > 0.0001
+                    ? normalize(input.normalOS) : float3(0, 0, 1);
+                float3 pushed = input.positionOS.xyz + normal * _SurfacePush;
+                output.positionCS = TransformObjectToHClip(pushed);
                 return output;
             }
 

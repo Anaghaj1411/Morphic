@@ -325,8 +325,12 @@ public sealed class KerisGestureController : MonoBehaviour
 
     public void SynchronizeWeightsFromRenderer()
     {
-        if (widthHeightActive || carvingActive || sharpnessLift.active || curveLift.active)
-            return;
+        widthHeightActive = false;
+        carvingActive = false;
+        sharpnessLift.active = false;
+        sharpnessLift.held = false;
+        curveLift.active = false;
+        curveLift.held = false;
         ReadBodyWeights();
     }
 

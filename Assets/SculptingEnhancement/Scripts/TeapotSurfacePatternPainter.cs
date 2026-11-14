@@ -889,7 +889,11 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         Color color = clay ? clayColor : strokeColor;
         ApplyTintToMaterial(mat, color);
         if (!clay)
+        {
             BindPattern(mat);
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 45;
+            mr.sortingOrder = 50;
+        }
         mr.SetPropertyBlock(null);
         mr.sharedMaterial = mat;
 
@@ -912,7 +916,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             return;
 
         float scaleFactor = GetLossyScaleFactor();
-        float worldOffset = currentStroke.isClayCoil ? 0.0015f : 0.0035f;
+        float worldOffset = currentStroke.isClayCoil ? 0.0015f : 0.032f;
         float localNormalOffset = worldOffset / scaleFactor;
 
         Vector3 pointOnSurface = worldPoint + worldNormal * worldOffset;
@@ -1545,6 +1549,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             name = "Morphic Pattern Ribbon Material"
         };
         ApplyTintToMaterial(strokeMaterial, strokeColor);
+        strokeMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 45;
         BindPattern(strokeMaterial);
     }
 

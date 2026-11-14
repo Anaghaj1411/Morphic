@@ -18,7 +18,7 @@ Shader "Morphic/Keris Body Design Overlay"
         Tags
         {
             "RenderPipeline" = "UniversalPipeline"
-            "Queue" = "Transparent+20"
+            "Queue" = "Transparent+55"
             "RenderType" = "Transparent"
             "DisableBatching" = "True"
         }

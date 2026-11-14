@@ -121,7 +121,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private int trackedClayCount;
     private int trackedBandCount;
     private int trackedSculptCount;
-    private const int MaxHistory = 20;
     private sealed class KerisSnapshot
     {
         public float[] BlendWeights;
@@ -134,6 +133,10 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private readonly List<KerisSnapshot> history = new List<KerisSnapshot>();
     private readonly List<KerisSnapshot> redoHistory = new List<KerisSnapshot>();
     private bool lastDeformationLocked;
+    private float[] trackedBlendWeights;
+    private bool blendDeformDirty;
+    private float blendDeformIdle;
+    private bool applyingHistory;
     private bool vertexSculptCameraZoomed;
     private bool hasStoredSculptCam;
     private Vector3 storedSculptCamPos;
@@ -1838,19 +1841,77 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
         redoHistory.Clear();
         history.Add(snapshot);
-        while (history.Count > MaxHistory)
-            history.RemoveAt(0);
         NoteTimedUndo(TimedUndo.History);
     }
 
     private void PollSculptHistory()
     {
-        if (kerisGestures == null)
-            return;
-        bool locked = kerisGestures.IsDeformationLocked;
+        ResolveKerisSkin();
+        bool locked = kerisGestures != null && kerisGestures.IsDeformationLocked;
         if (locked && !lastDeformationLocked)
+        {
             PushHistory();
+            blendDeformDirty = false;
+        }
         lastDeformationLocked = locked;
+        TrackBlendDeformation(kerisSkin);
+    }
+
+    private void TrackBlendDeformation(SkinnedMeshRenderer skin)
+    {
+        if (applyingHistory || skin == null || skin.sharedMesh == null)
+            return;
+
+        int count = skin.sharedMesh.blendShapeCount;
+        if (trackedBlendWeights == null || trackedBlendWeights.Length != count)
+        {
+            RememberBlendWeights(skin);
+            return;
+        }
+
+        bool changed = false;
+        for (int i = 0; i < count; i++)
+        {
+            float weight = skin.GetBlendShapeWeight(i);
+            if (Mathf.Abs(weight - trackedBlendWeights[i]) > 0.6f)
+                changed = true;
+            trackedBlendWeights[i] = weight;
+        }
+
+        if (changed)
+        {
+            blendDeformDirty = true;
+            blendDeformIdle = 0f;
+            return;
+        }
+
+        if (!blendDeformDirty)
+            return;
+
+        blendDeformIdle += Time.unscaledDeltaTime;
+        if (blendDeformIdle < 0.32f)
+            return;
+
+        blendDeformDirty = false;
+        PushHistory();
+    }
+
+    private void RememberBlendWeights(SkinnedMeshRenderer skin)
+    {
+        if (skin == null || skin.sharedMesh == null)
+        {
+            trackedBlendWeights = null;
+            blendDeformDirty = false;
+            return;
+        }
+
+        int count = skin.sharedMesh.blendShapeCount;
+        if (trackedBlendWeights == null || trackedBlendWeights.Length != count)
+            trackedBlendWeights = new float[count];
+        for (int i = 0; i < count; i++)
+            trackedBlendWeights[i] = skin.GetBlendShapeWeight(i);
+        blendDeformDirty = false;
+        blendDeformIdle = 0f;
     }
 
     private KerisSnapshot CaptureSnapshot()
@@ -1878,6 +1939,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     {
         if (snapshot == null)
             return;
+        applyingHistory = true;
         ResolveKerisSkin();
         if (kerisSkin != null && snapshot.BlendWeights != null && kerisSkin.sharedMesh != null)
         {
@@ -1887,11 +1949,13 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         }
         if (kerisGestures != null)
             kerisGestures.SynchronizeWeightsFromRenderer();
+        RememberBlendWeights(kerisSkin);
         if (snapshot.PartColors != null && snapshot.PartColors.Length == savedPartColors.Length)
             savedPartColors = (Color[])snapshot.PartColors.Clone();
         committedKerisColor = snapshot.CommittedColor;
         ApplySavedPartColors();
         RestoreStampFromSnapshot(snapshot);
+        applyingHistory = false;
     }
 
     private void ApplySavedPartColors()

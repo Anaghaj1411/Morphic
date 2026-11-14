@@ -286,7 +286,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private const float BandSelectionPanelHeight = 840f;
     private const float VertexSculptPanelHeight = 600f;
     private const float HistoryBarHeight = 118f;
-    private const int MaxHistory = 20;
 
     private sealed class LanternSnapshot
     {
@@ -310,6 +309,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private GameObject confirmResetGroup;
     private ColorMode modeBeforeConfirm;
     private bool lastDeformationLocked;
+    private float[] trackedBlendWeights;
+    private bool blendDeformDirty;
+    private float blendDeformIdle;
+    private bool applyingHistory;
 
     public void WriteHelpDecor(MorphicCraftHelpState state)
     {
@@ -6371,7 +6374,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             designSurfaceMaterial = new Material(shader)
             {
                 name = "Morphic Body Design Material",
-                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 15
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35
             };
         }
 
@@ -6380,10 +6383,15 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             designHiddenMaterial = new Material(shader)
             {
                 name = "Morphic Hidden Design Submesh Material",
-                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 15
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35
             };
             designHiddenMaterial.SetFloat("_Opacity", 0f);
         }
+
+        designSurfaceMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
+        designHiddenMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
+        if (designSurfaceMaterial.HasProperty("_SurfacePush"))
+            designSurfaceMaterial.SetFloat("_SurfacePush", 0.028f);
 
         Transform rendererTransform = lanternRenderer.transform;
         designSurfaceRoot.SetParent(rendererTransform.parent, false);
@@ -6406,7 +6414,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         designSurfaceRenderer.forceRenderingOff = false;
         designSurfaceRenderer.allowOcclusionWhenDynamic = false;
         designSurfaceRenderer.renderingLayerMask = lanternRenderer.renderingLayerMask;
-        designSurfaceRenderer.sortingOrder = 15;
+        designSurfaceRenderer.sortingOrder = 40;
 
         int subMeshCount = Mathf.Max(1, lanternRenderer.sharedMesh.subMeshCount);
         Material[] overlayMaterials = new Material[subMeshCount];
@@ -6455,7 +6463,10 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         Bounds localBounds = GetCurrentLanternObjectBounds();
         Texture painted = ResolveTintedDesign(texture, LiveDesignTint());
         designSurfaceMaterial.SetTexture("_DesignTex", painted != null ? painted : texture);
+        designSurfaceMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 35;
         designSurfaceMaterial.SetFloat("_Opacity", 1f);
+        if (designSurfaceMaterial.HasProperty("_SurfacePush"))
+            designSurfaceMaterial.SetFloat("_SurfacePush", 0.028f);
         designSurfaceMaterial.SetFloat("_RepeatCount", designRepeatCount);
         designSurfaceMaterial.SetFloat("_PatchHalfAngle", designPatchHalfAngle);
         designSurfaceMaterial.SetFloat("_VerticalHalfFraction", designVerticalHalfFraction);
@@ -6543,13 +6554,75 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             originalGestureController =
                 FindFirstObjectByType<TaiwanLanternGestureController>(
                     FindObjectsInactive.Include);
-        if (originalGestureController == null)
+
+        bool locked = originalGestureController != null &&
+            originalGestureController.IsDeformationLocked;
+        if (locked && !lastDeformationLocked)
+        {
+            PushHistory();
+            blendDeformDirty = false;
+        }
+        lastDeformationLocked = locked;
+        TrackBlendDeformation(lanternRenderer);
+    }
+
+    private void TrackBlendDeformation(SkinnedMeshRenderer skin)
+    {
+        if (applyingHistory || skin == null || skin.sharedMesh == null)
             return;
 
-        bool locked = originalGestureController.IsDeformationLocked;
-        if (locked && !lastDeformationLocked)
-            PushHistory();
-        lastDeformationLocked = locked;
+        int count = skin.sharedMesh.blendShapeCount;
+        if (trackedBlendWeights == null || trackedBlendWeights.Length != count)
+        {
+            RememberBlendWeights(skin);
+            blendDeformDirty = false;
+            blendDeformIdle = 0f;
+            return;
+        }
+
+        bool changed = false;
+        for (int i = 0; i < count; i++)
+        {
+            float weight = skin.GetBlendShapeWeight(i);
+            if (Mathf.Abs(weight - trackedBlendWeights[i]) > 0.6f)
+                changed = true;
+            trackedBlendWeights[i] = weight;
+        }
+
+        if (changed)
+        {
+            blendDeformDirty = true;
+            blendDeformIdle = 0f;
+            return;
+        }
+
+        if (!blendDeformDirty)
+            return;
+
+        blendDeformIdle += Time.unscaledDeltaTime;
+        if (blendDeformIdle < 0.32f)
+            return;
+
+        blendDeformDirty = false;
+        PushHistory();
+    }
+
+    private void RememberBlendWeights(SkinnedMeshRenderer skin)
+    {
+        if (skin == null || skin.sharedMesh == null)
+        {
+            trackedBlendWeights = null;
+            blendDeformDirty = false;
+            return;
+        }
+
+        int count = skin.sharedMesh.blendShapeCount;
+        if (trackedBlendWeights == null || trackedBlendWeights.Length != count)
+            trackedBlendWeights = new float[count];
+        for (int i = 0; i < count; i++)
+            trackedBlendWeights[i] = skin.GetBlendShapeWeight(i);
+        blendDeformDirty = false;
+        blendDeformIdle = 0f;
     }
 
     private void CaptureBaseline()
@@ -6572,8 +6645,6 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
         redoHistory.Clear();
         history.Add(snapshot);
-        while (history.Count > MaxHistory)
-            history.RemoveAt(0);
         NoteTimedUndo(TimedUndo.History);
     }
 
@@ -7006,6 +7077,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         if (snapshot == null)
             return;
 
+        applyingHistory = true;
         if (lanternRenderer != null)
         {
             lanternRenderer.transform.localRotation = snapshot.LocalRotation;
@@ -7023,6 +7095,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             originalGestureController.SynchronizeWeightsFromRenderer();
         if (indexGestureController != null)
             indexGestureController.SynchronizeWeightsFromRenderer();
+        RememberBlendWeights(lanternRenderer);
 
         if (snapshot.MaterialColors != null)
         {
@@ -7051,6 +7124,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             if (designSurfaceRenderer != null)
                 designSurfaceRenderer.enabled = false;
         }
+        applyingHistory = false;
     }
 
     private static bool SnapshotsMatch(LanternSnapshot a, LanternSnapshot b)
