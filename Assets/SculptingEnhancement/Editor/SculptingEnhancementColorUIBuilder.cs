@@ -8,40 +8,32 @@ public static class SculptingEnhancementColorUIBuilder
     private const string ScenePath =
         "Assets/SculptingEnhancement/Scenes/SculptingLab.unity";
 
-    [InitializeOnLoadMethod]
-    private static void ScheduleHierarchyCheck()
+    private static bool EditorBusy()
     {
-        EditorApplication.delayCall += EnsureSceneHierarchy;
+        return EditorApplication.isPlayingOrWillChangePlaymode ||
+               EditorApplication.isCompiling ||
+               BuildPipeline.isBuildingPlayer;
     }
 
     private static void EnsureSceneHierarchy()
     {
-        if (EditorApplication.isPlayingOrWillChangePlaymode)
+        if (EditorBusy())
             return;
 
         Scene scene = SceneManager.GetSceneByPath(ScenePath);
-        bool openedForBuild = !scene.IsValid() || !scene.isLoaded;
-        if (openedForBuild)
-            scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Additive);
+        if (!scene.IsValid() || !scene.isLoaded)
+            return;
 
-        try
-        {
-            SculptingEnhancementLanternColorController controller =
-                FindController(scene);
-            if (controller == null || HasCompleteHierarchy(controller))
-                return;
+        SculptingEnhancementLanternColorController controller =
+            FindController(scene);
+        if (controller == null || HasCompleteHierarchy(controller))
+            return;
 
-            controller.RebuildSceneInterfaceForEditor();
-            EditorSceneManager.SaveScene(scene);
-            AssetDatabase.SaveAssets();
-            Debug.Log(
-                "MORPHIC: Added the lantern color UI to the SculptingLab Canvas Hierarchy.");
-        }
-        finally
-        {
-            if (openedForBuild && scene.IsValid() && scene.isLoaded)
-                EditorSceneManager.CloseScene(scene, true);
-        }
+        controller.RebuildSceneInterfaceForEditor();
+        EditorSceneManager.SaveScene(scene);
+        AssetDatabase.SaveAssets();
+        Debug.Log(
+            "MORPHIC: Added the lantern color UI to the SculptingLab Canvas Hierarchy.");
     }
 
     [MenuItem("Morphic/Rebuild Sculpting Lab Color UI")]
@@ -89,7 +81,7 @@ public static class SculptingEnhancementColorUIBuilder
             : null;
         return uiRoot != null &&
                uiRoot.Find("LanternColorPanel/MorphicGoalsV1") != null &&
-               uiRoot.Find("LanternColorPanel/MorphicShelfDoneV1") != null &&
+               uiRoot.Find("LanternColorPanel/MorphicShelfDoneV2") != null &&
                uiRoot.Find("LanternColorPanel/HistoryBar/Undo") != null &&
                uiRoot.Find("LanternColorPanel/HistoryBar/Reset") != null &&
                uiRoot.Find("LanternColorPanel/ConfirmReset/Cancel") != null &&
@@ -101,7 +93,6 @@ public static class SculptingEnhancementColorUIBuilder
                uiRoot.Find("LanternColorPanel/Review/Finish") != null &&
                uiRoot.Find("LanternColorPanel/Review/SavedStatus") != null &&
                uiRoot.Find("LanternColorPanel/ShelfActions/TakeBack") != null &&
-               uiRoot.Find("LanternColorPanel/ShelfActions/Delete") != null &&
                uiRoot.Find("LanternColorPanel/ShelfActions/Done") != null &&
                uiRoot.Find("LanternColorPanel/ConfirmDelete/Cancel") != null &&
                uiRoot.Find("LanternColorPanel/ConfirmDelete/Delete") != null &&

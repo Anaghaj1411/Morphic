@@ -11,12 +11,6 @@ public static class MorphicLanternShelfBuilder
         "Assets/Scenes/MainMenu.unity"
     };
 
-    [InitializeOnLoadMethod]
-    private static void ScheduleBind()
-    {
-        EditorApplication.delayCall += BindOpenScenes;
-    }
-
     [MenuItem("Morphic/Bind Lantern Shelf")]
     public static void BindFromMenu()
     {
@@ -196,7 +190,9 @@ public static class MorphicLanternShelfBuilder
 
     private static void BindOpenScenes()
     {
-        if (EditorApplication.isPlayingOrWillChangePlaymode)
+        if (EditorApplication.isPlayingOrWillChangePlaymode ||
+            EditorApplication.isCompiling ||
+            BuildPipeline.isBuildingPlayer)
             return;
 
         for (int i = 0; i < SceneManager.sceneCount; i++)

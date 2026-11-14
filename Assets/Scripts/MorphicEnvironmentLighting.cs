@@ -86,7 +86,9 @@ public sealed class MorphicEnvironmentLighting : MonoBehaviour
 
     private static void EnsureLoadedScenes()
     {
-        if (EditorApplication.isPlayingOrWillChangePlaymode)
+        if (EditorApplication.isPlayingOrWillChangePlaymode ||
+            EditorApplication.isCompiling ||
+            BuildPipeline.isBuildingPlayer)
             return;
 
         for (int i = 0; i < SceneManager.sceneCount; i++)
@@ -115,7 +117,9 @@ public sealed class MorphicEnvironmentLighting : MonoBehaviour
             return;
 
 #if UNITY_EDITOR
-        if (EditorSceneManager.IsPreviewScene(scene))
+        if (EditorSceneManager.IsPreviewScene(scene) ||
+            EditorApplication.isCompiling ||
+            BuildPipeline.isBuildingPlayer)
             return;
 #endif
 

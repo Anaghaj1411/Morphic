@@ -28,6 +28,7 @@ public static class LanguagePageBuilder
     // Generated sprites are kept alive here and released on quit.
     private static readonly List<Object> Cache =
         new List<Object>();
+    private static Sprite SharedRoundedRect;
 
     public struct LanguageOption
     {
@@ -567,6 +568,11 @@ public static class LanguagePageBuilder
         int size,
         int radius)
     {
+        if (SharedRoundedRect == null)
+            SharedRoundedRect = Resources.Load<Sprite>("MorphicUI/RoundedRect");
+        if (SharedRoundedRect != null)
+            return SharedRoundedRect;
+
         Texture2D tex = NewTexture(size, size);
 
         Color[] px = new Color[size * size];
@@ -794,6 +800,7 @@ public static class LanguagePageBuilder
             0,
             SpriteMeshType.Tight);
         sprite.name = "Circle";
+        sprite.hideFlags = HideFlags.DontSave;
         Cache.Add(sprite);
         return sprite;
     }
@@ -955,6 +962,7 @@ public static class LanguagePageBuilder
             TextureFormat.RGBA32,
             false);
 
+        tex.hideFlags = HideFlags.DontSave;
         tex.filterMode = FilterMode.Bilinear;
         tex.wrapMode = TextureWrapMode.Clamp;
 
@@ -978,6 +986,7 @@ public static class LanguagePageBuilder
             border);
 
         sprite.name = name;
+        sprite.hideFlags = HideFlags.DontSave;
 
         Cache.Add(sprite);
 
@@ -989,5 +998,6 @@ public static class LanguagePageBuilder
     private static void ResetStatics()
     {
         Cache.Clear();
+        SharedRoundedRect = null;
     }
 }
