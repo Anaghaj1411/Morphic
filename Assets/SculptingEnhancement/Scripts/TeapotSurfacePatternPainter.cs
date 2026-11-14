@@ -32,6 +32,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     [SerializeField, Range(0.4f, 3f)] private float oneEuroMinCutoff = 1.4f;
     [SerializeField, Range(0.001f, 0.05f)] private float oneEuroBeta = 0.02f;
     [SerializeField, Range(8f, 72f)] private float pullPixels = 14f;
+    private float patternSurfaceOffset = 0.032f;
+    private bool roundedPatternStrokes;
 
     private readonly List<StrokeRecord> completedStrokes = new List<StrokeRecord>();
     private readonly List<StrokeRecord> clayStrokes = new List<StrokeRecord>();
@@ -191,6 +193,16 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         pullPixels = Mathf.Max(0f, pixels);
     }
 
+    public void SetPatternSurfaceOffset(float worldOffset)
+    {
+        patternSurfaceOffset = Mathf.Clamp(worldOffset, 0.0004f, 0.08f);
+    }
+
+    public void SetRoundedPatternStrokes(bool rounded)
+    {
+        roundedPatternStrokes = rounded;
+    }
+
     public void SetClayCoilMode(bool enabled)
     {
         if (clayCoilMode == enabled)
@@ -275,6 +287,20 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
         if (cursorObject != null && !enabled && cursorObject.activeSelf)
             cursorObject.SetActive(false);
+    }
+
+    private void OnDisable()
+    {
+        if (cursorObject != null && cursorObject.activeSelf)
+            cursorObject.SetActive(false);
+    }
+
+    private void OnDestroy()
+    {
+        if (cursorObject != null)
+            Destroy(cursorObject);
+        if (cursorMaterial != null)
+            Destroy(cursorMaterial);
     }
 
     public void SetDrawingLocked(bool locked)
@@ -400,14 +426,56 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         ApplyTintToMaterial(material, strokeColor);
     }
 
+    public bool UndoInProgressStroke()
+    {
+        if (!isDrawingActive)
+            return false;
+
+        bool clay = currentStroke != null && currentStroke.isClayCoil;
+        FinishCurrentStroke();
+        if (clay)
+            ParkLastStroke(clayStrokes, redoClayStrokes);
+        else
+            ParkLastStroke(completedStrokes, redoStrokes);
+        return true;
+    }
+
     public void UndoLastStroke()
     {
+        if (UndoInProgressStroke())
+            return;
         ParkLastStroke(completedStrokes, redoStrokes);
     }
 
     public void RedoLastStroke()
     {
+        if (isDrawingActive && (currentStroke == null || !currentStroke.isClayCoil))
+            FinishCurrentStroke();
         RestoreLastStroke(redoStrokes, completedStrokes);
+    }
+
+    public int ParkAllCompletedStrokes()
+    {
+        if (isDrawingActive && (currentStroke == null || !currentStroke.isClayCoil))
+            FinishCurrentStroke();
+        int count = completedStrokes.Count;
+        while (completedStrokes.Count > 0)
+            ParkLastStroke(completedStrokes, redoStrokes);
+        return count;
+    }
+
+    public void RestoreLastStrokes(int count)
+    {
+        int n = Mathf.Min(Mathf.Max(0, count), redoStrokes.Count);
+        for (int i = 0; i < n; i++)
+            RestoreLastStroke(redoStrokes, completedStrokes);
+    }
+
+    public void ParkLastStrokes(int count)
+    {
+        int n = Mathf.Min(Mathf.Max(0, count), completedStrokes.Count);
+        for (int i = 0; i < n; i++)
+            ParkLastStroke(completedStrokes, redoStrokes);
     }
 
     public void ClearAllStrokes()
@@ -421,12 +489,40 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
     public void UndoLastClayStroke()
     {
+        if (isDrawingActive && currentStroke != null && currentStroke.isClayCoil)
+            FinishCurrentStroke();
         ParkLastStroke(clayStrokes, redoClayStrokes);
     }
 
     public void RedoLastClayStroke()
     {
+        if (isDrawingActive && currentStroke != null && currentStroke.isClayCoil)
+            FinishCurrentStroke();
         RestoreLastStroke(redoClayStrokes, clayStrokes);
+    }
+
+    public int ParkAllClayStrokes()
+    {
+        if (isDrawingActive && currentStroke != null && currentStroke.isClayCoil)
+            FinishCurrentStroke();
+        int count = clayStrokes.Count;
+        while (clayStrokes.Count > 0)
+            ParkLastStroke(clayStrokes, redoClayStrokes);
+        return count;
+    }
+
+    public void RestoreLastClayStrokes(int count)
+    {
+        int n = Mathf.Min(Mathf.Max(0, count), redoClayStrokes.Count);
+        for (int i = 0; i < n; i++)
+            RestoreLastStroke(redoClayStrokes, clayStrokes);
+    }
+
+    public void ParkLastClayStrokes(int count)
+    {
+        int n = Mathf.Min(Mathf.Max(0, count), clayStrokes.Count);
+        for (int i = 0; i < n; i++)
+            ParkLastStroke(clayStrokes, redoClayStrokes);
     }
 
     public void ClearClayCoils()
@@ -791,9 +887,12 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
 
         if (!cursorObject.activeSelf)
             cursorObject.SetActive(true);
-        cursorObject.transform.position = currentSurfacePoint + currentSurfaceNormal * 0.006f;
+        Vector3 cursorCenter = currentSurfacePoint + currentSurfaceNormal * 0.0024f;
+        cursorObject.transform.position = cursorCenter;
+        cursorObject.transform.localScale = Vector3.one;
         if (currentSurfaceNormal.sqrMagnitude > 0.001f)
             cursorObject.transform.rotation = Quaternion.LookRotation(currentSurfaceNormal);
+        LayoutCursorRing(cursorCenter, currentSurfaceNormal);
 
         Color cursorColor;
         if (clayCoilMode)
@@ -817,35 +916,77 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         }
     }
 
+    private float GetCursorWorldRadius()
+    {
+        if (clayCoilMode || !roundedPatternStrokes)
+            return strokeWidth * 0.5f;
+
+        Transform space = strokeContainer != null ? strokeContainer.transform
+            : teapotRenderer != null ? teapotRenderer.transform : transform;
+        if (space == null)
+            return strokeWidth * 0.5f;
+
+        float half = strokeWidth * 0.5f;
+        float hx = space.TransformVector(new Vector3(half, 0f, 0f)).magnitude;
+        float hy = space.TransformVector(new Vector3(0f, half, 0f)).magnitude;
+        float hz = space.TransformVector(new Vector3(0f, 0f, half)).magnitude;
+        float max = Mathf.Max(hx, Mathf.Max(hy, hz));
+        float min = Mathf.Min(hx, Mathf.Min(hy, hz));
+        float mid = hx + hy + hz - max - min;
+        return Mathf.Max(0.00004f, (min + mid) * 0.5f);
+    }
+
+    private void LayoutCursorRing(Vector3 center, Vector3 normal)
+    {
+        if (cursorRing == null)
+            return;
+
+        float worldRadius = GetCursorWorldRadius();
+        Vector3 n = normal.sqrMagnitude > 0.0001f ? normal.normalized : Vector3.forward;
+        Vector3 right = Vector3.Cross(n, Vector3.up);
+        if (right.sqrMagnitude < 0.0001f)
+            right = Vector3.Cross(n, Vector3.right);
+        right.Normalize();
+        Vector3 up = Vector3.Cross(right, n).normalized;
+
+        int segments = cursorRing.positionCount;
+        if (segments < 3)
+        {
+            segments = 32;
+            cursorRing.positionCount = segments;
+        }
+
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = (float)i / segments * Mathf.PI * 2f;
+            Vector3 offset = (right * Mathf.Cos(angle) + up * Mathf.Sin(angle)) * worldRadius;
+            cursorRing.SetPosition(i, center + offset);
+        }
+
+        float lineW = clayCoilMode
+            ? Mathf.Clamp(worldRadius * 0.42f, 0.0008f, 0.006f)
+            : Mathf.Clamp(worldRadius * 0.28f, 0.00012f, 0.0035f);
+        cursorRing.startWidth = lineW;
+        cursorRing.endWidth = lineW;
+        if (cursorCenterDot != null)
+        {
+            cursorCenterDot.position = center;
+            cursorCenterDot.localScale = Vector3.one * Mathf.Max(0.00008f, worldRadius * 0.22f);
+        }
+    }
+
     private void UpdateCursorRingGeometry()
     {
         if (cursorRing == null)
             return;
 
-        float scaleFactor = GetLossyScaleFactor();
-        float localRadius = (strokeWidth / scaleFactor) * 0.5f;
-        int segments = cursorRing.positionCount;
-        for (int i = 0; i < segments; i++)
-        {
-            float angle = (float)i / segments * Mathf.PI * 2f;
-            cursorRing.SetPosition(i, new Vector3(Mathf.Cos(angle) * localRadius, Mathf.Sin(angle) * localRadius, 0f));
-        }
-
-        if (clayCoilMode)
-        {
-            float lineW = Mathf.Clamp(strokeWidth * 0.28f, 0.0012f, 0.007f);
-            cursorRing.startWidth = lineW;
-            cursorRing.endWidth = lineW;
-            if (cursorCenterDot != null)
-                cursorCenterDot.localScale = Vector3.one * Mathf.Max(0.003f, strokeWidth * 0.55f);
-        }
-        else
-        {
-            cursorRing.startWidth = 0.02f;
-            cursorRing.endWidth = 0.02f;
-            if (cursorCenterDot != null)
-                cursorCenterDot.localScale = Vector3.one * 0.024f;
-        }
+        Vector3 center = cursorObject != null
+            ? cursorObject.transform.position
+            : currentSurfacePoint;
+        Vector3 normal = currentSurfaceNormal.sqrMagnitude > 0.0001f
+            ? currentSurfaceNormal
+            : Vector3.forward;
+        LayoutCursorRing(center, normal);
     }
 
     private void BeginNewStroke()
@@ -916,7 +1057,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             return;
 
         float scaleFactor = GetLossyScaleFactor();
-        float worldOffset = currentStroke.isClayCoil ? 0.0015f : 0.032f;
+        float worldOffset = currentStroke.isClayCoil ? 0.0015f : patternSurfaceOffset;
         float localNormalOffset = worldOffset / scaleFactor;
 
         Vector3 pointOnSurface = worldPoint + worldNormal * worldOffset;
@@ -1018,6 +1159,12 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         if (record.isClayCoil)
         {
             RebuildClayCoilMesh(record, V, N);
+            return;
+        }
+
+        if (roundedPatternStrokes)
+        {
+            RebuildRoundedPatternMesh(record, V, N);
             return;
         }
 
@@ -1405,14 +1552,149 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             clayMaterial.SetFloat("_Metallic", 0f);
     }
 
+    private void RebuildRoundedPatternMesh(StrokeRecord record, Vector3[] V, Vector3[] N)
+    {
+        int count = record.anchors.Count;
+        if (count < 2)
+            return;
+
+        const int across = 7;
+        Vector3[] srcPts = new Vector3[count];
+        Vector3[] srcNrm = new Vector3[count];
+        for (int i = 0; i < count; i++)
+        {
+            srcPts[i] = EvaluatePosition(record.anchors[i], V, N);
+            srcNrm[i] = EvaluateNormal(record.anchors[i], N);
+        }
+
+        int samples = (count - 1) * 2 + 1;
+        Vector3[] pts = new Vector3[samples];
+        Vector3[] norms = new Vector3[samples];
+        for (int i = 0; i < samples; i++)
+        {
+            float t = i / (float)(samples - 1) * (count - 1);
+            int a = Mathf.Clamp(Mathf.FloorToInt(t), 0, count - 2);
+            float u = t - a;
+            int p0 = Mathf.Max(0, a - 1);
+            int p1 = a;
+            int p2 = a + 1;
+            int p3 = Mathf.Min(count - 1, a + 2);
+            pts[i] = CatmullRom(srcPts[p0], srcPts[p1], srcPts[p2], srcPts[p3], u);
+            norms[i] = Vector3.Normalize(
+                CatmullRom(srcNrm[p0], srcNrm[p1], srcNrm[p2], srcNrm[p3], u));
+            if (norms[i].sqrMagnitude < 0.0001f)
+                norms[i] = srcNrm[p1];
+        }
+
+        int vertCount = samples * across;
+        int triCount = (samples - 1) * (across - 1) * 6;
+        Vector3[] vertices = new Vector3[vertCount];
+        Vector3[] normals = new Vector3[vertCount];
+        Vector2[] uvs = new Vector2[vertCount];
+        Color[] colors = new Color[vertCount];
+        int[] triangles = new int[triCount];
+
+        Transform space = strokeContainer != null ? strokeContainer.transform : transform;
+        Texture pattern = tintedPatternTexture != null ? tintedPatternTexture : (Texture)activePatternTexture;
+        float aspect = 4f;
+        if (pattern != null && pattern.height > 0)
+            aspect = Mathf.Clamp(pattern.width / (float)pattern.height, 2.5f, 8f);
+        float worldHalf = record.strokeWidth * 0.5f;
+        float patternLength = Mathf.Max(record.strokeWidth * aspect, 0.0001f);
+        float currentDist = 0f;
+        Vector3 prevWorld = space != null ? space.TransformPoint(pts[0]) : pts[0];
+
+        Vector3[] tangents = new Vector3[samples];
+        for (int i = 0; i < samples; i++)
+        {
+            if (i == 0)
+                tangents[i] = (pts[1] - pts[0]).normalized;
+            else if (i == samples - 1)
+                tangents[i] = (pts[samples - 1] - pts[samples - 2]).normalized;
+            else
+                tangents[i] = (pts[i + 1] - pts[i - 1]).normalized;
+            if (tangents[i].sqrMagnitude < 0.0001f)
+                tangents[i] = Vector3.forward;
+        }
+
+        for (int i = 1; i < samples - 1; i++)
+            tangents[i] = Vector3.Normalize(tangents[i - 1] + tangents[i] + tangents[i + 1]);
+
+        for (int i = 0; i < samples; i++)
+        {
+            Vector3 worldPt = space != null ? space.TransformPoint(pts[i]) : pts[i];
+            if (i > 0)
+                currentDist += Vector3.Distance(worldPt, prevWorld);
+            prevWorld = worldPt;
+
+            Vector3 n = norms[i].sqrMagnitude > 0.0001f ? norms[i].normalized : Vector3.up;
+            Vector3 binormal = Vector3.Cross(tangents[i], n);
+            if (binormal.sqrMagnitude < 0.0001f)
+                binormal = Vector3.Cross(Vector3.right, n);
+            binormal.Normalize();
+            n = Vector3.Cross(binormal, tangents[i]).normalized;
+            float u = currentDist / patternLength;
+
+            for (int s = 0; s < across; s++)
+            {
+                float acrossT = s / (float)(across - 1);
+                float angle = Mathf.PI * acrossT;
+                Vector3 offset = -binormal * Mathf.Cos(angle) * worldHalf +
+                                 n * Mathf.Sin(angle) * worldHalf;
+                int idx = i * across + s;
+                vertices[idx] = pts[i] + offset;
+                normals[idx] = (Mathf.Sin(angle) * n - Mathf.Cos(angle) * binormal).normalized;
+                uvs[idx] = new Vector2(u, acrossT);
+                colors[idx] = Color.white;
+            }
+        }
+
+        int tri = 0;
+        for (int i = 0; i < samples - 1; i++)
+        {
+            for (int s = 0; s < across - 1; s++)
+            {
+                int i0 = i * across + s;
+                int i1 = i0 + 1;
+                int i2 = (i + 1) * across + s;
+                int i3 = i2 + 1;
+                triangles[tri++] = i0;
+                triangles[tri++] = i2;
+                triangles[tri++] = i1;
+                triangles[tri++] = i1;
+                triangles[tri++] = i2;
+                triangles[tri++] = i3;
+            }
+        }
+
+        record.strokeMesh.Clear();
+        record.strokeMesh.vertices = vertices;
+        record.strokeMesh.normals = normals;
+        record.strokeMesh.uv = uvs;
+        record.strokeMesh.colors = colors;
+        record.strokeMesh.triangles = triangles;
+        record.strokeMesh.RecalculateNormals();
+        record.strokeMesh.RecalculateBounds();
+    }
+
+    private static Vector3 CatmullRom(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+    {
+        float t2 = t * t;
+        float t3 = t2 * t;
+        return 0.5f * ((2f * p1) +
+                       (-p0 + p2) * t +
+                       (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 +
+                       (-p0 + 3f * p1 - 3f * p2 + p3) * t3);
+    }
+
     private void RebuildClayCoilMesh(StrokeRecord record, Vector3[] V, Vector3[] N)
     {
         int count = record.anchors.Count;
         const int sides = 10;
-        float scaleFactor = GetLossyScaleFactor();
-        float radius = (record.strokeWidth / scaleFactor) * 0.5f;
+        Transform space = strokeContainer != null ? strokeContainer.transform : transform;
+        float worldRadius = record.strokeWidth * 0.5f;
         float bulge = Mathf.Clamp(record.clayLift, 0.15f, 5f);
-        float radiusOut = radius * bulge;
+        float worldRadiusOut = worldRadius * bulge;
 
         Vector3[] pts = new Vector3[count];
         Vector3[] norms = new Vector3[count];
@@ -1433,30 +1715,43 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         {
             Vector3 tangent;
             if (i == 0)
-                tangent = (pts[1] - pts[0]).normalized;
+                tangent = pts[1] - pts[0];
             else if (i == count - 1)
-                tangent = (pts[count - 1] - pts[count - 2]).normalized;
+                tangent = pts[count - 1] - pts[count - 2];
             else
-                tangent = (pts[i + 1] - pts[i - 1]).normalized;
-            if (tangent.sqrMagnitude < 0.0001f)
-                tangent = Vector3.forward;
+                tangent = pts[i + 1] - pts[i - 1];
 
-            Vector3 n = norms[i].sqrMagnitude > 0.0001f ? norms[i].normalized : Vector3.up;
-            Vector3 binormal = Vector3.Cross(tangent, n);
-            if (binormal.sqrMagnitude < 0.0001f)
-                binormal = Vector3.Cross(Vector3.right, n);
-            binormal.Normalize();
-            n = Vector3.Cross(binormal, tangent).normalized;
-            Vector3 center = pts[i] + n * radiusOut;
+            Vector3 worldPt = space != null ? space.TransformPoint(pts[i]) : pts[i];
+            Vector3 worldTangent = space != null ? space.TransformVector(tangent) : tangent;
+            if (worldTangent.sqrMagnitude < 0.0001f)
+                worldTangent = Vector3.forward;
+            worldTangent.Normalize();
+
+            Vector3 worldN = norms[i].sqrMagnitude > 0.0001f ? norms[i] : Vector3.up;
+            worldN = space != null ? space.TransformDirection(worldN) : worldN;
+            if (worldN.sqrMagnitude < 0.0001f)
+                worldN = Vector3.up;
+            worldN.Normalize();
+
+            Vector3 worldBinormal = Vector3.Cross(worldTangent, worldN);
+            if (worldBinormal.sqrMagnitude < 0.0001f)
+                worldBinormal = Vector3.Cross(Vector3.right, worldN);
+            worldBinormal.Normalize();
+            worldN = Vector3.Cross(worldBinormal, worldTangent).normalized;
+            Vector3 worldCenter = worldPt + worldN * worldRadiusOut;
 
             for (int s = 0; s < sides; s++)
             {
                 float angle = s / (float)sides * Mathf.PI * 2f;
-                Vector3 radial = binormal * (Mathf.Cos(angle) * radius) + n * (Mathf.Sin(angle) * radiusOut);
+                Vector3 worldVert = worldCenter
+                    + worldBinormal * (Mathf.Cos(angle) * worldRadius)
+                    + worldN * (Mathf.Sin(angle) * worldRadiusOut);
+                Vector3 worldOut = worldBinormal * (Mathf.Cos(angle) * worldRadiusOut)
+                    + worldN * (Mathf.Sin(angle) * worldRadius);
                 int idx = i * sides + s;
-                vertices[idx] = center + radial;
-                Vector3 outward = binormal * (Mathf.Cos(angle) * radiusOut) + n * (Mathf.Sin(angle) * radius);
-                normals[idx] = outward.sqrMagnitude > 0.0001f ? outward.normalized : n;
+                vertices[idx] = space != null ? space.InverseTransformPoint(worldVert) : worldVert;
+                Vector3 localOut = space != null ? space.InverseTransformDirection(worldOut) : worldOut;
+                normals[idx] = localOut.sqrMagnitude > 0.0001f ? localOut.normalized : worldN;
                 uvs[idx] = new Vector2(s / (float)sides, i / Mathf.Max(1f, count - 1f));
             }
         }
@@ -1495,7 +1790,8 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             return;
 
         cursorObject = new GameObject("BrushCursor");
-        cursorObject.transform.SetParent(transform, false);
+        cursorObject.transform.SetParent(null, false);
+        cursorObject.transform.localScale = Vector3.one;
 
         Shader unlitShader = Shader.Find("Sprites/Default");
         if (unlitShader == null)
@@ -1508,15 +1804,16 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         cursorMaterial.color = new Color(0.1f, 0.85f, 1f, 0.9f);
 
         cursorRing = cursorObject.AddComponent<LineRenderer>();
-        cursorRing.useWorldSpace = false;
+        cursorRing.useWorldSpace = true;
         cursorRing.loop = true;
-        cursorRing.startWidth = 0.02f;
-        cursorRing.endWidth = 0.02f;
+        cursorRing.widthMultiplier = 1f;
+        cursorRing.numCornerVertices = 2;
+        cursorRing.alignment = LineAlignment.View;
         cursorRing.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         cursorRing.receiveShadows = false;
         cursorRing.sharedMaterial = cursorMaterial;
 
-        int segments = 24;
+        int segments = 32;
         cursorRing.positionCount = segments;
         UpdateCursorRingGeometry();
 

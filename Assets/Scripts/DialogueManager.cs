@@ -1958,6 +1958,7 @@ public class DialogueManager : MonoBehaviour
         {
             teapotColorController.SetTutorialSculptLock(false);
             teapotColorController.SetPaletteAvailable(true);
+            teapotColorController.PromptFirstSculptMove();
         }
 
         ShowStudioHud();
@@ -2321,6 +2322,11 @@ public class DialogueManager : MonoBehaviour
         restartDialogueOnMenuStart = true;
 
         HideStudioHud();
+        if (lanternColorController != null)
+            lanternColorController.SetPaletteAvailable(false);
+        if (teapotColorController != null)
+            teapotColorController.SetPaletteAvailable(false);
+        HideKerisPalette();
         SetSettingsVisible(false);
 
         FindMissingReferences();
@@ -2434,6 +2440,7 @@ public class DialogueManager : MonoBehaviour
         {
             kerisColorController.SetTutorialSculptLock(false);
             kerisColorController.SetPaletteAvailable(true);
+            kerisColorController.PromptFirstSculptMove();
         }
 
         ShowStudioHud();
@@ -2580,7 +2587,10 @@ public class DialogueManager : MonoBehaviour
             lanternColorController.SetTutorialSculptLock(false);
         SetLanternSculptDriving(true);
         if (lanternColorController != null)
+        {
             lanternColorController.SetPaletteAvailable(true);
+            lanternColorController.PromptFirstSculptMove();
+        }
     }
 
     private void SetLanternSculptDriving(bool enabled)

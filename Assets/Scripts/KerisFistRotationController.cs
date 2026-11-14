@@ -48,8 +48,8 @@ public sealed class KerisFistRotationController : MonoBehaviour
     {
         yawPerScreen = 275f;
         pitchPerScreen = 220f;
-        moveDeadZone = 0.0038f;
-        smoothing = 8f;
+        moveDeadZone = 0.0016f;
+        smoothing = 14f;
     }
 
     private void OnDisable()
@@ -270,10 +270,10 @@ public sealed class KerisFistRotationController : MonoBehaviour
 
     private static bool LooksClosed(SculptHandFrame hand)
     {
-        return hand.IndexExtensionAngle < 110f &&
-               hand.FingerCurlRatio <= 1.14f &&
-               hand.OtherFingersCurlRatio <= 1.10f &&
-               hand.IndexTipPalmRatio <= 1.08f;
+        return hand.IndexExtensionAngle < 130f &&
+               hand.FingerCurlRatio <= 1.32f &&
+               hand.OtherFingersCurlRatio <= 1.28f &&
+               hand.IndexTipPalmRatio <= 1.22f;
     }
 
     private void ResolveMove(SculptHandFrame fist, out float moveRight, out float moveUp)

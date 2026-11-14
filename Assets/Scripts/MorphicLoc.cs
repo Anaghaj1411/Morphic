@@ -123,6 +123,26 @@ public static class MorphicLoc
         if (table != null && table.TryGetValue(english, out string translated) &&
             !string.IsNullOrEmpty(translated))
             return translated;
+
+        int split = english.IndexOf(": ", StringComparison.Ordinal);
+        if (split > 0 && table != null)
+        {
+            string title = english.Substring(0, split);
+            string body = english.Substring(split + 2);
+            bool gotTitle = table.TryGetValue(title, out string tTitle) &&
+                            !string.IsNullOrEmpty(tTitle);
+            bool gotBody = table.TryGetValue(body, out string tBody) &&
+                           !string.IsNullOrEmpty(tBody);
+            if (gotTitle || gotBody)
+            {
+                if (!gotTitle)
+                    tTitle = title;
+                if (!gotBody)
+                    tBody = body;
+                return tTitle + (Code == "zh-TW" ? "：" : ": ") + tBody;
+            }
+        }
+
         return english;
     }
 

@@ -62,6 +62,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private static readonly Vector3 KerisSculptCamPos = new Vector3(-26.06807f, 2.537f, -6.085f);
     private static readonly Vector3 KerisSculptCamEuler = new Vector3(0f, -257f, 90f);
     private const float KerisSculptCamFov = 50f;
+    private const float KerisStudioCamLift = 0.12f;
 
     private static readonly Color CardCream = LanguagePageBuilder.Cream;
     private static readonly Color PillPink = LanguagePageBuilder.Pink;
@@ -108,16 +109,18 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         new Color32(235, 225, 205, 255)
     };
 
-    private readonly float[] coilSizes = { 0.0004f, 0.0009f, 0.0018f, 0.0035f };
+    private readonly float[] coilSizes = { 0.006f, 0.012f, 0.018f, 0.028f };
     private readonly string[] coilSizeLabels = { "S", "M", "L", "XL" };
     private readonly float[] coilHeights = { 0.28f, 0.75f, 1.45f, 2.6f };
     private readonly string[] coilHeightLabels = { "SOFT", "MED", "STRONG", "MAX" };
     private readonly Button[] coilSizeButtons = new Button[4];
     private readonly Button[] coilHeightButtons = new Button[4];
     private readonly List<HitTarget> hitTargets = new List<HitTarget>();
-    private enum TimedUndo { Clay, Sculpt, Band, Selfie, History }
+    private enum TimedUndo { Clay, Sculpt, Band, Selfie, History, ClearBand }
     private readonly List<TimedUndo> timedUndo = new List<TimedUndo>();
     private readonly List<TimedUndo> timedRedo = new List<TimedUndo>();
+    private readonly Stack<int> bandClearUndoCounts = new Stack<int>();
+    private readonly Stack<int> bandClearRedoCounts = new Stack<int>();
     private int trackedClayCount;
     private int trackedBandCount;
     private int trackedSculptCount;
@@ -129,11 +132,24 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         public Texture Stamp;
         public Color StampTint;
         public bool StampVisible;
+        public Color ClayColor;
+        public Color BandColor;
+        public int SelectedVariant;
+        public string SelectedVariantLabel;
+        public float FlowerAmount;
+        public float Handle1Amount;
+        public float Handle2Amount;
+        public bool UseCarving2;
+        public bool UseHandle2;
     }
     private readonly List<KerisSnapshot> history = new List<KerisSnapshot>();
     private readonly List<KerisSnapshot> redoHistory = new List<KerisSnapshot>();
     private bool lastDeformationLocked;
+    private bool lastLiveDeform;
     private float[] trackedBlendWeights;
+    private float trackedFlowerAmount;
+    private float trackedHandle1Amount;
+    private float trackedHandle2Amount;
     private bool blendDeformDirty;
     private float blendDeformIdle;
     private bool applyingHistory;
@@ -151,6 +167,12 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private ColorMode mode = ColorMode.Hidden;
     private bool paletteAvailable;
+    private GameObject firstMoveHint;
+    private TMP_Text firstMoveHintText;
+    private bool firstMoveHintArmed;
+    private bool firstMoveHintDone;
+    private int firstMoveStepIndex;
+    private float firstMoveHold;
     private Canvas canvas;
     private RectTransform canvasRect;
     private Camera canvasCamera;
@@ -182,8 +204,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private HitTarget completedDwellTarget;
     private HitTarget selectedColorTarget;
     private float dwellTimer;
-    private int selectedCoilSize;
-    private int selectedCoilHeight;
+    private int selectedCoilSize = 1;
+    private int selectedCoilHeight = 1;
     private bool clayTintActive;
     private int selectedPart = -1;
     private int selectedVariant = -1;
@@ -246,11 +268,85 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         }
     }
 
+    public void PromptFirstSculptMove()
+    {
+        firstMoveHintDone = false;
+        firstMoveHintArmed = true;
+        firstMoveStepIndex = 0;
+        firstMoveHold = 0f;
+        Transform parent = canvas != null ? canvas.transform : (uiRoot != null ? uiRoot.transform : null);
+        MorphicFirstMoveHint.Ensure(ref firstMoveHint, ref firstMoveHintText, parent, "KerisFirstMoveHint");
+        TickFirstMoveHint();
+    }
+
+    private void TickFirstMoveHint()
+    {
+        if (!firstMoveHintArmed || firstMoveHintDone)
+        {
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+            return;
+        }
+
+        var prompts = MorphicFirstMoveHint.KerisPrompts;
+        var gestures = MorphicFirstMoveHint.KerisGestures;
+        if (firstMoveStepIndex >= prompts.Length)
+        {
+            MorphicFirstMoveHint.CompleteIfFinished(
+                firstMoveStepIndex,
+                prompts.Length,
+                ref firstMoveHintArmed,
+                ref firstMoveHintDone,
+                firstMoveHint);
+            return;
+        }
+
+        bool show = paletteAvailable &&
+                    !sculptLockedByTutorial &&
+                    uiRoot != null &&
+                    uiRoot.activeInHierarchy &&
+                    mode == ColorMode.MainMenu;
+        if (!show)
+        {
+            firstMoveHold = 0f;
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+            return;
+        }
+
+        MorphicFirstMoveHint.Show(
+            firstMoveHint, firstMoveHintText, prompts[firstMoveStepIndex]);
+
+        KerisGestureController.PracticeGesture current =
+            kerisGestures != null
+                ? kerisGestures.ReadPracticeGesture()
+                : KerisGestureController.PracticeGesture.None;
+        bool rotate = gestures[firstMoveStepIndex] ==
+                      KerisGestureController.PracticeGesture.SingleFist;
+        bool lockStep = gestures[firstMoveStepIndex] ==
+                        KerisGestureController.PracticeGesture.OpenPalm;
+        if (MorphicFirstMoveHint.ShouldAdvance(
+                current == gestures[firstMoveStepIndex],
+                rotate,
+                current == KerisGestureController.PracticeGesture.None,
+                ref firstMoveHold,
+                lockStep))
+        {
+            firstMoveStepIndex++;
+            MorphicFirstMoveHint.CompleteIfFinished(
+                firstMoveStepIndex,
+                prompts.Length,
+                ref firstMoveHintArmed,
+                ref firstMoveHintDone,
+                firstMoveHint);
+        }
+    }
+
     public void SetPaletteAvailable(bool available)
     {
         paletteAvailable = available;
         if (!available)
         {
+            firstMoveHold = 0f;
+            MorphicFirstMoveHint.Hide(firstMoveHint);
             SnapRestoreVertexSculptCamera();
             DisableVertexSculpt();
             if (uiRoot != null)
@@ -263,6 +359,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         }
 
         SnapViewToPotteryStudio();
+        LiftKerisStudioCamera();
         CaptureStudioCamera();
         EnsureKerisShelf();
         if (uiRoot == null)
@@ -296,6 +393,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void OnDisable()
     {
+        firstMoveHold = 0f;
+        MorphicFirstMoveHint.Hide(firstMoveHint);
         SnapRestoreVertexSculptCamera();
         DisableVertexSculpt();
         if (uiRoot != null)
@@ -305,6 +404,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private void LateUpdate()
     {
         PollSculptHistory();
+        TickFirstMoveHint();
         if (vertexSculptCameraZoomed && sculptCameraMove == null)
             ApplyKerisSculptCameraPose(ResolveViewCamera());
 
@@ -700,6 +800,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             historyBar.SetActive(true);
         MorphicLoc.Apply(headerText, "COLOR PALETTE");
         instructionText.gameObject.SetActive(false);
+        EnsureZoomHudTargets();
         SetTitleBurstsVisible(false);
         SetHeaderBackVisible(false);
         ResetDwell();
@@ -791,14 +892,14 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             instructionText.gameObject.SetActive(false);
         if (uiRoot != null)
             uiRoot.transform.SetAsLastSibling();
-        ApplyCoilSettings();
-        RefreshCoilButtons();
         if (patternPainter != null)
         {
             patternPainter.SetClayCoilMode(true);
             patternPainter.SetDrawingLocked(false);
+            ApplyCoilSettings();
             patternPainter.SetPaintingEnabled(true);
         }
+        RefreshCoilButtons();
         ResetDwell();
         SetHoveredTarget(null);
         BeginVertexSculptCameraZoom();
@@ -826,9 +927,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private void BeginVertexSculptCameraZoom()
     {
-        if (vertexSculptCameraZoomed)
-            return;
-
         Camera cam = FindNamedMainCamera();
         if (cam == null)
             cam = ResolveViewCamera();
@@ -844,14 +942,19 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             hasStoredSculptCam = true;
         }
 
+        bool alreadyZoomed = vertexSculptCameraZoomed;
         MorphicSculptZoomUI.HandOffToVertexSculpt(
             ref hasStoredSculptCam,
             ref storedSculptCamPos,
             ref storedSculptCamRot,
             ref storedSculptCamFov,
             ref storedSculptCamNear);
+        EnsureZoomHudTargets();
 
-        GetKerisZoomPose(KerisSculptZoom, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
+        if (alreadyZoomed)
+            return;
+
+        GetKerisZoomPose(MorphicSculptZoomUI.CurrentOwnedCloser(), out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
         HoldSculptCameraPose(targetPos, targetRot, targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
 
@@ -878,8 +981,6 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         hasStoredSculptCam = true;
     }
 
-    private const float KerisSculptZoom = 0.50f;
-
     private void GetKerisZoomPose(
         float closer01,
         out Vector3 pos,
@@ -891,11 +992,8 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             : Quaternion.Euler(KerisSculptCamEuler);
         fov = storedSculptCamFov > 1f ? storedSculptCamFov : KerisSculptCamFov;
         Vector3 from = hasStoredSculptCam ? storedSculptCamPos : KerisSculptCamPos;
-        if (kerisRenderer != null)
-            pos = MorphicSculptZoomUI.FrameTowardCraft(
-                from, rot, kerisRenderer.bounds, closer01);
-        else
-            pos = from;
+        Bounds framed = GetKerisViewBounds();
+        pos = MorphicSculptZoomUI.KerisZoomPosition(from, rot, framed, closer01);
     }
 
     public void ApplyExtraSculptZoom(float closer01)
@@ -909,8 +1007,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (cam == null)
             return;
 
-        float zoom = Mathf.Lerp(KerisSculptZoom, 1f, Mathf.Clamp01(closer01));
-        GetKerisZoomPose(zoom, out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
+        GetKerisZoomPose(Mathf.Clamp01(closer01), out Vector3 targetPos, out Quaternion targetRot, out float targetFov);
 
         HoldSculptCameraPose(targetPos, targetRot, targetFov);
         float targetNear = Mathf.Min(storedSculptCamNear > 0f ? storedSculptCamNear : cam.nearClipPlane, 0.05f);
@@ -941,7 +1038,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         }
         else
         {
-            GetKerisZoomPose(KerisSculptZoom, out pos, out rot, out fov);
+            GetKerisZoomPose(MorphicSculptZoomUI.CurrentOwnedCloser(), out pos, out rot, out fov);
         }
 
         ApplyCameraPose(cam, pos, rot, fov, 0.05f);
@@ -1058,6 +1155,41 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             UnityEngine.Object.FindFirstObjectByType<MainMenuStartTransition>(FindObjectsInactive.Include);
         if (transition != null)
             transition.SnapViewToPotteryStudio();
+    }
+
+    private void LiftKerisStudioCamera()
+    {
+        Camera cam = ResolveViewCamera();
+        if (cam == null)
+            cam = FindNamedMainCamera();
+        if (cam == null)
+            return;
+
+        cam.transform.position += ScreenUp(cam.transform.rotation) * KerisStudioCamLift;
+    }
+
+    private static Vector3 ScreenUp(Quaternion rotation)
+    {
+        Vector3 localUp = rotation * Vector3.up;
+        if (localUp.sqrMagnitude < 0.0001f)
+            return Vector3.up;
+        return localUp.normalized;
+    }
+
+    private Bounds GetKerisViewBounds()
+    {
+        Bounds framed = kerisRenderer != null
+            ? kerisRenderer.bounds
+            : new Bounds(transform.position, Vector3.one * 0.4f);
+        Renderer[] extras = GetComponentsInChildren<Renderer>(false);
+        for (int i = 0; i < extras.Length; i++)
+        {
+            if (extras[i] == null || !extras[i].enabled)
+                continue;
+            framed.Encapsulate(extras[i].bounds);
+        }
+
+        return framed;
     }
 
     private void StartSculptCameraMove(
@@ -1293,6 +1425,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             MorphicLoc.Apply(instructionText, "Make two V signs and spread them outwards to bring the carving out.");
         ResetDwell();
         SetHoveredTarget(null);
+        PushHistory();
     }
 
     private void BuildVariantGroup(RectTransform panelRect)
@@ -1456,7 +1589,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         float size = coilSizes[selectedCoilSize];
         patternPainter.SetStrokeWidth(size, false);
         patternPainter.SetClayLift(coilHeights[selectedCoilHeight]);
-        patternPainter.SetMinPointSpacing(size * 0.25f);
+        patternPainter.SetMinPointSpacing(size * 0.22f);
         patternPainter.SetClayColor(committedClayColor, true);
         if (clayColorChip != null)
             clayColorChip.color = committedClayColor;
@@ -1496,6 +1629,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         {
             committedClayColor = color;
             ApplyCoilSettings();
+            PushHistory();
             MarkColorSwatch(color);
             return;
         }
@@ -1854,6 +1988,14 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             blendDeformDirty = false;
         }
         lastDeformationLocked = locked;
+
+        bool live = kerisGestures != null && kerisGestures.HasLiveDeform;
+        if (lastLiveDeform && !live && !applyingHistory)
+        {
+            PushHistory();
+            blendDeformDirty = false;
+        }
+        lastLiveDeform = live;
         TrackBlendDeformation(kerisSkin);
     }
 
@@ -1877,6 +2019,15 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 changed = true;
             trackedBlendWeights[i] = weight;
         }
+
+        ReadKerisOverlays(out float flower, out float handle1, out float handle2);
+        if (Mathf.Abs(flower - trackedFlowerAmount) > 0.6f ||
+            Mathf.Abs(handle1 - trackedHandle1Amount) > 0.6f ||
+            Mathf.Abs(handle2 - trackedHandle2Amount) > 0.6f)
+            changed = true;
+        trackedFlowerAmount = flower;
+        trackedHandle1Amount = handle1;
+        trackedHandle2Amount = handle2;
 
         if (changed)
         {
@@ -1910,8 +2061,41 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             trackedBlendWeights = new float[count];
         for (int i = 0; i < count; i++)
             trackedBlendWeights[i] = skin.GetBlendShapeWeight(i);
+        ReadKerisOverlays(out trackedFlowerAmount, out trackedHandle1Amount, out trackedHandle2Amount);
         blendDeformDirty = false;
         blendDeformIdle = 0f;
+    }
+
+    private void ReadKerisOverlays(out float flower, out float handle1, out float handle2)
+    {
+        flower = 0f;
+        handle1 = 0f;
+        handle2 = 0f;
+        if (kerisRenderer == null && kerisSkin == null)
+            return;
+        Renderer source = kerisSkin != null ? kerisSkin : kerisRenderer;
+        KerisFlowerOverlay flowers = source.GetComponent<KerisFlowerOverlay>();
+        if (flowers != null)
+            flower = flowers.flowerAmount;
+        KerisHandleOverlay handles = source.GetComponent<KerisHandleOverlay>();
+        if (handles != null)
+        {
+            handle1 = handles.handle1Amount;
+            handle2 = handles.handle2Amount;
+        }
+    }
+
+    private void ApplyKerisOverlays(float flower, float handle1, float handle2)
+    {
+        Renderer source = kerisSkin != null ? kerisSkin : kerisRenderer;
+        if (source == null)
+            return;
+        KerisFlowerOverlay flowers = source.GetComponent<KerisFlowerOverlay>();
+        if (flowers != null)
+            flowers.SetAmount(flower);
+        KerisHandleOverlay handles = source.GetComponent<KerisHandleOverlay>();
+        if (handles != null)
+            handles.SetAmount(handle1, handle2);
     }
 
     private KerisSnapshot CaptureSnapshot()
@@ -1932,6 +2116,13 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         snapshot.StampVisible = appliedDesignTexture != null &&
             designSurfaceRenderer != null &&
             designSurfaceRenderer.enabled;
+        snapshot.ClayColor = committedClayColor;
+        snapshot.BandColor = committedBandColor;
+        snapshot.SelectedVariant = selectedVariant;
+        snapshot.SelectedVariantLabel = selectedVariantLabel;
+        ReadKerisOverlays(out snapshot.FlowerAmount, out snapshot.Handle1Amount, out snapshot.Handle2Amount);
+        snapshot.UseCarving2 = kerisGestures != null && kerisGestures.UsesCarving2;
+        snapshot.UseHandle2 = kerisGestures != null && kerisGestures.UsesHandle2;
         return snapshot;
     }
 
@@ -1947,14 +2138,33 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             for (int i = 0; i < count; i++)
                 kerisSkin.SetBlendShapeWeight(i, snapshot.BlendWeights[i]);
         }
-        if (kerisGestures != null)
-            kerisGestures.SynchronizeWeightsFromRenderer();
-        RememberBlendWeights(kerisSkin);
         if (snapshot.PartColors != null && snapshot.PartColors.Length == savedPartColors.Length)
             savedPartColors = (Color[])snapshot.PartColors.Clone();
         committedKerisColor = snapshot.CommittedColor;
         ApplySavedPartColors();
         RestoreStampFromSnapshot(snapshot);
+        if (kerisGestures != null)
+        {
+            kerisGestures.ArmCarvingVariant(snapshot.UseCarving2);
+            kerisGestures.ArmHandleVariant(snapshot.UseHandle2);
+        }
+        ApplyKerisOverlays(snapshot.FlowerAmount, snapshot.Handle1Amount, snapshot.Handle2Amount);
+        if (kerisGestures != null)
+            kerisGestures.SynchronizeWeightsFromRenderer();
+        RememberBlendWeights(kerisSkin);
+        committedClayColor = snapshot.ClayColor.a > 0.01f ? snapshot.ClayColor : committedClayColor;
+        committedBandColor = snapshot.BandColor.a > 0.01f ? snapshot.BandColor : committedBandColor;
+        if (patternPainter != null)
+        {
+            patternPainter.SetClayColor(committedClayColor, true);
+            patternPainter.SetStrokeColor(committedBandColor, true);
+        }
+        if (clayColorChip != null)
+            clayColorChip.color = committedClayColor;
+        if (bandColorChip != null)
+            bandColorChip.color = committedBandColor;
+        selectedVariant = snapshot.SelectedVariant;
+        selectedVariantLabel = snapshot.SelectedVariantLabel ?? "";
         applyingHistory = false;
     }
 
@@ -2000,6 +2210,20 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             return false;
         if (ColorDistanceSq(a.StampTint, b.StampTint) > 0.0001f)
             return false;
+        if (ColorDistanceSq(a.ClayColor, b.ClayColor) > 0.0001f)
+            return false;
+        if (ColorDistanceSq(a.BandColor, b.BandColor) > 0.0001f)
+            return false;
+        if (a.SelectedVariant != b.SelectedVariant)
+            return false;
+        if (Mathf.Abs(a.FlowerAmount - b.FlowerAmount) > 0.6f)
+            return false;
+        if (Mathf.Abs(a.Handle1Amount - b.Handle1Amount) > 0.6f)
+            return false;
+        if (Mathf.Abs(a.Handle2Amount - b.Handle2Amount) > 0.6f)
+            return false;
+        if (a.UseCarving2 != b.UseCarving2 || a.UseHandle2 != b.UseHandle2)
+            return false;
         if (a.PartColors == null || b.PartColors == null ||
             a.PartColors.Length != b.PartColors.Length)
             return a.PartColors == b.PartColors;
@@ -2023,12 +2247,15 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     {
         timedUndo.Add(kind);
         timedRedo.Clear();
+        bandClearRedoCounts.Clear();
     }
 
     private void ResetTimedUndo()
     {
         timedUndo.Clear();
         timedRedo.Clear();
+        bandClearUndoCounts.Clear();
+        bandClearRedoCounts.Clear();
         trackedClayCount = patternPainter != null ? patternPainter.ClayStrokeCount : 0;
         trackedBandCount = patternPainter != null ? patternPainter.StrokeCount : 0;
         trackedSculptCount = vertexSculptController != null ? vertexSculptController.UndoDepth : 0;
@@ -2064,26 +2291,30 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
 
     private bool UndoTimedAction()
     {
-        if (timedUndo.Count == 0)
-            return false;
-        TimedUndo kind = timedUndo[timedUndo.Count - 1];
-        timedUndo.RemoveAt(timedUndo.Count - 1);
-        if (!PerformTimedUndo(kind))
-            return false;
-        timedRedo.Add(kind);
-        return true;
+        while (timedUndo.Count > 0)
+        {
+            TimedUndo kind = timedUndo[timedUndo.Count - 1];
+            timedUndo.RemoveAt(timedUndo.Count - 1);
+            if (!PerformTimedUndo(kind))
+                continue;
+            timedRedo.Add(kind);
+            return true;
+        }
+        return false;
     }
 
     private bool RedoTimedAction()
     {
-        if (timedRedo.Count == 0)
-            return false;
-        TimedUndo kind = timedRedo[timedRedo.Count - 1];
-        timedRedo.RemoveAt(timedRedo.Count - 1);
-        if (!PerformTimedRedo(kind))
-            return false;
-        timedUndo.Add(kind);
-        return true;
+        while (timedRedo.Count > 0)
+        {
+            TimedUndo kind = timedRedo[timedRedo.Count - 1];
+            timedRedo.RemoveAt(timedRedo.Count - 1);
+            if (!PerformTimedRedo(kind))
+                continue;
+            timedUndo.Add(kind);
+            return true;
+        }
+        return false;
     }
 
     private bool PerformTimedUndo(TimedUndo kind)
@@ -2125,6 +2356,19 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 return true;
             case TimedUndo.Selfie:
                 return TryUndoSelfie();
+            case TimedUndo.ClearBand:
+                if (patternPainter == null || bandClearUndoCounts.Count == 0)
+                    return false;
+                int undoCount = bandClearUndoCounts.Pop();
+                patternPainter.RestoreLastStrokes(undoCount);
+                trackedBandCount = patternPainter.StrokeCount;
+                bandClearRedoCounts.Push(undoCount);
+                if (instructionText != null)
+                {
+                    instructionText.gameObject.SetActive(true);
+                    MorphicLoc.Apply(instructionText, "Drawings restored.");
+                }
+                return true;
             case TimedUndo.History:
                 if (history.Count < 2)
                     return false;
@@ -2181,6 +2425,19 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
                 return true;
             case TimedUndo.Selfie:
                 return TryRedoSelfie();
+            case TimedUndo.ClearBand:
+                if (patternPainter == null || bandClearRedoCounts.Count == 0)
+                    return false;
+                int redoCount = bandClearRedoCounts.Pop();
+                patternPainter.ParkLastStrokes(redoCount);
+                trackedBandCount = patternPainter.StrokeCount;
+                bandClearUndoCounts.Push(redoCount);
+                if (instructionText != null)
+                {
+                    instructionText.gameObject.SetActive(true);
+                    MorphicLoc.Apply(instructionText, "Drawings cleared.");
+                }
+                return true;
             case TimedUndo.History:
                 if (redoHistory.Count == 0)
                     return false;
@@ -2199,13 +2456,51 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         }
     }
 
+    private void ClearKerisBandDrawings()
+    {
+        if (patternPainter == null)
+            return;
+        int count = patternPainter.ParkAllCompletedStrokes();
+        if (count <= 0)
+        {
+            if (instructionText != null)
+            {
+                instructionText.gameObject.SetActive(true);
+                MorphicLoc.Apply(instructionText, "Nothing to clear.");
+            }
+            return;
+        }
+
+        trackedBandCount = patternPainter.StrokeCount;
+        bandClearUndoCounts.Push(count);
+        NoteTimedUndo(TimedUndo.ClearBand);
+        if (instructionText != null)
+        {
+            instructionText.gameObject.SetActive(true);
+            MorphicLoc.Apply(instructionText, "All drawings cleared.");
+        }
+    }
+
     private void UndoClay()
     {
+        if (patternPainter != null && patternPainter.UndoInProgressStroke())
+        {
+            trackedClayCount = patternPainter.ClayStrokeCount;
+            trackedBandCount = patternPainter.StrokeCount;
+            if (instructionText != null)
+            {
+                instructionText.gameObject.SetActive(true);
+                MorphicLoc.Apply(instructionText, "Last stroke undone.");
+            }
+            return;
+        }
+
         if (UndoTimedAction())
             return;
         if (patternPainter != null && patternPainter.ClayStrokeCount > 0)
         {
             patternPainter.UndoLastClayStroke();
+            trackedClayCount = patternPainter.ClayStrokeCount;
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
@@ -2217,6 +2512,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (vertexSculptController != null && vertexSculptController.HasUndo &&
             vertexSculptController.UndoLastStroke())
         {
+            trackedSculptCount = vertexSculptController.UndoDepth;
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
@@ -2228,6 +2524,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (patternPainter != null && patternPainter.StrokeCount > 0)
         {
             patternPainter.UndoLastStroke();
+            trackedBandCount = patternPainter.StrokeCount;
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
@@ -2266,6 +2563,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (patternPainter != null && patternPainter.RedoClayCount > 0)
         {
             patternPainter.RedoLastClayStroke();
+            trackedClayCount = patternPainter.ClayStrokeCount;
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
@@ -2277,6 +2575,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (vertexSculptController != null && vertexSculptController.HasRedo &&
             vertexSculptController.RedoLastStroke())
         {
+            trackedSculptCount = vertexSculptController.UndoDepth;
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
@@ -2288,6 +2587,7 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
         if (patternPainter != null && patternPainter.RedoStrokeCount > 0)
         {
             patternPainter.RedoLastStroke();
+            trackedBandCount = patternPainter.StrokeCount;
             if (instructionText != null)
             {
                 instructionText.gameObject.SetActive(true);
@@ -2316,15 +2616,18 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
     private void EnsurePainter()
     {
         ResolveKerisSkin();
-        if (patternPainter != null || kerisSkin == null)
+        if (kerisSkin == null)
             return;
         SkinnedMeshRenderer skin = kerisSkin;
-        patternPainter = skin.GetComponent<TeapotSurfacePatternPainter>();
+        if (patternPainter == null)
+            patternPainter = skin.GetComponent<TeapotSurfacePatternPainter>();
         if (patternPainter == null)
             patternPainter = skin.gameObject.AddComponent<TeapotSurfacePatternPainter>();
         patternPainter.Initialize(handRunner, skin);
-        patternPainter.SetStabilization(0.55f);
-        patternPainter.SetPullPixels(12f);
+        patternPainter.SetStabilization(0.62f);
+        patternPainter.SetPullPixels(10f);
+        patternPainter.SetPatternSurfaceOffset(0.0022f);
+        patternPainter.SetRoundedPatternStrokes(true);
     }
 
     private void EnsureSkinnedForPainter(GameObject kerisRoot)
@@ -2497,8 +2800,33 @@ public sealed partial class SculptingEnhancementKerisColorController : MonoBehav
             cursorRect.gameObject.SetActive(show);
     }
 
+    private void EnsureZoomHudTargets()
+    {
+        if (!MorphicSculptZoomUI.TryGetZoomButtons(out Button minus, out Button plus))
+            return;
+        if (minus != null)
+            RegisterHitTarget(minus, false, false, Color.white);
+        if (plus != null)
+            RegisterHitTarget(plus, false, false, Color.white);
+    }
+
+    private bool HasHitTarget(Button button)
+    {
+        if (button == null)
+            return false;
+        for (int i = 0; i < hitTargets.Count; i++)
+        {
+            if (hitTargets[i].Button == button)
+                return true;
+        }
+        return false;
+    }
+
     private void RegisterHitTarget(Button button, bool isColor, bool isPersistentChoice, Color previewColor, bool isFreeColorPalette = false)
     {
+        if (button == null || HasHitTarget(button))
+            return;
+
         Outline outline = button.gameObject.GetComponent<Outline>();
         if (outline == null)
             outline = button.gameObject.AddComponent<Outline>();

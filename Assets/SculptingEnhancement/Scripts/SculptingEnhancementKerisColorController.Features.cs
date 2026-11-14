@@ -75,8 +75,8 @@ public sealed partial class SculptingEnhancementKerisColorController
     private readonly RawImage[] bandPreviews = new RawImage[8];
     private readonly Button[] bandSizeButtons = new Button[4];
     private readonly string[] bandSizeLabels = { "SLIM", "MEDIUM", "BOLD", "WIDE" };
-    private readonly float[] bandSizes = { 0.0006f, 0.0012f, 0.0022f, 0.0035f };
-    private readonly float[] bandSizeFractions = { 0.08f, 0.13f, 0.18f, 0.24f };
+    private readonly float[] bandSizes = { 0.00055f, 0.0020f, 0.0036f, 0.0056f };
+    private readonly float[] bandSizeFractions = { 0.075f, 0.20f, 0.28f, 0.38f };
     private const int StampTileRows = 3;
     private const float StampTileSpanFraction = 0.78f;
     private const float StampTileFillFraction = 0.92f;
@@ -714,6 +714,20 @@ public sealed partial class SculptingEnhancementKerisColorController
             designSurfaceRoot.gameObject.SetActive(true);
         if (designSurfaceRenderer != null)
             designSurfaceRenderer.enabled = true;
+        KeepKerisStampVisible();
+    }
+
+    private void KeepKerisStampVisible()
+    {
+        if (appliedDesignTexture == null)
+            return;
+
+        EnsureDesignOverlay();
+        ConfigureDesignSurfaceMaterial(appliedDesignTexture);
+        if (designSurfaceRoot != null)
+            designSurfaceRoot.gameObject.SetActive(true);
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = true;
     }
 
     private void ShowBandSelection()
@@ -746,6 +760,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             bandGroup.SetActive(true);
         MorphicLoc.Apply(headerText, "DRAW BAND");
         instructionText.gameObject.SetActive(true);
+        KeepKerisStampVisible();
         MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on the keris.");
         SetHeaderBackLabel("← BODY");
         SetHeaderBackVisible(true);
@@ -883,12 +898,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             clearText.fontSize = 22f;
             clearText.color = DarkTextGreen;
         }
-        clearStrokes.onClick.AddListener(() =>
-        {
-            if (patternPainter != null)
-                patternPainter.ClearAllStrokes();
-            MorphicLoc.Apply(instructionText, "All drawings cleared.");
-        });
+        clearStrokes.onClick.AddListener(ClearKerisBandDrawings);
         RegisterHitTarget(clearStrokes, false, false, Color.white);
 
         Button done = CreateButton(
@@ -940,7 +950,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         patternPainter.SetPatternTexture(motif);
         patternPainter.SetStrokeColor(committedBandColor, false);
         patternPainter.SetStrokeWidth(width, false);
-        patternPainter.SetMinPointSpacing(width * 0.22f);
+        patternPainter.SetMinPointSpacing(width * 0.10f);
         patternPainter.SetDrawingLocked(false);
         patternPainter.SetPaintingEnabled(true);
     }
@@ -966,6 +976,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         instructionText.gameObject.SetActive(true);
         instructionText.fontSize = 20f;
         instructionText.color = DarkTextGreen;
+        KeepKerisStampVisible();
         MorphicLoc.Apply(instructionText, "Trace index finger across the keris to draw. Open palm to lock.");
         ResetDwell();
         SetHoveredTarget(null);
@@ -988,7 +999,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (patternPainter != null)
         {
             patternPainter.SetStrokeWidth(width, true);
-            patternPainter.SetMinPointSpacing(width * 0.22f);
+            patternPainter.SetMinPointSpacing(width * 0.10f);
         }
 
         RefreshBandSizeButtons();
@@ -1082,34 +1093,19 @@ public sealed partial class SculptingEnhancementKerisColorController
         Button undoBtn = CreateButton(
             "TargetingUndo", barRect, new Vector2(-156f, -88f),
             new Vector2(148f, 64f), "UNDO", PillPink);
-        undoBtn.onClick.AddListener(() =>
-        {
-            if (patternPainter != null)
-                patternPainter.UndoLastStroke();
-            MorphicLoc.Apply(instructionText, "Last stroke undone.");
-        });
+        undoBtn.onClick.AddListener(UndoClay);
         RegisterHitTarget(undoBtn, false, false, Color.white);
 
         Button redoBtn = CreateButton(
             "TargetingRedo", barRect, new Vector2(0f, -88f),
             new Vector2(148f, 64f), "REDO", PillPink);
-        redoBtn.onClick.AddListener(() =>
-        {
-            if (patternPainter != null)
-                patternPainter.RedoLastStroke();
-            MorphicLoc.Apply(instructionText, "Last stroke redone.");
-        });
+        redoBtn.onClick.AddListener(RedoClay);
         RegisterHitTarget(redoBtn, false, false, Color.white);
 
         Button clearBtn = CreateButton(
             "TargetingClear", barRect, new Vector2(156f, -88f),
             new Vector2(148f, 64f), "CLEAR", PillPink);
-        clearBtn.onClick.AddListener(() =>
-        {
-            if (patternPainter != null)
-                patternPainter.ClearAllStrokes();
-            MorphicLoc.Apply(instructionText, "All drawings cleared.");
-        });
+        clearBtn.onClick.AddListener(ClearKerisBandDrawings);
         RegisterHitTarget(clearBtn, false, false, Color.white);
         MorphicStudioLayout.PlaceTargetingBar(bandTargetingBar.transform);
         bandTargetingBar.SetActive(false);
@@ -1360,6 +1356,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         if (kerisShelf != null)
             kerisShelf.RestoreSculptView();
         SetWorkingKerisVisible(true);
+        LiftKerisStudioCamera();
         ShowMainMenu();
     }
 
@@ -1369,6 +1366,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         ResetKerisColor();
         if (kerisShelf != null)
             kerisShelf.RestoreSculptView();
+        LiftKerisStudioCamera();
         if (paletteAvailable)
             ShowMainMenu();
         else

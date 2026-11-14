@@ -241,6 +241,12 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     private bool partSelectionLocked;
     private bool paletteAvailable;
     private bool sculptLockedByTutorial;
+    private GameObject firstMoveHint;
+    private TMP_Text firstMoveHintText;
+    private bool firstMoveHintArmed;
+    private bool firstMoveHintDone;
+    private int firstMoveStepIndex;
+    private float firstMoveHold;
     private bool vertexSculptEnabled;
     private Button vertexSculptButton;
     private bool uiPointerBlockingSculpt;
@@ -337,6 +343,11 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
     public void SetPaletteAvailable(bool available)
     {
         paletteAvailable = available;
+        if (!available)
+        {
+            firstMoveHold = 0f;
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+        }
 
         if (uiRoot == null)
             return;
@@ -404,6 +415,8 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void OnDisable()
     {
+        firstMoveHold = 0f;
+        MorphicFirstMoveHint.Hide(firstMoveHint);
         SnapRestoreVertexSculptCamera();
         RestoreSelectedPreview();
         vertexSculptEnabled = false;
@@ -568,6 +581,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         PollSculptHistory();
+        TickFirstMoveHint();
     }
 
     private void BuildInterface()
@@ -4173,6 +4187,78 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         sculptLockedByTutorial = locked;
         if (locked)
             SetSculptControllersEnabled(false);
+    }
+
+    public void PromptFirstSculptMove()
+    {
+        firstMoveHintDone = false;
+        firstMoveHintArmed = true;
+        firstMoveStepIndex = 0;
+        firstMoveHold = 0f;
+        Transform parent = canvas != null ? canvas.transform : (uiRoot != null ? uiRoot.transform : null);
+        MorphicFirstMoveHint.Ensure(ref firstMoveHint, ref firstMoveHintText, parent, "LanternFirstMoveHint");
+        TickFirstMoveHint();
+    }
+
+    private void TickFirstMoveHint()
+    {
+        if (!firstMoveHintArmed || firstMoveHintDone)
+        {
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+            return;
+        }
+
+        var prompts = MorphicFirstMoveHint.LanternPrompts;
+        var gestures = MorphicFirstMoveHint.LanternGestures;
+        if (firstMoveStepIndex >= prompts.Length)
+        {
+            MorphicFirstMoveHint.CompleteIfFinished(
+                firstMoveStepIndex,
+                prompts.Length,
+                ref firstMoveHintArmed,
+                ref firstMoveHintDone,
+                firstMoveHint);
+            return;
+        }
+
+        bool show = paletteAvailable &&
+                    !sculptLockedByTutorial &&
+                    uiRoot != null &&
+                    uiRoot.activeInHierarchy &&
+                    (mode == ColorMode.Sculpt || mode == ColorMode.MainMenu);
+        if (!show)
+        {
+            firstMoveHold = 0f;
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+            return;
+        }
+
+        MorphicFirstMoveHint.Show(
+            firstMoveHint, firstMoveHintText, prompts[firstMoveStepIndex]);
+
+        TaiwanLanternGestureController.PracticeGesture current =
+            originalGestureController != null
+                ? originalGestureController.ReadPracticeGesture()
+                : TaiwanLanternGestureController.PracticeGesture.None;
+        bool rotate = gestures[firstMoveStepIndex] ==
+                      TaiwanLanternGestureController.PracticeGesture.SingleFist;
+        bool lockStep = gestures[firstMoveStepIndex] ==
+                        TaiwanLanternGestureController.PracticeGesture.OpenPalm;
+        if (MorphicFirstMoveHint.ShouldAdvance(
+                current == gestures[firstMoveStepIndex],
+                rotate,
+                current == TaiwanLanternGestureController.PracticeGesture.None,
+                ref firstMoveHold,
+                lockStep))
+        {
+            firstMoveStepIndex++;
+            MorphicFirstMoveHint.CompleteIfFinished(
+                firstMoveStepIndex,
+                prompts.Length,
+                ref firstMoveHintArmed,
+                ref firstMoveHintDone,
+                firstMoveHint);
+        }
     }
 
     private void SetSculptControllersEnabled(bool enabled)

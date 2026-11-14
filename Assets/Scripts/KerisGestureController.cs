@@ -72,6 +72,10 @@ public sealed class KerisGestureController : MonoBehaviour
     public bool IsDrivingSculpt { get; private set; }
     public bool IsDrivingHandle => currentGesture == GestureMode.HandleDown;
     public bool IsDeformationLocked => deformationLocked;
+    public bool HasLiveDeform =>
+        carvingActive || widthHeightActive ||
+        currentGesture == GestureMode.HandleDown ||
+        sharpnessLift.active || curveLift.active;
 
     public enum PracticeGesture
     {
@@ -113,8 +117,8 @@ public sealed class KerisGestureController : MonoBehaviour
     private float filteredFistY;
     private float filteredFistDy;
     private bool fistYSeeded;
-    private const float HandleGraceDuration = 0.12f;
-    private const float HandleDeadZone = 0.0035f;
+    private const float HandleGraceDuration = 0.18f;
+    private const float HandleDeadZone = 0.0016f;
     private const float PinchArmTime = 0.01f;
     private const float GestureHoldGrace = 0.12f;
     private float latchedSharpness;
@@ -316,6 +320,9 @@ public sealed class KerisGestureController : MonoBehaviour
         return 0f;
     }
 
+    public bool UsesCarving2 => useCarving2;
+    public bool UsesHandle2 => useHandle2;
+
     public void SetPinchDrivesCarving(bool enabled)
     {
         carvingArmed = enabled;
@@ -360,13 +367,15 @@ public sealed class KerisGestureController : MonoBehaviour
                         LooksLikeHandleFist(first) && LooksLikeHandleFist(second);
         bool twoIndex = !twoV && hasTwo &&
                         IsIndexPointing(first) && IsIndexPointing(second);
+        bool rotateFist = !hasTwo && !twoV && !twoFists && !twoIndex &&
+                          LooksLikeRotateFist(first);
 
         SplitHands(first, second, hasTwo,
             out SculptHandFrame rightHand, out SculptHandFrame leftHand,
             out bool hasRightHand, out bool hasLeftHand);
-        bool rightPinch = hasRightHand &&
+        bool rightPinch = !rotateFist && hasRightHand &&
             IsPinching(rightHand, true, ref practiceRightPinchHeld);
-        bool leftPinch = hasLeftHand &&
+        bool leftPinch = !rotateFist && hasLeftHand &&
             IsPinching(leftHand, false, ref practiceLeftPinchHeld);
 
         if (twoV)
@@ -375,14 +384,12 @@ public sealed class KerisGestureController : MonoBehaviour
             return PracticeGesture.TwoIndex;
         if (twoFists)
             return PracticeGesture.TwoFists;
+        if (rotateFist)
+            return PracticeGesture.SingleFist;
         if (rightPinch)
             return PracticeGesture.RightPinch;
         if (leftPinch)
             return PracticeGesture.LeftPinch;
-        if (LooksLikeHandleFist(first) && (!hasTwo || !LooksLikeHandleFist(second)))
-            return PracticeGesture.SingleFist;
-        if (hasTwo && LooksLikeHandleFist(second) && !LooksLikeHandleFist(first))
-            return PracticeGesture.SingleFist;
         if ((IsIndexPointing(first) || (hasTwo && IsIndexPointing(second))) && !twoIndex)
             return PracticeGesture.PointIndex;
         if (IsOpenPalm(first) || (hasTwo && IsOpenPalm(second)))
@@ -1765,7 +1772,7 @@ public sealed class KerisGestureController : MonoBehaviour
         ref bool held,
         bool alreadyActive = false)
     {
-        if (IsOpenPalm(hand) || IsVSign(hand))
+        if (IsOpenPalm(hand) || IsVSign(hand) || LooksLikeRotateFist(hand))
         {
             held = false;
             return false;
@@ -1860,11 +1867,22 @@ public sealed class KerisGestureController : MonoBehaviour
 
     private static bool LooksLikeHandleFist(SculptHandFrame hand)
     {
-        if (NormalizedPinch(hand) < 0.65f)
-            return false;
-        return hand.FingerCurlRatio <= 1.45f &&
-               hand.IndexTipPalmRatio <= 1.35f &&
-               hand.OtherFingersCurlRatio <= 1.45f;
+        if (LooksLikeTightFist(hand) || LooksLikeRotateFist(hand) || LooksLikeClosedHand(hand))
+            return true;
+
+        return hand.IndexExtensionAngle < 140f &&
+               hand.FingerCurlRatio <= 1.52f &&
+               hand.IndexTipPalmRatio <= 1.40f &&
+               hand.OtherFingersCurlRatio <= 1.52f &&
+               hand.MiddleTipPalmRatio <= 1.42f;
+    }
+
+    private static bool LooksLikeRotateFist(SculptHandFrame hand)
+    {
+        return hand.IndexExtensionAngle < 130f &&
+               hand.FingerCurlRatio <= 1.32f &&
+               hand.OtherFingersCurlRatio <= 1.28f &&
+               hand.IndexTipPalmRatio <= 1.22f;
     }
 
     private static bool IsScreenRightHand(

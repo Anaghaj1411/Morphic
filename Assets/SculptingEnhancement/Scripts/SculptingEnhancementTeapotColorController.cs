@@ -169,6 +169,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private bool colorsCaptured;
     private bool paletteAvailable;
     private bool sculptLockedByTutorial;
+    private GameObject firstMoveHint;
+    private TMP_Text firstMoveHintText;
+    private bool firstMoveHintArmed;
+    private bool firstMoveHintDone;
+    private int firstMoveStepIndex;
+    private float firstMoveHold;
     private bool vertexSculptEnabled = false;
     private Button vertexSculptButton;
     private bool uiPointerBlockingSculpt;
@@ -329,6 +335,12 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     public void SetPaletteAvailable(bool available)
     {
         paletteAvailable = available;
+        if (!available)
+        {
+            firstMoveHold = 0f;
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+        }
+
         if (uiRoot == null)
             return;
 
@@ -355,6 +367,78 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         sculptLockedByTutorial = locked;
         if (locked)
             SetSculptControllersEnabled(false);
+    }
+
+    public void PromptFirstSculptMove()
+    {
+        firstMoveHintDone = false;
+        firstMoveHintArmed = true;
+        firstMoveStepIndex = 0;
+        firstMoveHold = 0f;
+        Transform parent = canvas != null ? canvas.transform : (uiRoot != null ? uiRoot.transform : null);
+        MorphicFirstMoveHint.Ensure(ref firstMoveHint, ref firstMoveHintText, parent, "TeapotFirstMoveHint");
+        TickFirstMoveHint();
+    }
+
+    private void TickFirstMoveHint()
+    {
+        if (!firstMoveHintArmed || firstMoveHintDone)
+        {
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+            return;
+        }
+
+        var prompts = MorphicFirstMoveHint.TeapotPrompts;
+        var gestures = MorphicFirstMoveHint.TeapotGestures;
+        if (firstMoveStepIndex >= prompts.Length)
+        {
+            MorphicFirstMoveHint.CompleteIfFinished(
+                firstMoveStepIndex,
+                prompts.Length,
+                ref firstMoveHintArmed,
+                ref firstMoveHintDone,
+                firstMoveHint);
+            return;
+        }
+
+        bool show = paletteAvailable &&
+                    !sculptLockedByTutorial &&
+                    uiRoot != null &&
+                    uiRoot.activeInHierarchy &&
+                    (mode == ColorMode.Sculpt || mode == ColorMode.MainMenu);
+        if (!show)
+        {
+            firstMoveHold = 0f;
+            MorphicFirstMoveHint.Hide(firstMoveHint);
+            return;
+        }
+
+        MorphicFirstMoveHint.Show(
+            firstMoveHint, firstMoveHintText, prompts[firstMoveStepIndex]);
+
+        TeapotGestureController.PracticeGesture current =
+            teapotGestures != null
+                ? teapotGestures.ReadPracticeGesture()
+                : TeapotGestureController.PracticeGesture.None;
+        bool rotate = gestures[firstMoveStepIndex] ==
+                      TeapotGestureController.PracticeGesture.SingleFist;
+        bool lockStep = gestures[firstMoveStepIndex] ==
+                        TeapotGestureController.PracticeGesture.OpenPalm;
+        if (MorphicFirstMoveHint.ShouldAdvance(
+                current == gestures[firstMoveStepIndex],
+                rotate,
+                current == TeapotGestureController.PracticeGesture.None,
+                ref firstMoveHold,
+                lockStep))
+        {
+            firstMoveStepIndex++;
+            MorphicFirstMoveHint.CompleteIfFinished(
+                firstMoveStepIndex,
+                prompts.Length,
+                ref firstMoveHintArmed,
+                ref firstMoveHintDone,
+                firstMoveHint);
+        }
     }
 
     private void Start()
@@ -391,6 +475,8 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void OnDisable()
     {
+        firstMoveHold = 0f;
+        MorphicFirstMoveHint.Hide(firstMoveHint);
         SnapRestoreVertexSculptCamera();
         RestoreSelectedPreview();
         vertexSculptEnabled = false;
@@ -534,6 +620,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
     private void LateUpdate()
     {
         PollSculptHistory();
+        TickFirstMoveHint();
         if (designSurfaceRenderer != null)
         {
             SyncDesignSurfaceRenderer();
@@ -2792,7 +2879,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         return found;
     }
 
-    private static Bounds GetCloneBodyWorldBounds(Transform root)
+    private Bounds GetCloneBodyWorldBounds(Transform root)
     {
         SkinnedMeshRenderer skin = root.GetComponentInChildren<SkinnedMeshRenderer>(true);
         if (skin == null || skin.sharedMesh == null)
@@ -2808,9 +2895,32 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         if (vertices == null || vertices.Length == 0)
             return skin.bounds;
 
-        Bounds world = new Bounds(skin.transform.TransformPoint(vertices[0]), Vector3.zero);
+        bool[] bodyMask = EnsureSelfieBodyVertexMask();
+        Transform rendererTransform = skin.transform;
+        Bounds world = default;
+        bool started = false;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            if (bodyMask != null && i < bodyMask.Length && !bodyMask[i])
+                continue;
+            Vector3 worldVertex = rendererTransform.TransformPoint(vertices[i]);
+            if (!started)
+            {
+                world = new Bounds(worldVertex, Vector3.zero);
+                started = true;
+            }
+            else
+            {
+                world.Encapsulate(worldVertex);
+            }
+        }
+
+        if (started)
+            return world;
+
+        world = new Bounds(rendererTransform.TransformPoint(vertices[0]), Vector3.zero);
         for (int i = 1; i < vertices.Length; i++)
-            world.Encapsulate(skin.transform.TransformPoint(vertices[i]));
+            world.Encapsulate(rendererTransform.TransformPoint(vertices[i]));
         return world;
     }
 
@@ -3874,10 +3984,24 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         ApplyDesignTint(committedDesignTint);
         if (designSurfaceRenderer != null)
             designSurfaceRenderer.enabled = true;
+        KeepStampOverlayVisible();
         instructionText.text = MorphicLoc.T(stamp.name) +
             MorphicLoc.T(" applied. Change Color tints the stamp.");
         MorphicLoc.ApplyFont(instructionText);
         PushHistory();
+    }
+
+    private void KeepStampOverlayVisible()
+    {
+        if (appliedDesignTexture == null)
+            return;
+
+        EnsureDesignOverlay();
+        ConfigureDesignSurfaceMaterial(appliedDesignTexture);
+        if (designSurfaceRoot != null)
+            designSurfaceRoot.gameObject.SetActive(true);
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = true;
     }
 
     private void ClearDesign()
@@ -4389,6 +4513,7 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
         SetHeaderBackVisible(true);
         if (bandGroup != null)
             MorphicStudioLayout.PlaceBandLayout(bandGroup.transform);
+        KeepStampOverlayVisible();
         MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on teapot.");
         ResetDwell();
         SetHoveredTarget(null);
@@ -4444,13 +4569,9 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
             patternPainter.SetPaintingEnabled(true);
         }
 
-        // Hide static stamp overlay so it doesn't block the drawing surface
-        if (designSurfaceRenderer != null)
-            designSurfaceRenderer.enabled = false;
-        appliedDesignTexture = null;
         isBandActive = false;
-
         appliedBandTexture = motif;
+        KeepStampOverlayVisible();
         mode = ColorMode.DrawBandTargeting;
         if (bandGroup != null)
             bandGroup.SetActive(false);

@@ -52,6 +52,7 @@ public class MorphicSculptZoomUI : MonoBehaviour
         ref float storedFieldOfView,
         ref float storedNearClip)
     {
+        bool alreadyOwned = vertexSculptOwnsCamera;
         vertexSculptOwnsCamera = true;
         MorphicSculptZoomUI zoomUi = FindInstance();
         Camera view = zoomUi != null ? ResolveViewCamera() : Camera.main;
@@ -67,10 +68,63 @@ public class MorphicSculptZoomUI : MonoBehaviour
         if (zoomUi != null)
         {
             zoomUi.StopMove();
-            zoomUi.extraZoomLevel = 0;
+            if (!alreadyOwned)
+                zoomUi.extraZoomLevel = zoomUi.zoomLevel;
             zoomUi.SetVisible(true);
             zoomUi.BringToFront();
         }
+    }
+
+    public static void SetOwnedExtraZoom(float closer01)
+    {
+        MorphicSculptZoomUI zoomUi = FindInstance();
+        if (zoomUi == null)
+            return;
+
+        zoomUi.extraZoomLevel = Mathf.Clamp(
+            Mathf.RoundToInt(Mathf.Clamp01(closer01) * MaxZoomLevel),
+            0,
+            MaxZoomLevel);
+        vertexSculptOwnsCamera = true;
+        zoomUi.SetVisible(true);
+        zoomUi.BringToFront();
+    }
+
+    public static float CurrentOwnedCloser()
+    {
+        MorphicSculptZoomUI zoomUi = FindInstance();
+        if (zoomUi == null)
+            return 0f;
+        int level = vertexSculptOwnsCamera ? zoomUi.extraZoomLevel : zoomUi.zoomLevel;
+        return Mathf.Clamp01(level / (float)MaxZoomLevel);
+    }
+
+    public static Vector3 KerisZoomPosition(
+        Vector3 from,
+        Quaternion rotation,
+        Bounds bounds,
+        float closer01)
+    {
+        closer01 = Mathf.Clamp01(closer01);
+        Vector3 targetPos = DollyTowardCraftAlongView(from, rotation, bounds, closer01);
+        Vector3 screenUp = rotation * Vector3.up;
+        if (screenUp.sqrMagnitude > 0.0001f)
+            targetPos -= screenUp.normalized * (0.12f * closer01);
+        return targetPos;
+    }
+
+    public static bool TryGetZoomButtons(out Button minus, out Button plus)
+    {
+        minus = null;
+        plus = null;
+        MorphicSculptZoomUI zoomUi = FindInstance();
+        if (zoomUi == null)
+            return false;
+
+        zoomUi.EnsureUi();
+        minus = zoomUi.minusButton;
+        plus = zoomUi.plusButton;
+        return minus != null && plus != null;
     }
 
     public static void ResumeAfterVertexSculpt()
@@ -298,9 +352,23 @@ public class MorphicSculptZoomUI : MonoBehaviour
         zoomLevel = next;
         zoomed = zoomLevel > 0;
         float t = zoomLevel / (float)MaxZoomLevel;
-        Vector3 targetPos = TryGetActiveCraftBounds(out Bounds bounds)
-            ? FrameTowardCraft(restPosition, restRotation, bounds, t)
-            : DollyAlongView(view, restPosition, t);
+        Vector3 targetPos;
+        if (TryGetActiveCraftBounds(out Bounds bounds))
+        {
+            if (GetActiveCraftKind() == CraftKind.Keris)
+            {
+                targetPos = KerisZoomPosition(restPosition, restRotation, bounds, t);
+            }
+            else
+            {
+                targetPos = FrameTowardCraft(restPosition, restRotation, bounds, t);
+            }
+        }
+        else
+        {
+            targetPos = DollyAlongView(view, restPosition, t);
+        }
+
         StartMove(view, targetPos, restRotation, view.fieldOfView);
     }
 
@@ -336,6 +404,21 @@ public class MorphicSculptZoomUI : MonoBehaviour
         if (depth < 0.3f)
             depth = Mathf.Max(0.3f, Vector3.Distance(from, focus));
         return from + dir * (depth * 0.70f * closer01);
+    }
+
+    public static Vector3 DollyTowardCraftAlongView(
+        Vector3 from,
+        Quaternion rotation,
+        Bounds bounds,
+        float closer01)
+    {
+        closer01 = Mathf.Clamp01(closer01);
+        Vector3 into = LevelViewDolly(rotation);
+        Vector3 focus = bounds.center;
+        float depth = Vector3.Dot(focus - from, into);
+        if (depth < 0.2f)
+            depth = Mathf.Max(0.2f, Vector3.Distance(from, focus));
+        return from + into * (depth * 0.92f * closer01);
     }
 
     public static Vector3 CenterOnCraft(Camera cam, Vector3 from, Bounds bounds, float distance)
@@ -399,23 +482,32 @@ public class MorphicSculptZoomUI : MonoBehaviour
 
     private static void ApplyVertexExtraZoom(float closer01)
     {
-        SculptingEnhancementLanternColorController lantern =
-            FindFirstObjectByType<SculptingEnhancementLanternColorController>(
-                FindObjectsInactive.Include);
-        if (lantern != null && lantern.isActiveAndEnabled)
-            lantern.ApplyExtraSculptZoom(closer01);
+        SculptingEnhancementLanternColorController[] lanterns =
+            FindObjectsByType<SculptingEnhancementLanternColorController>(
+                FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < lanterns.Length; i++)
+        {
+            if (lanterns[i] != null && lanterns[i].isActiveAndEnabled)
+                lanterns[i].ApplyExtraSculptZoom(closer01);
+        }
 
-        SculptingEnhancementTeapotColorController teapot =
-            FindFirstObjectByType<SculptingEnhancementTeapotColorController>(
-                FindObjectsInactive.Include);
-        if (teapot != null && teapot.isActiveAndEnabled)
-            teapot.ApplyExtraSculptZoom(closer01);
+        SculptingEnhancementTeapotColorController[] teapots =
+            FindObjectsByType<SculptingEnhancementTeapotColorController>(
+                FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < teapots.Length; i++)
+        {
+            if (teapots[i] != null && teapots[i].isActiveAndEnabled)
+                teapots[i].ApplyExtraSculptZoom(closer01);
+        }
 
-        SculptingEnhancementKerisColorController keris =
-            FindFirstObjectByType<SculptingEnhancementKerisColorController>(
-                FindObjectsInactive.Include);
-        if (keris != null && keris.isActiveAndEnabled)
-            keris.ApplyExtraSculptZoom(closer01);
+        SculptingEnhancementKerisColorController[] kerises =
+            FindObjectsByType<SculptingEnhancementKerisColorController>(
+                FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < kerises.Length; i++)
+        {
+            if (kerises[i] != null && kerises[i].isActiveAndEnabled)
+                kerises[i].ApplyExtraSculptZoom(closer01);
+        }
     }
 
     private void RestoreRestPose(bool animate)
