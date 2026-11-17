@@ -6230,7 +6230,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             patternPainter.Initialize(handRunner, lanternRenderer);
         }
 
-        patternPainter.SetPatternSurfaceOffset(0.0016f);
+        patternPainter.SetPatternSurfaceOffset(0.00005f);
         patternPainter.SetProjectRibbonOntoSurface(false);
     }
 
