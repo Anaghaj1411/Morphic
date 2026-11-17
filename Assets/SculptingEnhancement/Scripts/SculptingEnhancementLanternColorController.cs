@@ -5600,6 +5600,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         PushHistory();
     }
 
+    private void KeepStampOverlayVisible()
+    {
+        if (appliedDesignTexture == null)
+            return;
+
+        EnsureDesignOverlay();
+        ConfigureDesignSurfaceMaterial(appliedDesignTexture);
+        if (designSurfaceRoot != null)
+            designSurfaceRoot.gameObject.SetActive(true);
+        if (designSurfaceRenderer != null)
+            designSurfaceRenderer.enabled = true;
+    }
+
     private void ClearDesign()
     {
         appliedDesignTexture = null;
@@ -5813,10 +5826,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private float ResolveLanternBandWidth()
     {
-        EnsurePatternPainter();
-        int index = Mathf.Clamp(selectedBandSizeIndex, 0, bandSizeFractions.Length - 1);
-        if (patternPainter != null)
-            return patternPainter.ResolveBandWidth(bandSizeFractions[index]);
+        int index = Mathf.Clamp(selectedBandSizeIndex, 0, bandSizes.Length - 1);
         return bandSizes[index];
     }
 
@@ -6061,7 +6071,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             patternPainter.SetClayCoilMode(false);
             if (appliedBandTexture != null)
                 patternPainter.SetPatternTexture(appliedBandTexture);
-            float width = ResolveLanternBandWidth();
+            float width = bandSizes[selectedBandSizeIndex];
             patternPainter.SetStrokeWidth(width, false);
             patternPainter.SetMinPointSpacing(width * 0.22f);
             patternPainter.SetStrokeColor(committedBandColor, false);
@@ -6123,6 +6133,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         SetHeaderBackVisible(true);
         if (bandGroup != null)
             MorphicStudioLayout.PlaceBandLayout(bandGroup.transform);
+        KeepStampOverlayVisible();
         MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on lantern.");
         ResetDwell();
         SetHoveredTarget(null);
@@ -6168,7 +6179,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         vertexSculptEnabled = false;
         if (patternPainter != null)
         {
-            float width = ResolveLanternBandWidth();
+            float width = bandSizes[selectedBandSizeIndex];
             patternPainter.SetClayCoilMode(false);
             patternPainter.SetPatternTexture(motif);
             patternPainter.SetStrokeWidth(width, false);
@@ -6178,13 +6189,9 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
             patternPainter.SetPaintingEnabled(true);
         }
 
-        // Hide static stamp overlay so it doesn't block the drawing surface
-        if (designSurfaceRenderer != null)
-            designSurfaceRenderer.enabled = false;
-        appliedDesignTexture = null;
         isBandActive = false;
-
         appliedBandTexture = motif;
+        KeepStampOverlayVisible();
         mode = ColorMode.DrawBandTargeting;
         if (bandGroup != null)
             bandGroup.SetActive(false);
@@ -6224,7 +6231,7 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
         }
 
         patternPainter.SetPatternSurfaceOffset(0.0016f);
-        patternPainter.SetProjectRibbonOntoSurface(true);
+        patternPainter.SetProjectRibbonOntoSurface(false);
     }
 
     private void LoadBandPatterns()
