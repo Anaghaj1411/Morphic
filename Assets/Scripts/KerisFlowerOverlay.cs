@@ -64,6 +64,7 @@ public sealed class KerisFlowerOverlay : MonoBehaviour
     private Mesh flowerSharedMesh;
     private Material flowerMaterial;
     private Color flowerColor = new Color(0.42f, 0.22f, 0.08f, 1f);
+    public Color FlowerColor => flowerColor;
     private Mesh bakeMesh;
     private Stamp[] stamps;
     private bool built;

@@ -46,6 +46,7 @@ public sealed class KerisHandleOverlay : MonoBehaviour
     private Material goldMat;
     private bool hasTint;
     private Color tintColor = Color.white;
+    public Color TintColor => tintColor;
     private bool built;
     private float lastHandle1Amount = float.NaN;
     private float lastHandle2Amount = float.NaN;

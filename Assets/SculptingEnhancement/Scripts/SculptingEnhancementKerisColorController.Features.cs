@@ -490,7 +490,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             appliedDesignTexture != null
                 ? "Change the blade color, add another stamp, or draw a band."
                 : "Change the blade color, add a stamped design, or draw a band.");
-        SetHeaderBackLabel("← PARTS");
+        SetHeaderBackLabel("Ã¢â€ Â PARTS");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
         SetSculptGesturesEnabled(true);
@@ -567,7 +567,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             kerisStamps == null || kerisStamps.Length == 0
                 ? "No stamps found in StampPatterns."
                 : "Choose a stamp. Then tint it with Change Color.");
-        SetHeaderBackLabel("← BODY");
+        SetHeaderBackLabel("Ã¢â€ Â BODY");
         SetHeaderBackVisible(true);
         RelayoutDesignGroup();
         SetTitleBurstsVisible(false);
@@ -762,7 +762,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         instructionText.gameObject.SetActive(true);
         KeepKerisStampVisible();
         MorphicLoc.Apply(instructionText, "Select a motif, adjust size & color, then trace on the keris.");
-        SetHeaderBackLabel("← BODY");
+        SetHeaderBackLabel("Ã¢â€ Â BODY");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
         ResetDwell();
@@ -971,7 +971,7 @@ public sealed partial class SculptingEnhancementKerisColorController
             MorphicStudioLayout.PlaceTargetingBar(bandTargetingBar.transform);
         headerText.text = MorphicLoc.F("DRAW: {0}", MorphicLoc.T(motifName.ToUpperInvariant()));
         MorphicLoc.ApplyFont(headerText);
-        SetHeaderBackLabel("← MOTIFS");
+        SetHeaderBackLabel("Ã¢â€ Â MOTIFS");
         SetHeaderBackVisible(true);
         instructionText.gameObject.SetActive(true);
         instructionText.fontSize = 20f;
@@ -1056,7 +1056,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         selectedPart = PartBody;
         ShowColorSelection();
         MorphicLoc.Apply(headerText, "BAND COLOR");
-        SetHeaderBackLabel(returnToBandDrawing ? "← DRAW" : "← MOTIFS");
+        SetHeaderBackLabel(returnToBandDrawing ? "Ã¢â€ Â DRAW" : "Ã¢â€ Â MOTIFS");
         MorphicLoc.Apply(instructionText, "Point and hold on a color to tint the band designs.");
     }
 
@@ -1269,7 +1269,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         MorphicLoc.Apply(headerText, "REVIEW");
         instructionText.gameObject.SetActive(true);
         MorphicLoc.Apply(instructionText, "Go back, or put this keris on the shelf.");
-        SetHeaderBackLabel("← PALETTE");
+        SetHeaderBackLabel("Ã¢â€ Â PALETTE");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
         ResetDwell();
@@ -1301,7 +1301,7 @@ public sealed partial class SculptingEnhancementKerisColorController
         MorphicLoc.Apply(headerText, "SHELF");
         instructionText.gameObject.SetActive(true);
             MorphicLoc.Apply(instructionText, "Take it back, or go back when you are done.");
-        SetHeaderBackLabel("← REVIEW");
+        SetHeaderBackLabel("Ã¢â€ Â REVIEW");
         SetHeaderBackVisible(true);
         SetTitleBurstsVisible(false);
         ResetDwell();
@@ -1814,6 +1814,34 @@ public sealed partial class SculptingEnhancementKerisColorController
                         ? tintedDesignTexture
                         : appliedDesignTexture, "_DesignTex");
             }
+        }
+
+        // Copy handle color to clone
+        KerisHandleOverlay sourceHandleOverlay = null;
+        if (kerisSkin != null)
+            sourceHandleOverlay = kerisSkin.GetComponent<KerisHandleOverlay>();
+        if (sourceHandleOverlay == null && kerisRenderer != null)
+            sourceHandleOverlay = kerisRenderer.GetComponent<KerisHandleOverlay>();
+        
+        KerisHandleOverlay cloneHandleOverlay = clone.GetComponentInChildren<KerisHandleOverlay>(true);
+        if (sourceHandleOverlay != null && cloneHandleOverlay != null)
+        {
+            cloneHandleOverlay.SetColor(sourceHandleOverlay.TintColor);
+            Debug.Log("MORPHIC: Copied handle color to shelf clone: " + sourceHandleOverlay.TintColor);
+        }
+
+        // Copy flower/carving color to clone
+        KerisFlowerOverlay sourceFlowerOverlay = null;
+        if (kerisSkin != null)
+            sourceFlowerOverlay = kerisSkin.GetComponent<KerisFlowerOverlay>();
+        if (sourceFlowerOverlay == null && kerisRenderer != null)
+            sourceFlowerOverlay = kerisRenderer.GetComponent<KerisFlowerOverlay>();
+        
+        KerisFlowerOverlay cloneFlowerOverlay = clone.GetComponentInChildren<KerisFlowerOverlay>(true);
+        if (sourceFlowerOverlay != null && cloneFlowerOverlay != null)
+        {
+            cloneFlowerOverlay.SetColor(sourceFlowerOverlay.FlowerColor);
+            Debug.Log("MORPHIC: Copied flower color to shelf clone: " + sourceFlowerOverlay.FlowerColor);
         }
 
         if (appliedSelfieTexture == null || selfieSurfaceRoot == null)
