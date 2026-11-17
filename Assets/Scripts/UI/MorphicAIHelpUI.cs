@@ -14,6 +14,8 @@ public class MorphicAIHelpUI : MonoBehaviour
     private bool openedFromStudio;
     private MorphicAITriggerEngine trigger;
     private MorphicAIClient client;
+    private string currentQuestion;
+    private bool waitingForResponse;
 
     public void SetVisible(bool visible)
     {
@@ -71,7 +73,10 @@ public class MorphicAIHelpUI : MonoBehaviour
         }
 
         if (questionInput != null)
+        {
             questionInput.onSubmit.RemoveListener(HandleInputSubmit);
+            questionInput.onValueChanged.RemoveListener(HandleInputChange);
+        }
     }
 
     private void EnsureAi()
@@ -364,6 +369,7 @@ public class MorphicAIHelpUI : MonoBehaviour
         field.customCaretColor = true;
         field.caretColor = new Color32(32, 24, 18, 255);
         field.onSubmit.AddListener(HandleInputSubmit);
+        field.onValueChanged.AddListener(HandleInputChange);
         return field;
     }
 
@@ -437,6 +443,8 @@ public class MorphicAIHelpUI : MonoBehaviour
             helpText.gameObject.SetActive(false);
         }
 
+        currentQuestion = "";
+        waitingForResponse = false;
         UpdateAskCardHeight();
         WarmBackend();
         if (questionInput != null)
@@ -456,11 +464,14 @@ public class MorphicAIHelpUI : MonoBehaviour
             askDimmer.SetActive(false);
         if (questionInput != null)
             questionInput.text = "";
+        currentQuestion = "";
+        waitingForResponse = false;
     }
 
     private void CloseAskDialog()
     {
         MorphicLisaVoice.Stop();
+        waitingForResponse = false;
         HideAskCard();
         if (EventSystem.current != null)
             EventSystem.current.SetSelectedGameObject(null);
@@ -473,6 +484,15 @@ public class MorphicAIHelpUI : MonoBehaviour
         SendQuestion();
     }
 
+    private void HandleInputChange(string newText)
+    {
+        if (helpText != null && helpText.gameObject.activeSelf)
+        {
+            helpText.gameObject.SetActive(false);
+            UpdateAskCardHeight();
+        }
+    }
+
     private void SendQuestion()
     {
         string question = questionInput != null ? questionInput.text.Trim() : "";
@@ -481,6 +501,9 @@ public class MorphicAIHelpUI : MonoBehaviour
             ShowMessage("LISA: Type a question first.");
             return;
         }
+
+        currentQuestion = question;
+        waitingForResponse = true;
 
         MorphicCraftHelpState state = BuildHelpState();
         if (questionInput != null)
@@ -491,12 +514,15 @@ public class MorphicAIHelpUI : MonoBehaviour
                 EventSystem.current.SetSelectedGameObject(questionInput.gameObject);
         }
 
-        ShowMessage("LISA: Asking...");
+        ShowQuestionWhileWaiting();
         state.userQuestion = MorphicLoc.WithAiLanguage(question);
         EnsureAi();
 
         if (trigger == null || !trigger.RequestSculptHelp(state))
+        {
+            waitingForResponse = false;
             ShowMessage("LISA: Help is waking up. Send again.");
+        }
     }
 
     private MorphicCraftHelpState BuildHelpState()
@@ -559,6 +585,7 @@ public class MorphicAIHelpUI : MonoBehaviour
 
     private void HandleAiMessage(string message)
     {
+        waitingForResponse = false;
         if (string.IsNullOrWhiteSpace(message))
             return;
         ShowMessage(message.StartsWith("LISA") ? message : "LISA: " + message);
@@ -566,7 +593,21 @@ public class MorphicAIHelpUI : MonoBehaviour
 
     private void HandleAiFailed()
     {
+        waitingForResponse = false;
         ShowMessage("LISA: Help is waking up. Send again.");
+    }
+
+    private void ShowQuestionWhileWaiting()
+    {
+        if (askCard == null)
+            askCard.SetActive(true);
+        if (helpText != null)
+        {
+            helpText.gameObject.SetActive(true);
+            MorphicLoc.ApplyFont(helpText);
+            helpText.text = "YOU: " + currentQuestion + "\n\nLISA: Thinking...";
+            UpdateAskCardHeight();
+        }
     }
 
     private void ShowMessage(string message)
