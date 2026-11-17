@@ -130,12 +130,20 @@ public class DialogueButtonClickSound : MonoBehaviour
         audioSource.PlayOneShot(hoverSound, hoverVolume * CurrentSfxScale());
     }
 
-    private static float CurrentSfxScale()
+    public static float CurrentSfxScale()
     {
         float sfx = Mathf.Clamp01(PlayerPrefs.GetFloat(SfxKey, DefaultSfx));
         // Volume sliders feel linear, but hearing is not. Square-ish
         // taper makes 10% a whisper while 100% stays full loudness.
         return Mathf.Pow(sfx, 2.8f);
+    }
+
+    public void PlaySfx(AudioClip clip, float volumeScale = 1f)
+    {
+        if (audioSource == null || clip == null)
+            return;
+
+        audioSource.PlayOneShot(clip, volumeScale * CurrentSfxScale());
     }
 
     public void RegisterButton(Button button)

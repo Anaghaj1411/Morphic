@@ -117,6 +117,7 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
     private MorphicGesturePreview gesturePreview;
     private Button previousButton;
     private Button nextButton;
+    private AudioClip gestureCompletionSound;
 
     public bool IsShowing => root != null && root.activeSelf;
 
@@ -228,6 +229,8 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         MorphicText.Style(statusText);
         statusText.gameObject.SetActive(false);
 
+        gestureCompletionSound = Resources.Load<AudioClip>("Gesture_sound");
+
         CreateMorphicButton(cardRect, "Skip", new Vector2(278f, 258f), new Vector2(160f, 48f),
             "SKIP", LanguagePageBuilder.Pink, Skip);
         CreateMorphicButton(cardRect, "Replay", new Vector2(-226f, -292f), new Vector2(152f, 56f),
@@ -308,6 +311,8 @@ public sealed class SculptingGestureTutorial : MonoBehaviour
         statusText.transform.SetAsLastSibling();
         MorphicLoc.Bind(statusText, "GOOD");
         statusText.color = LanguagePageBuilder.Green;
+        if (gestureCompletionSound != null)
+            DialogueButtonClickSound.Instance?.PlaySfx(gestureCompletionSound);
     }
 
     private void Back()
