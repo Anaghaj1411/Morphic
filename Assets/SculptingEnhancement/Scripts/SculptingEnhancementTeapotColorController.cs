@@ -4597,14 +4597,19 @@ public sealed class SculptingEnhancementTeapotColorController : MonoBehaviour
 
     private void EnsurePatternPainter()
     {
-        if (patternPainter != null || teapotRenderer == null)
+        if (teapotRenderer == null)
             return;
 
-        patternPainter = teapotRenderer.GetComponent<TeapotSurfacePatternPainter>();
         if (patternPainter == null)
-            patternPainter = teapotRenderer.gameObject.AddComponent<TeapotSurfacePatternPainter>();
+        {
+            patternPainter = teapotRenderer.GetComponent<TeapotSurfacePatternPainter>();
+            if (patternPainter == null)
+                patternPainter = teapotRenderer.gameObject.AddComponent<TeapotSurfacePatternPainter>();
+            patternPainter.Initialize(handRunner, teapotRenderer);
+        }
 
-        patternPainter.Initialize(handRunner, teapotRenderer);
+        patternPainter.SetPatternSurfaceOffset(0.0016f);
+        patternPainter.SetProjectRibbonOntoSurface(false);
     }
 
     private void LoadBandPatterns()

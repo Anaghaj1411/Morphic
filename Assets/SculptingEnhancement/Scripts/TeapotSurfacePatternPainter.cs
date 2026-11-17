@@ -34,6 +34,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     [SerializeField, Range(8f, 72f)] private float pullPixels = 14f;
     private float patternSurfaceOffset = 0.032f;
     private bool roundedPatternStrokes;
+    private bool projectRibbonOntoSurface;
 
     private readonly List<StrokeRecord> completedStrokes = new List<StrokeRecord>();
     private readonly List<StrokeRecord> clayStrokes = new List<StrokeRecord>();
@@ -201,6 +202,11 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
     public void SetRoundedPatternStrokes(bool rounded)
     {
         roundedPatternStrokes = rounded;
+    }
+
+    public void SetProjectRibbonOntoSurface(bool enabled)
+    {
+        projectRibbonOntoSurface = enabled;
     }
 
     public void SetClayCoilMode(bool enabled)
@@ -1147,6 +1153,131 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         return anchor.fallbackLocalNorm;
     }
 
+    private static void DensifyRibbonSamples(Transform space, ref Vector3[] pts, ref Vector3[] norms)
+    {
+        const float step = 0.0035f;
+        var densePts = new List<Vector3>(pts.Length * 2);
+        var denseNorms = new List<Vector3>(pts.Length * 2);
+        densePts.Add(pts[0]);
+        denseNorms.Add(norms[0]);
+        for (int i = 1; i < pts.Length; i++)
+        {
+            Vector3 a = space != null ? space.TransformPoint(pts[i - 1]) : pts[i - 1];
+            Vector3 b = space != null ? space.TransformPoint(pts[i]) : pts[i];
+            float length = Vector3.Distance(a, b);
+            int splits = Mathf.Clamp(Mathf.FloorToInt(length / step), 0, 8);
+            for (int s = 1; s <= splits; s++)
+            {
+                float t = s / (float)(splits + 1);
+                Vector3 world = Vector3.Lerp(a, b, t);
+                Vector3 n = Vector3.Slerp(norms[i - 1], norms[i], t);
+                densePts.Add(space != null ? space.InverseTransformPoint(world) : world);
+                denseNorms.Add(n.sqrMagnitude > 0.0001f ? n.normalized : norms[i]);
+            }
+
+            densePts.Add(pts[i]);
+            denseNorms.Add(norms[i]);
+        }
+
+        pts = densePts.ToArray();
+        norms = denseNorms.ToArray();
+    }
+
+    private static void RoundRibbonCorners(Transform space, ref Vector3[] pts, ref Vector3[] norms)
+    {
+        if (pts == null || pts.Length < 3)
+            return;
+
+        var roundedPts = new List<Vector3>(pts.Length * 2);
+        var roundedNorms = new List<Vector3>(pts.Length * 2);
+        roundedPts.Add(pts[0]);
+        roundedNorms.Add(norms[0]);
+        for (int i = 1; i < pts.Length; i++)
+        {
+            Vector3 prev = space != null ? space.TransformPoint(pts[i - 1]) : pts[i - 1];
+            Vector3 cur = space != null ? space.TransformPoint(pts[i]) : pts[i];
+            Vector3 incoming = cur - prev;
+            Vector3 outgoing = Vector3.zero;
+            if (i + 1 < pts.Length)
+            {
+                Vector3 next = space != null ? space.TransformPoint(pts[i + 1]) : pts[i + 1];
+                outgoing = next - cur;
+            }
+
+            float turn = 0f;
+            if (incoming.sqrMagnitude > 0.0000001f && outgoing.sqrMagnitude > 0.0000001f)
+                turn = Vector3.Angle(incoming, outgoing);
+
+            roundedPts.Add(pts[i]);
+            roundedNorms.Add(norms[i]);
+            if (turn > 24f && i + 1 < pts.Length)
+            {
+                int extras = Mathf.Clamp(Mathf.CeilToInt(turn / 24f), 1, 4);
+                Vector3 next = space != null ? space.TransformPoint(pts[i + 1]) : pts[i + 1];
+                for (int s = 1; s <= extras; s++)
+                {
+                    float t = s / (float)(extras + 1) * 0.55f;
+                    Vector3 world = Vector3.Lerp(cur, next, t);
+                    Vector3 n = Vector3.Slerp(norms[i], norms[i + 1], t);
+                    roundedPts.Add(space != null ? space.InverseTransformPoint(world) : world);
+                    roundedNorms.Add(n.sqrMagnitude > 0.0001f ? n.normalized : norms[i]);
+                }
+            }
+        }
+
+        pts = roundedPts.ToArray();
+        norms = roundedNorms.ToArray();
+    }
+
+    private bool TrySeatRibbon(Vector3 worldPoint, Vector3 worldNormal, out Vector3 seated, out Vector3 hitNormal)
+    {
+        hitNormal = worldNormal.sqrMagnitude > 0.0001f ? worldNormal.normalized : Vector3.up;
+        seated = worldPoint;
+        if (surfaceCollider == null || surfaceCollider.sharedMesh == null)
+            return false;
+
+        Ray ray = new Ray(worldPoint + hitNormal * 0.018f, -hitNormal);
+        if (!surfaceCollider.Raycast(ray, out RaycastHit hit, 0.05f))
+            return false;
+
+        hitNormal = hit.normal.sqrMagnitude > 0.0001f ? hit.normal.normalized : hitNormal;
+        seated = hit.point + hitNormal * 0.0011f;
+        return true;
+    }
+
+    private Vector3 WalkRibbonEdge(Vector3 origin, Vector3 originNormal, Vector3 direction, float distance)
+    {
+        Vector3 pos = origin;
+        Vector3 n = originNormal.sqrMagnitude > 0.0001f ? originNormal.normalized : Vector3.up;
+        Vector3 dir = Vector3.ProjectOnPlane(direction, n);
+        if (dir.sqrMagnitude < 0.0000001f || distance <= 0.0001f)
+            return origin;
+
+        dir.Normalize();
+        int steps = Mathf.Clamp(Mathf.CeilToInt(distance / 0.003f), 2, 18);
+        float step = distance / steps;
+        for (int i = 0; i < steps; i++)
+        {
+            Vector3 candidate = pos + dir * step;
+            if (TrySeatRibbon(candidate, n, out Vector3 seated, out Vector3 seatedNormal))
+            {
+                pos = seated;
+                n = seatedNormal;
+            }
+            else
+            {
+                pos = candidate;
+            }
+
+            dir = Vector3.ProjectOnPlane(dir, n);
+            if (dir.sqrMagnitude < 0.0000001f)
+                break;
+            dir.Normalize();
+        }
+
+        return pos;
+    }
+
     private void RebuildStrokeMeshFromAnchors(StrokeRecord record, Vector3[] V, Vector3[] N)
     {
         if (record == null || record.strokeMesh == null || record.anchors == null)
@@ -1168,6 +1299,22 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
             return;
         }
 
+        Vector3[] pts = new Vector3[count];
+        Vector3[] norms = new Vector3[count];
+        for (int i = 0; i < count; i++)
+        {
+            pts[i] = EvaluatePosition(record.anchors[i], V, N);
+            norms[i] = EvaluateNormal(record.anchors[i], N);
+        }
+
+        Transform space = strokeContainer != null ? strokeContainer.transform : transform;
+        if (projectRibbonOntoSurface)
+        {
+            DensifyRibbonSamples(space, ref pts, ref norms);
+            RoundRibbonCorners(space, ref pts, ref norms);
+        }
+
+        count = pts.Length;
         int vertCount = count * 2;
         int triCount = (count - 1) * 6;
 
@@ -1177,17 +1324,7 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         Color[] colors = new Color[vertCount];
         int[] triangles = new int[triCount];
 
-        Vector3[] pts = new Vector3[count];
-        Vector3[] norms = new Vector3[count];
-
-        for (int i = 0; i < count; i++)
-        {
-            pts[i] = EvaluatePosition(record.anchors[i], V, N);
-            norms[i] = EvaluateNormal(record.anchors[i], N);
-        }
-
         float currentDist = 0f;
-        Transform space = strokeContainer != null ? strokeContainer.transform : transform;
         Texture pattern = tintedPatternTexture != null ? tintedPatternTexture : (Texture)activePatternTexture;
         float aspect = 4f;
         if (pattern != null && pattern.height > 0)
@@ -1195,38 +1332,72 @@ public sealed class TeapotSurfacePatternPainter : MonoBehaviour
         float worldHalf = record.strokeWidth * 0.5f;
         float patternLength = Mathf.Max(record.strokeWidth * aspect, 0.0001f);
         Vector3 prevWorld = space != null ? space.TransformPoint(pts[0]) : pts[0];
+        Vector3 carriedBinormal = Vector3.zero;
 
         for (int i = 0; i < count; i++)
         {
-            Vector3 pt = pts[i];
-            Vector3 norm = norms[i];
-            Vector3 worldPt = space != null ? space.TransformPoint(pt) : pt;
+            Vector3 worldPt = space != null ? space.TransformPoint(pts[i]) : pts[i];
             if (i > 0)
                 currentDist += Vector3.Distance(worldPt, prevWorld);
             prevWorld = worldPt;
 
-            Vector3 tangent;
+            Vector3 worldNormal = norms[i];
+            worldNormal = space != null ? space.TransformDirection(worldNormal) : worldNormal;
+            if (worldNormal.sqrMagnitude < 0.0001f)
+                worldNormal = Vector3.up;
+            worldNormal.Normalize();
+
+            Vector3 localTangent;
             if (i == 0)
-                tangent = (pts[1] - pts[0]).normalized;
+                localTangent = pts[1] - pts[0];
             else if (i == count - 1)
-                tangent = (pts[count - 1] - pts[count - 2]).normalized;
+                localTangent = pts[count - 1] - pts[count - 2];
             else
-                tangent = (pts[i + 1] - pts[i - 1]).normalized;
+                localTangent = pts[i + 1] - pts[i - 1];
+            Vector3 worldTangent = space != null ? space.TransformVector(localTangent) : localTangent;
+            worldTangent = Vector3.ProjectOnPlane(worldTangent, worldNormal);
+            if (worldTangent.sqrMagnitude < 0.0000001f)
+                worldTangent = Vector3.Cross(worldNormal, Vector3.right);
+            worldTangent.Normalize();
 
-            Vector3 binormal = Vector3.Cross(tangent, norm).normalized;
-            if (binormal.sqrMagnitude < 0.001f)
-                binormal = Vector3.right;
-
-            Vector3 worldBinormal = space != null ? space.TransformDirection(binormal) : binormal;
-            if (worldBinormal.sqrMagnitude < 0.0001f)
-                worldBinormal = space != null ? space.right : Vector3.right;
+            Vector3 worldBinormal = Vector3.Cross(worldTangent, worldNormal);
+            if (worldBinormal.sqrMagnitude < 0.0000001f)
+                worldBinormal = carriedBinormal.sqrMagnitude > 0.0001f
+                    ? carriedBinormal
+                    : Vector3.Cross(worldNormal, Vector3.up);
             worldBinormal.Normalize();
-            Vector3 localHalf = space != null
-                ? space.InverseTransformVector(worldBinormal * worldHalf)
-                : worldBinormal * worldHalf;
+            if (carriedBinormal.sqrMagnitude > 0.0001f &&
+                Vector3.Dot(worldBinormal, carriedBinormal) < 0f)
+                worldBinormal = -worldBinormal;
+            if (carriedBinormal.sqrMagnitude > 0.0001f)
+            {
+                float turn = Vector3.Angle(carriedBinormal, worldBinormal);
+                if (turn > 18f)
+                    worldBinormal = Vector3.Slerp(carriedBinormal, worldBinormal, 18f / turn);
+            }
+            carriedBinormal = worldBinormal;
 
-            Vector3 leftPos = pt - localHalf;
-            Vector3 rightPos = pt + localHalf;
+            Vector3 leftWorld = worldPt - worldBinormal * worldHalf;
+            Vector3 rightWorld = worldPt + worldBinormal * worldHalf;
+            if (projectRibbonOntoSurface)
+            {
+                Vector3 center = worldPt;
+                Vector3 centerNormal = worldNormal;
+                if (TrySeatRibbon(worldPt, worldNormal, out Vector3 seatedCenter, out Vector3 seatedNormal))
+                {
+                    center = seatedCenter;
+                    centerNormal = seatedNormal;
+                }
+
+                leftWorld = WalkRibbonEdge(center, centerNormal, -worldBinormal, worldHalf);
+                rightWorld = WalkRibbonEdge(center, centerNormal, worldBinormal, worldHalf);
+            }
+
+            Vector3 leftPos = space != null ? space.InverseTransformPoint(leftWorld) : leftWorld;
+            Vector3 rightPos = space != null ? space.InverseTransformPoint(rightWorld) : rightWorld;
+            Vector3 norm = space != null
+                ? space.InverseTransformDirection(worldNormal).normalized
+                : worldNormal;
 
             float u = currentDist / patternLength;
 

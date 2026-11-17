@@ -6212,14 +6212,19 @@ public sealed class SculptingEnhancementLanternColorController : MonoBehaviour
 
     private void EnsurePatternPainter()
     {
-        if (patternPainter != null || lanternRenderer == null)
+        if (lanternRenderer == null)
             return;
 
-        patternPainter = lanternRenderer.GetComponent<TeapotSurfacePatternPainter>();
         if (patternPainter == null)
-            patternPainter = lanternRenderer.gameObject.AddComponent<TeapotSurfacePatternPainter>();
+        {
+            patternPainter = lanternRenderer.GetComponent<TeapotSurfacePatternPainter>();
+            if (patternPainter == null)
+                patternPainter = lanternRenderer.gameObject.AddComponent<TeapotSurfacePatternPainter>();
+            patternPainter.Initialize(handRunner, lanternRenderer);
+        }
 
-        patternPainter.Initialize(handRunner, lanternRenderer);
+        patternPainter.SetPatternSurfaceOffset(0.0016f);
+        patternPainter.SetProjectRibbonOntoSurface(true);
     }
 
     private void LoadBandPatterns()
